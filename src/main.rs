@@ -1,13 +1,13 @@
 use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
+use rodio::{Decoder, OutputStream, Sink};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fs;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::ptr;
-use std::io::Cursor;
-use rodio::{Decoder, OutputStream, Sink};
 
 // Use bindgen-generated bindings if available
 #[cfg(feature = "use_bindgen")]
@@ -20,7 +20,7 @@ pub const VOICEVOX_RESULT_OK: i32 = 0;
 // If bindgen fails, provide manual bindings (simplified)
 #[cfg(not(feature = "use_bindgen"))]
 mod manual_bindings {
-    use libc::{c_char, c_int, c_uint, c_uchar, uintptr_t};
+    use libc::{c_char, c_int, c_uchar, c_uint, uintptr_t};
 
     pub const VOICEVOX_RESULT_OK: c_int = 0;
     pub type VoicevoxStyleId = c_uint;
@@ -53,7 +53,8 @@ mod manual_bindings {
 
     extern "C" {
         // Core initialization functions
-        pub fn voicevox_make_default_load_onnxruntime_options() -> *const VoicevoxLoadOnnxruntimeOptions;
+        pub fn voicevox_make_default_load_onnxruntime_options(
+        ) -> *const VoicevoxLoadOnnxruntimeOptions;
         pub fn voicevox_onnxruntime_load_once(
             options: *const VoicevoxLoadOnnxruntimeOptions,
             onnxruntime: *mut *const VoicevoxOnnxruntime,
@@ -99,9 +100,7 @@ mod manual_bindings {
             model: *mut *mut VoicevoxVoiceModelFile,
         ) -> c_int;
 
-        pub fn voicevox_voice_model_file_delete(
-            model: *mut VoicevoxVoiceModelFile,
-        );
+        pub fn voicevox_voice_model_file_delete(model: *mut VoicevoxVoiceModelFile);
 
         // Cleanup functions
         pub fn voicevox_wav_free(wav: *mut c_uchar);
@@ -150,7 +149,10 @@ impl VoicevoxCore {
 
             let result = voicevox_onnxruntime_load_once(load_options, &mut onnxruntime);
             if result != VOICEVOX_RESULT_OK {
-                return Err(anyhow!("ONNX Runtime initialization failed: code {}", result));
+                return Err(anyhow!(
+                    "ONNX Runtime initialization failed: code {}",
+                    result
+                ));
             }
 
             // Initialize OpenJTalk
@@ -160,7 +162,10 @@ impl VoicevoxCore {
 
             let result = voicevox_open_jtalk_rc_new(dict_cstr.as_ptr(), &mut open_jtalk_rc);
             if result != VOICEVOX_RESULT_OK {
-                return Err(anyhow!("OpenJTalk RC initialization failed: code {}", result));
+                return Err(anyhow!(
+                    "OpenJTalk RC initialization failed: code {}",
+                    result
+                ));
             }
 
             // Create synthesizer with CPU-only mode for macOS
@@ -170,8 +175,8 @@ impl VoicevoxCore {
 
                 // Create CPU-only initialization options structure
                 let init_options = VoicevoxInitializeOptions {
-                    acceleration_mode: VoicevoxAccelerationMode::Cpu,  // Force CPU mode, no GPU testing
-                    cpu_num_threads: 0,  // Use default number of CPU threads (0 = auto-detect)
+                    acceleration_mode: VoicevoxAccelerationMode::Cpu, // Force CPU mode, no GPU testing
+                    cpu_num_threads: 0, // Use default number of CPU threads (0 = auto-detect)
                 };
 
                 let mut synthesizer: *mut VoicevoxSynthesizer = ptr::null_mut();
@@ -205,8 +210,8 @@ impl VoicevoxCore {
 
                 // Create CPU-only initialization options structure
                 let init_options = VoicevoxInitializeOptions {
-                    acceleration_mode: VoicevoxAccelerationMode::Cpu,  // Force CPU mode, no GPU testing
-                    cpu_num_threads: 0,  // Use default number of CPU threads (0 = auto-detect)
+                    acceleration_mode: VoicevoxAccelerationMode::Cpu, // Force CPU mode, no GPU testing
+                    cpu_num_threads: 0, // Use default number of CPU threads (0 = auto-detect)
                 };
 
                 let mut synthesizer: *mut VoicevoxSynthesizer = ptr::null_mut();
@@ -255,20 +260,19 @@ impl VoicevoxCore {
                     if let Ok(path_cstr) = CString::new(path_str) {
                         unsafe {
                             let mut model: *mut VoicevoxVoiceModelFile = ptr::null_mut();
-                            let result = voicevox_voice_model_file_open(
-                                path_cstr.as_ptr(),
-                                &mut model,
-                            );
+                            let result =
+                                voicevox_voice_model_file_open(path_cstr.as_ptr(), &mut model);
                             if result == VOICEVOX_RESULT_OK {
-                                let load_result = voicevox_synthesizer_load_voice_model(
-                                    synthesizer,
-                                    model,
-                                );
+                                let load_result =
+                                    voicevox_synthesizer_load_voice_model(synthesizer, model);
                                 if load_result == VOICEVOX_RESULT_OK {
                                     loaded_count += 1;
                                     println!("  ✅ Loaded: {}", model_name);
                                 } else {
-                                    println!("  ⚠️  Failed to load: {} (code: {})", model_name, load_result);
+                                    println!(
+                                        "  ⚠️  Failed to load: {} (code: {})",
+                                        model_name, load_result
+                                    );
                                 }
                                 voicevox_voice_model_file_delete(model);
                             } else {
@@ -305,27 +309,31 @@ impl VoicevoxCore {
             if let Ok(path_cstr) = CString::new(path_str) {
                 unsafe {
                     let mut model: *mut VoicevoxVoiceModelFile = ptr::null_mut();
-                    let result = voicevox_voice_model_file_open(
-                        path_cstr.as_ptr(),
-                        &mut model,
-                    );
+                    let result = voicevox_voice_model_file_open(path_cstr.as_ptr(), &mut model);
                     if result == VOICEVOX_RESULT_OK {
-                        let load_result = voicevox_synthesizer_load_voice_model(
-                            self.synthesizer,
-                            model,
-                        );
+                        let load_result =
+                            voicevox_synthesizer_load_voice_model(self.synthesizer, model);
                         if load_result == VOICEVOX_RESULT_OK {
                             println!("  ✅ Successfully loaded: {}.vvm", model_name);
-                        } else if load_result == 18 { // MODEL_ALREADY_LOADED_ERROR
+                        } else if load_result == 18 {
+                            // MODEL_ALREADY_LOADED_ERROR
                             // Model already loaded, this is OK
                             println!("  ℹ️  Model {}.vvm already loaded", model_name);
                         } else {
                             voicevox_voice_model_file_delete(model);
-                            return Err(anyhow!("Failed to load model: {} (code: {})", model_name, load_result));
+                            return Err(anyhow!(
+                                "Failed to load model: {} (code: {})",
+                                model_name,
+                                load_result
+                            ));
                         }
                         voicevox_voice_model_file_delete(model);
                     } else {
-                        return Err(anyhow!("Failed to open model: {} (code: {})", model_name, result));
+                        return Err(anyhow!(
+                            "Failed to open model: {} (code: {})",
+                            model_name,
+                            result
+                        ));
                     }
                 }
             }
@@ -364,11 +372,17 @@ impl VoicevoxCore {
                                             loaded_count += 1;
                                             println!("  ✅ Loaded: {}", file_name);
                                         } else {
-                                            println!("  ⚠️  Failed to load: {} (code: {})", file_name, load_result);
+                                            println!(
+                                                "  ⚠️  Failed to load: {} (code: {})",
+                                                file_name, load_result
+                                            );
                                         }
                                         voicevox_voice_model_file_delete(model);
                                     } else {
-                                        println!("  ⚠️  Failed to open: {} (code: {})", file_name, result);
+                                        println!(
+                                            "  ⚠️  Failed to open: {} (code: {})",
+                                            file_name, result
+                                        );
                                     }
                                 }
                             }
@@ -426,7 +440,7 @@ impl VoicevoxCore {
         text: &str,
         style_id: VoicevoxStyleId,
         delay_ms: u64,
-        chunk_size: Option<usize>
+        chunk_size: Option<usize>,
     ) -> Result<()> {
         // テキストを適切なサイズに分割
         let sentences = if let Some(size) = chunk_size {
@@ -441,9 +455,15 @@ impl VoicevoxCore {
         let sink = Sink::try_new(&stream_handle)
             .map_err(|e| anyhow!("Failed to create audio sink: {}", e))?;
 
-        println!("🎵 Starting streaming synthesis for {} segments...", sentences.len());
+        println!(
+            "🎵 Starting streaming synthesis for {} segments...",
+            sentences.len()
+        );
         if chunk_size.is_some() {
-            println!("   📏 Using character-based chunking (max {} chars per chunk)", chunk_size.unwrap());
+            println!(
+                "   📏 Using character-based chunking (max {} chars per chunk)",
+                chunk_size.unwrap()
+            );
         } else {
             println!("   � Using sentence-based chunking");
         }
@@ -464,7 +484,12 @@ impl VoicevoxCore {
                 segment.clone()
             };
 
-            println!("  🔊 [{}/{}] Processing: \"{}\"", i + 1, sentences.len(), segment_display);
+            println!(
+                "  🔊 [{}/{}] Processing: \"{}\"",
+                i + 1,
+                sentences.len(),
+                segment_display
+            );
 
             let synthesis_start = std::time::Instant::now();
             // 音声合成
@@ -498,9 +523,12 @@ impl VoicevoxCore {
 
         let total_time = start_time.elapsed();
         println!("✅ Streaming synthesis completed!");
-        println!("   📊 Total time: {:?}, Synthesis time: {:?}, Efficiency: {:.1}%",
-                 total_time, total_synthesis_time,
-                 (total_synthesis_time.as_secs_f64() / total_time.as_secs_f64()) * 100.0);
+        println!(
+            "   📊 Total time: {:?}, Synthesis time: {:?}, Efficiency: {:.1}%",
+            total_time,
+            total_synthesis_time,
+            (total_synthesis_time.as_secs_f64() / total_time.as_secs_f64()) * 100.0
+        );
         Ok(())
     }
 
@@ -536,15 +564,7 @@ impl Drop for VoicevoxCore {
 
 // Helper function to find VVM models directory
 fn find_models_dir() -> Result<PathBuf> {
-    // Priority 1: Environment variable
-    if let Ok(models_dir) = std::env::var("VOICEVOX_MODELS_DIR") {
-        let models_path = PathBuf::from(&models_dir);
-        if models_path.exists() {
-            return Ok(models_path);
-        }
-    }
-    
-    // Priority 2: Package installation path (when used as a Nix package)
+    // Priority 1: Package installation path (when used as a Nix package)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
             let pkg_models_path = pkg_root.join("share/voicevox/models");
@@ -553,12 +573,15 @@ fn find_models_dir() -> Result<PathBuf> {
             }
         }
     }
-    
-    // Priority 3: Development/workspace paths
+
+    // Priority 2: Development/workspace paths
     let workspace_root = std::env::current_dir()
         .ok()
         .and_then(|current_dir| {
-            current_dir.ancestors().find(|a| a.join("voicevox_models").exists()).map(|p| p.to_path_buf())
+            current_dir
+                .ancestors()
+                .find(|a| a.join("voicevox_models").exists())
+                .map(|p| p.to_path_buf())
         })
         .unwrap_or_else(|| PathBuf::from("VOICEVOX_DEPENDENCIES_DIR"));
 
@@ -566,38 +589,34 @@ fn find_models_dir() -> Result<PathBuf> {
     if models_dir.exists() {
         Ok(models_dir)
     } else {
-        Err(anyhow!("VVM models directory not found. Checked paths: environment VOICEVOX_MODELS_DIR, package path, workspace path"))
+        // Priority 3: Environment variable (fallback)
+        if let Ok(models_dir) = std::env::var("VOICEVOX_MODELS_DIR") {
+            let models_path = PathBuf::from(&models_dir);
+            if models_path.exists() {
+                return Ok(models_path);
+            }
+        }
+        Err(anyhow!("VVM models directory not found. Checked paths: package path, workspace path, environment VOICEVOX_MODELS_DIR"))
     }
 }
 
 // Helper function to check if a directory contains .dic files
 fn has_dic_files(dict_path: &PathBuf) -> bool {
     if let Ok(entries) = std::fs::read_dir(dict_path) {
-        entries
-            .filter_map(|e| e.ok())
-            .any(|e| {
-                if let Some(file_name) = e.file_name().to_str() {
-                    file_name.ends_with(".dic")
-                } else {
-                    false
-                }
-            })
+        entries.filter_map(|e| e.ok()).any(|e| {
+            if let Some(file_name) = e.file_name().to_str() {
+                file_name.ends_with(".dic")
+            } else {
+                false
+            }
+        })
     } else {
         false
     }
 }
 
 fn find_openjtalk_dict() -> Result<String> {
-    // Priority 1: Environment variable
-    if let Ok(dict_dir) = std::env::var("VOICEVOX_DICT_DIR") {
-        let dict_path = PathBuf::from(&dict_dir);
-        if dict_path.exists() && has_dic_files(&dict_path) {
-            println!("Found OpenJTalk dictionary (env): {}", dict_dir);
-            return Ok(dict_dir);
-        }
-    }
-    
-    // Priority 2: Package installation path (when used as a Nix package)
+    // Priority 1: Package installation path (when used as a Nix package)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
             let pkg_dict_path = pkg_root.join("share/voicevox/dict");
@@ -608,18 +627,27 @@ fn find_openjtalk_dict() -> Result<String> {
             }
         }
     }
-    
-    // Priority 3: Development/workspace paths
+
+    // Priority 2: Development/workspace paths
     let workspace_root = std::env::current_dir()
         .ok()
         .and_then(|current_dir| {
-            current_dir.ancestors().find(|a| a.join("voicevox_models").exists()).map(|p| p.to_path_buf())
+            current_dir
+                .ancestors()
+                .find(|a| a.join("voicevox_models").exists())
+                .map(|p| p.to_path_buf())
         })
         .unwrap_or_else(|| PathBuf::from("VOICEVOX_DEPENDENCIES_DIR"));
 
     let possible_dict_paths = vec![
-        workspace_root.join("voicevox_models/dict/open_jtalk_dic_utf_8-1.11").to_string_lossy().to_string(),
-        workspace_root.join("dict/open_jtalk_dic_utf_8-1.11").to_string_lossy().to_string(),
+        workspace_root
+            .join("voicevox_models/dict/open_jtalk_dic_utf_8-1.11")
+            .to_string_lossy()
+            .to_string(),
+        workspace_root
+            .join("dict/open_jtalk_dic_utf_8-1.11")
+            .to_string_lossy()
+            .to_string(),
         // System fallback paths
         "/opt/homebrew/share/open-jtalk/dic".to_string(),
         "/usr/local/share/open-jtalk/dic".to_string(),
@@ -633,21 +661,28 @@ fn find_openjtalk_dict() -> Result<String> {
         if dict_path.exists() {
             // Check for .dic files
             if let Ok(entries) = std::fs::read_dir(&dict_path) {
-                let has_dic_files = entries
-                    .filter_map(|e| e.ok())
-                    .any(|e| {
-                        if let Some(file_name) = e.file_name().to_str() {
-                            file_name.ends_with(".dic")
-                        } else {
-                            false
-                        }
-                    });
+                let has_dic_files = entries.filter_map(|e| e.ok()).any(|e| {
+                    if let Some(file_name) = e.file_name().to_str() {
+                        file_name.ends_with(".dic")
+                    } else {
+                        false
+                    }
+                });
 
                 if has_dic_files {
                     println!("Found OpenJTalk dictionary: {}", path);
                     return Ok(path.to_string());
                 }
             }
+        }
+    }
+
+    // Priority 3: Environment variable (fallback)
+    if let Ok(dict_dir) = std::env::var("VOICEVOX_DICT_DIR") {
+        let dict_path = PathBuf::from(&dict_dir);
+        if dict_path.exists() && has_dic_files(&dict_path) {
+            println!("Found OpenJTalk dictionary (env fallback): {}", dict_dir);
+            return Ok(dict_dir);
         }
     }
 
@@ -827,7 +862,10 @@ fn resolve_voice_name_with_core(voice_name: &str, core: &VoicevoxCore) -> Result
         return Ok((style_id, format!("Style ID {}", style_id)));
     }
 
-    Err(anyhow!("Unknown voice: {}. Use --voice ? to list available voices.", voice_name))
+    Err(anyhow!(
+        "Unknown voice: {}. Use --voice ? to list available voices.",
+        voice_name
+    ))
 }
 
 fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
@@ -885,7 +923,10 @@ fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
     if let Some((style_id, description)) = voices.get(voice_name) {
         Ok((*style_id, description.to_string()))
     } else {
-        Err(anyhow!("Unknown voice: '{}'. Use -v ? to list available voices.", voice_name))
+        Err(anyhow!(
+            "Unknown voice: '{}'. Use -v ? to list available voices.",
+            voice_name
+        ))
     }
 }
 
@@ -940,7 +981,10 @@ fn split_sentences(text: &str) -> Vec<String> {
     }
 
     // 空の文を除外
-    sentences.into_iter().filter(|s| !s.trim().is_empty()).collect()
+    sentences
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect()
 }
 
 // ヘルパー関数：テキストを指定した文字数で分割
@@ -975,7 +1019,7 @@ fn main() -> Result<()> {
             Arg::new("text")
                 .help("Specify the text to speak on the command line")
                 .index(1)
-                .required(false)
+                .required(false),
         )
         .arg(
             Arg::new("voice")
@@ -983,7 +1027,7 @@ fn main() -> Result<()> {
                 .long("voice")
                 .short('v')
                 .value_name("VOICE")
-                .default_value("zundamon")
+                .default_value("zundamon"),
         )
         .arg(
             Arg::new("rate")
@@ -992,40 +1036,40 @@ fn main() -> Result<()> {
                 .short('r')
                 .value_name("RATE")
                 .value_parser(clap::value_parser!(f32))
-                .default_value("1.0")
+                .default_value("1.0"),
         )
         .arg(
             Arg::new("output-file")
                 .help("Specify the path for an audio file to be written")
                 .long("output-file")
                 .short('o')
-                .value_name("FILE")
+                .value_name("FILE"),
         )
         .arg(
             Arg::new("input-file")
                 .help("Specify a file to be spoken. Use '-' for stdin")
                 .long("input-file")
                 .short('f')
-                .value_name("FILE")
+                .value_name("FILE"),
         )
         .arg(
             Arg::new("streaming")
                 .help("Enable streaming synthesis (sentence-by-sentence)")
                 .long("streaming")
-                .action(clap::ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("quiet")
                 .help("Don't play audio, only save to file")
                 .long("quiet")
                 .short('q')
-                .action(clap::ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("list-speakers")
                 .help("List all available speakers and styles from loaded models")
                 .long("list-speakers")
-                .action(clap::ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("speaker-id")
@@ -1034,13 +1078,13 @@ fn main() -> Result<()> {
                 .short('s')
                 .value_name("ID")
                 .value_parser(clap::value_parser!(u32))
-                .conflicts_with("voice")
+                .conflicts_with("voice"),
         )
         .arg(
             Arg::new("load-all-models")
                 .help("Load all available VVM models (slower startup, all voices available)")
                 .long("load-all-models")
-                .action(clap::ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
@@ -1086,16 +1130,19 @@ fn main() -> Result<()> {
     // テキスト入力を取得
     let text = get_input_text(&matches)?;
     if text.trim().is_empty() {
-        return Err(anyhow!("No text provided. Use command line argument, -f file, or pipe text to stdin."));
+        return Err(anyhow!(
+            "No text provided. Use command line argument, -f file, or pipe text to stdin."
+        ));
     }
 
     // 音声設定を解決（speaker-idが指定されている場合はそちらを優先）
-    let (style_id, voice_description) = if let Some(speaker_id) = matches.get_one::<u32>("speaker-id") {
-        (*speaker_id, format!("Style ID {}", speaker_id))
-    } else {
-        let voice_name = matches.get_one::<String>("voice").unwrap();
-        resolve_voice_name(voice_name)?
-    };
+    let (style_id, voice_description) =
+        if let Some(speaker_id) = matches.get_one::<u32>("speaker-id") {
+            (*speaker_id, format!("Style ID {}", speaker_id))
+        } else {
+            let voice_name = matches.get_one::<String>("voice").unwrap();
+            resolve_voice_name(voice_name)?
+        };
 
     // 設定パラメータ
     let use_streaming = matches.get_flag("streaming");
@@ -1114,9 +1161,16 @@ fn main() -> Result<()> {
     // 必要なモデルを動的に読み込み（合成直前に実行）
     if !matches.get_flag("load-all-models") {
         if let Some(model_num) = get_model_for_voice_id(style_id) {
-            println!("📦 Loading required model for style ID {}: {}.vvm", style_id, model_num);
+            println!(
+                "📦 Loading required model for style ID {}: {}.vvm",
+                style_id, model_num
+            );
             if let Err(e) = core.load_specific_model(&model_num.to_string()) {
-                return Err(anyhow!("Failed to load required model for style ID {}: {}", style_id, e));
+                return Err(anyhow!(
+                    "Failed to load required model for style ID {}: {}",
+                    style_id,
+                    e
+                ));
             }
         } else {
             return Err(anyhow!("Unknown voice model required for style ID {}. Please ensure the voice model is available.", style_id));
@@ -1144,15 +1198,9 @@ fn main() -> Result<()> {
             fs::write(temp_file, &wav_data)?;
 
             // macOS標準のafplayで再生
-            if let Ok(_) = std::process::Command::new("afplay")
-                .arg(temp_file)
-                .output()
-            {
+            if let Ok(_) = std::process::Command::new("afplay").arg(temp_file).output() {
                 // 成功時は何も表示しない（sayコマンドと同様）
-            } else if let Ok(_) = std::process::Command::new("play")
-                .arg(temp_file)
-                .output()
-            {
+            } else if let Ok(_) = std::process::Command::new("play").arg(temp_file).output() {
                 // soxでの再生もサイレント
             } else {
                 eprintln!("Warning: No audio player found. Install sox or use -o to save file");

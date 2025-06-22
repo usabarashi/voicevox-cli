@@ -4,12 +4,12 @@
 
     This tool uses VOICEVOX Core (MIT License) and requires proper attribution.
     When using generated audio, please credit VOICEVOX appropriately.
-    
+
     License Information:
     - CLI Tool: MIT License + Apache License 2.0
     - VOICEVOX Core: MIT License (Copyright 2021 Hiroshiba Kazuyuki)
     - ONNX Runtime: Custom Terms (Commercial use allowed, Credit required)
-    
+
     Usage Requirements:
     - Credit VOICEVOX when using generated audio
     - Follow individual voice library terms
@@ -26,7 +26,7 @@
       (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          
+
           # Centralized meta information
           packageMeta = with pkgs.lib; {
             description = "VOICEVOX CLI tool for text-to-speech synthesis";
@@ -35,7 +35,7 @@
             maintainers = [ "usabarashi" ];
             platforms = [ "aarch64-darwin" ];
           };
-          
+
           # Package definition (previously in default.nix)
           voicevox-cli = pkgs.rustPlatform.buildRustPackage {
             pname = "voicevox-cli";
@@ -76,15 +76,15 @@
             # Install the binary as voicevox-say and setup runtime library paths
             postInstall = ''
               mv $out/bin/voicevox-cli $out/bin/voicevox-say || true
-              
+
               # Copy VOICEVOX libraries to output
               mkdir -p $out/lib
               cp -r voicevox_core/c_api/lib/* $out/lib/
               cp -r voicevox_core/onnxruntime/lib/* $out/lib/
-              
+
               # Create directories for VOICEVOX data
               mkdir -p $out/share/voicevox/{dict,models}
-              
+
               # Copy OpenJTalk dictionary from project
               if [ -d "dict" ]; then
                 echo "📚 Copying OpenJTalk dictionary from project dict/"
@@ -93,7 +93,7 @@
               else
                 echo "⚠️  OpenJTalk dictionary not found in project dict/"
               fi
-              
+
               # Copy VVM models from project
               if [ -d "models" ]; then
                 echo "🎭 Copying VVM models from project models/"
@@ -102,24 +102,17 @@
               else
                 echo "⚠️  VVM models not found in project models/"
               fi
-              
-              # Create a wrapper script that sets proper environment variables
-              cat > $out/bin/voicevox-say-wrapped << EOF
-              #!/bin/sh
-              export VOICEVOX_MODELS_DIR="\''${VOICEVOX_MODELS_DIR:-$out/share/voicevox/models}"
-              export VOICEVOX_DICT_DIR="\''${VOICEVOX_DICT_DIR:-$out/share/voicevox/dict}"
-              export DYLD_LIBRARY_PATH="$out/lib:\''${DYLD_LIBRARY_PATH}"
-              exec "$out/bin/voicevox-say" "\$@"
-              EOF
-              chmod +x $out/bin/voicevox-say-wrapped
-              
+
+              # Set up library path for runtime
+              export DYLD_LIBRARY_PATH="$out/lib:''${DYLD_LIBRARY_PATH}"
+
               # Fix runtime library paths on macOS
               if [[ "$OSTYPE" == "darwin"* ]]; then
                 install_name_tool -change \
                   "/Users/runner/work/voicevox_core/voicevox_core/target/aarch64-apple-darwin/release/deps/libvoicevox_core.dylib" \
                   "$out/lib/libvoicevox_core.dylib" \
                   $out/bin/voicevox-say
-                
+
                 # Add rpath for runtime library discovery
                 install_name_tool -add_rpath "$out/lib" $out/bin/voicevox-say
               fi
@@ -177,7 +170,7 @@
 
             # Get the package derivation
             getPackage = voicevox-cli;
-            
+
             # Export centralized meta information
             meta = packageMeta;
           };
@@ -198,19 +191,19 @@
         homepage = "https://github.com/usabarashi/voicevox-cli";
         maintainers = [ "usabarashi" ];
         platforms = [ "aarch64-darwin" ];
-        
+
         # Extended license information for the complete package
         license = {
           # CLI tool itself
           cli = [ "MIT" "Apache-2.0" ];
-          
+
           # VOICEVOX Core component
           voicevoxCore = {
             type = "MIT";
             copyright = "2021 Hiroshiba Kazuyuki";
             url = "https://github.com/VOICEVOX/voicevox_core";
           };
-          
+
           # ONNX Runtime component
           onnxRuntime = {
             type = "Custom-Terms";

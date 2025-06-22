@@ -244,13 +244,13 @@ impl VoicevoxCore {
     // Helper function to get the model number for a given voice/style ID
 
     fn load_default_models(synthesizer: *mut VoicevoxSynthesizer) -> Result<()> {
-        // Load only essential models for faster startup
+        // Load only essential models for faster startup (minimal mode)
         // Priority: ずんだもん (3.vvm), 四国めたん (2.vvm), 春日部つむぎ (8.vvm)
         let default_models = ["3.vvm", "2.vvm", "8.vvm"];
 
         let models_dir = find_models_dir()?;
 
-        println!("📦 Loading default VVM models for faster startup...");
+        println!("📦 Loading minimal VVM models for faster startup...");
 
         let mut loaded_count = 0;
         for model_name in &default_models {
@@ -287,9 +287,9 @@ impl VoicevoxCore {
         }
 
         if loaded_count > 0 {
-            println!("✅ Successfully loaded {} default VVM models", loaded_count);
+            println!("✅ Successfully loaded {} minimal VVM models", loaded_count);
         } else {
-            println!("⚠️  No default VVM models were loaded");
+            println!("⚠️  No minimal VVM models were loaded");
         }
 
         Ok(())
@@ -846,8 +846,8 @@ fn resolve_voice_name_with_core(voice_name: &str, core: &VoicevoxCore) -> Result
         println!("Usage: voicevox-say --voice <voice_name> \"your text\"");
         println!("Example: voicevox-say --voice zundamon \"こんにちは\"");
         println!();
-        println!("💡 Tip: Use --load-all-models to preload all voice models for faster synthesis.");
-        println!("💡 Tip: Default models (zundamon, metan, tsumugi) are loaded automatically.");
+        println!("💡 Tip: All voice models are loaded by default for best experience.");
+        println!("💡 Tip: Use --minimal-models for faster startup if needed.");
 
         std::process::exit(0);
     }
@@ -1081,9 +1081,9 @@ fn main() -> Result<()> {
                 .conflicts_with("voice"),
         )
         .arg(
-            Arg::new("load-all-models")
-                .help("Load all available VVM models (slower startup, all voices available)")
-                .long("load-all-models")
+            Arg::new("minimal-models")
+                .help("Load only essential models for faster startup (advanced users)")
+                .long("minimal-models")
                 .action(clap::ArgAction::SetTrue),
         );
 
@@ -1100,9 +1100,14 @@ fn main() -> Result<()> {
     println!("🚀 Initializing VOICEVOX Core...");
     let mut core = VoicevoxCore::new()?;
 
-    // Load all models if requested
-    if matches.get_flag("load-all-models") {
-        println!("📦 Loading all VVM models (--load-all-models specified)...");
+    // Load models (all by default, minimal on request)
+    if matches.get_flag("minimal-models") {
+        println!("📦 Loading minimal models for faster startup (--minimal-models specified)...");
+        if let Err(e) = VoicevoxCore::load_default_models(core.synthesizer) {
+            println!("⚠️  Warning: Failed to load some models: {}", e);
+        }
+    } else {
+        println!("📦 Loading all available models for best user experience...");
         if let Err(e) = VoicevoxCore::load_models(core.synthesizer) {
             println!("⚠️  Warning: Failed to load some models: {}", e);
         }
@@ -1158,8 +1163,8 @@ fn main() -> Result<()> {
         println!("⚡ Rate: {}x", rate);
     }
 
-    // 必要なモデルを動的に読み込み（合成直前に実行）
-    if !matches.get_flag("load-all-models") {
+    // 必要なモデルを動的に読み込み（minimal-modelsの場合のみ）
+    if matches.get_flag("minimal-models") {
         if let Some(model_num) = get_model_for_voice_id(style_id) {
             println!(
                 "📦 Loading required model for style ID {}: {}.vvm",

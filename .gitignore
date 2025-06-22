@@ -23,6 +23,7 @@ result-*
 # Runtime
 /voicevox_models/
 /dict/
+/models/
 *.wav
 *.vvm
 

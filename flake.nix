@@ -85,24 +85,22 @@
               # Create directories for VOICEVOX data
               mkdir -p $out/share/voicevox/{dict,models}
               
-              # Copy OpenJTalk dictionary if available locally
-              DICT_SOURCE="VOICEVOX_MODELS_DICT_DIR"
-              if [ -d "$DICT_SOURCE" ]; then
-                echo "📚 Copying OpenJTalk dictionary from $DICT_SOURCE"
-                cp -r "$DICT_SOURCE"/* $out/share/voicevox/dict/
+              # Copy OpenJTalk dictionary from project
+              if [ -d "dict" ]; then
+                echo "📚 Copying OpenJTalk dictionary from project dict/"
+                cp -r dict/* $out/share/voicevox/dict/
                 echo "📚 Included OpenJTalk dictionary in package"
               else
-                echo "⚠️  OpenJTalk dictionary not found at $DICT_SOURCE"
+                echo "⚠️  OpenJTalk dictionary not found in project dict/"
               fi
               
-              # Copy VVM models if available locally  
-              MODELS_SOURCE="VOICEVOX_MODELS_VVM_DIR"
-              if [ -d "$MODELS_SOURCE" ]; then
-                echo "🎭 Copying VVM models from $MODELS_SOURCE"
-                cp -r "$MODELS_SOURCE"/* $out/share/voicevox/models/
+              # Copy VVM models from project
+              if [ -d "models" ]; then
+                echo "🎭 Copying VVM models from project models/"
+                cp -r models/* $out/share/voicevox/models/
                 echo "🎭 Included VVM models in package"
               else
-                echo "⚠️  VVM models not found at $MODELS_SOURCE"
+                echo "⚠️  VVM models not found in project models/"
               fi
               
               # Create a wrapper script that sets proper environment variables

@@ -1,0 +1,31 @@
+# Rust
+/target/
+Cargo.lock
+*.pdb
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Nix
+result
+result-*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Runtime
+/voicevox_models/
+/dict/
+*.wav
+*.vvm
+
+# Build artifacts
+.cargo/

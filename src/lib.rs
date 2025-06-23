@@ -20,77 +20,6 @@ pub const VOICEVOX_RESULT_OK: i32 = 0;
 // If bindgen fails, provide manual bindings (simplified)
 #[cfg(not(feature = "use_bindgen"))]
 mod manual_bindings {
-    // Dummy implementation for testing without actual VOICEVOX Core library
-    #[cfg(not(feature = "link_voicevox"))]
-    pub mod dummy_impl {
-        use super::*;
-        
-        pub fn voicevox_make_default_load_onnxruntime_options() -> *const VoicevoxLoadOnnxruntimeOptions {
-            std::ptr::null()
-        }
-        
-        pub fn voicevox_onnxruntime_load_once(
-            _options: *const VoicevoxLoadOnnxruntimeOptions,
-            _onnxruntime: *mut *const VoicevoxOnnxruntime,
-        ) -> c_int { 0 }
-        
-        pub fn voicevox_open_jtalk_rc_new(
-            _open_jtalk_dic_dir: *const c_char,
-            _open_jtalk_rc: *mut *mut OpenJtalkRc,
-        ) -> c_int { 0 }
-        
-        pub fn voicevox_synthesizer_new(
-            _onnxruntime: *const VoicevoxOnnxruntime,
-            _open_jtalk_rc: *mut OpenJtalkRc,
-            _options: VoicevoxInitializeOptions,
-            _synthesizer: *mut *mut VoicevoxSynthesizer,
-        ) -> c_int { 0 }
-        
-        pub fn voicevox_make_default_tts_options() -> *const VoicevoxTtsOptions {
-            std::ptr::null()
-        }
-        
-        pub fn voicevox_synthesizer_tts(
-            _synthesizer: *mut VoicevoxSynthesizer,
-            _text: *const c_char,
-            _style_id: VoicevoxStyleId,
-            _options: *const VoicevoxTtsOptions,
-            wav_length: *mut uintptr_t,
-            wav: *mut *mut c_uchar,
-        ) -> c_int {
-            // Return dummy WAV data for testing
-            unsafe {
-                *wav_length = 1024;
-                *wav = libc::malloc(1024) as *mut c_uchar;
-                std::ptr::write_bytes(*wav, 0, 1024);
-            }
-            0
-        }
-        
-        pub fn voicevox_synthesizer_create_metas_json(
-            _synthesizer: *mut VoicevoxSynthesizer,
-        ) -> *mut c_char {
-            let json = r#"[{"name":"TestSpeaker","styles":[{"name":"Normal","id":1}]}]"#;
-            let c_str = std::ffi::CString::new(json).unwrap();
-            c_str.into_raw()
-        }
-        
-        pub fn voicevox_synthesizer_load_voice_model(
-            _synthesizer: *const VoicevoxSynthesizer,
-            _model: *const VoicevoxVoiceModelFile,
-        ) -> c_int { 0 }
-        
-        pub fn voicevox_voice_model_file_open(
-            _path: *const c_char,
-            _model: *mut *mut VoicevoxVoiceModelFile,
-        ) -> c_int { 0 }
-        
-        pub fn voicevox_voice_model_file_delete(_model: *mut VoicevoxVoiceModelFile) {}
-        pub fn voicevox_synthesizer_delete(_synthesizer: *mut VoicevoxSynthesizer) {}
-        pub fn voicevox_open_jtalk_rc_delete(_open_jtalk_rc: *mut OpenJtalkRc) {}
-        pub fn voicevox_wav_free(_wav: *mut c_uchar) {}
-        pub fn voicevox_json_free(_json: *mut c_char) {}
-    }
     use libc::{c_char, c_int, c_uchar, c_uint, uintptr_t};
 
     pub const VOICEVOX_RESULT_OK: c_int = 0;
@@ -122,7 +51,6 @@ mod manual_bindings {
     pub enum VoicevoxSynthesisOptions {}
     pub enum VoicevoxVoiceModelFile {}
 
-    #[cfg(feature = "link_voicevox")]
     extern "C" {
         // Core initialization functions
         pub fn voicevox_make_default_load_onnxruntime_options(
@@ -181,9 +109,6 @@ mod manual_bindings {
         pub fn voicevox_open_jtalk_rc_delete(open_jtalk_rc: *mut OpenJtalkRc);
     }
     
-    // Use dummy implementation when not linking to actual VOICEVOX Core
-    #[cfg(not(any(feature = "link_voicevox", feature = "dynamic_voicevox")))]
-    pub use dummy_impl::*;
 }
 
 #[cfg(not(feature = "use_bindgen"))]
@@ -409,19 +334,12 @@ impl VoicevoxCore {
     pub fn new() -> Result<Self> {
         #[cfg(feature = "dynamic_voicevox")]
         {
-            println!("🚀 Using dynamic VOICEVOX Core loading...");
             let dynamic_core = DynamicVoicevoxCore::new()?;
             Self::new_with_dynamic_core(dynamic_core)
         }
-        #[cfg(all(feature = "link_voicevox", not(feature = "dynamic_voicevox")))]
+        #[cfg(not(feature = "dynamic_voicevox"))]
         {
-            println!("🚀 Using linked VOICEVOX Core...");
             Self::new_with_linked()
-        }
-        #[cfg(not(any(feature = "dynamic_voicevox", feature = "link_voicevox")))]
-        {
-            println!("🚀 Using dummy VOICEVOX Core implementation...");
-            Self::new_with_dummy()
         }
     }
     
@@ -454,7 +372,6 @@ impl VoicevoxCore {
             }
 
             // Create synthesizer with CPU-only mode for macOS
-            println!("🖥️  Initializing VOICEVOX Core in CPU-only mode...");
 
             // Create CPU-only initialization options structure
             let init_options = VoicevoxInitializeOptions {
@@ -475,7 +392,6 @@ impl VoicevoxCore {
                 return Err(anyhow!("Synthesizer creation failed: code {}", result));
             }
 
-            println!("✅ VOICEVOX Core initialization completed successfully");
 
             Ok(VoicevoxCore {
                 synthesizer,
@@ -514,7 +430,6 @@ impl VoicevoxCore {
             }
 
             // Create synthesizer with CPU-only mode for macOS
-            println!("🖥️  Initializing VOICEVOX Core in CPU-only mode...");
 
             // Create CPU-only initialization options structure
             let init_options = VoicevoxInitializeOptions {
@@ -535,7 +450,6 @@ impl VoicevoxCore {
                 return Err(anyhow!("Synthesizer creation failed: code {}", result));
             }
 
-            println!("✅ VOICEVOX Core initialization completed successfully");
 
             Ok(VoicevoxCore {
                 synthesizer,
@@ -546,25 +460,11 @@ impl VoicevoxCore {
         }
     }
     
-    #[cfg(not(any(feature = "dynamic_voicevox", feature = "link_voicevox")))]
-    fn new_with_dummy() -> Result<Self> {
-        println!("📚 Found OpenJTalk dictionary: ./dict/open_jtalk_dic_utf_8-1.11");
-        println!("🖥️  Initializing VOICEVOX Core in CPU-only mode...");
-        println!("✅ VOICEVOX Core initialization completed successfully");
-        
-        Ok(VoicevoxCore {
-            synthesizer: ptr::null_mut(),
-            _open_jtalk_rc: ptr::null_mut(),
-            #[cfg(feature = "dynamic_voicevox")]
-            _dynamic_core: None,
-        })
-    }
 
     pub fn load_all_models(&self) -> Result<()> {
         // Find the models directory
         let models_dir = find_models_dir()?;
 
-        println!("📦 Loading all VVM models from: {}", models_dir.display());
 
         // Load all VVM files
         let mut loaded_count = 0;
@@ -588,23 +488,15 @@ impl VoicevoxCore {
                                         );
                                         if load_result == VOICEVOX_RESULT_OK {
                                             loaded_count += 1;
-                                            println!("  ✅ Loaded: {}", file_name);
                                         } else if load_result == 18 {
-                                            // MODEL_ALREADY_LOADED_ERROR
-                                            println!("  ℹ️  Model {} already loaded", file_name);
+                                            // MODEL_ALREADY_LOADED_ERROR - not an error
                                             loaded_count += 1;
                                         } else {
-                                            println!(
-                                                "  ⚠️  Failed to load: {} (code: {})",
-                                                file_name, load_result
-                                            );
+                                            eprintln!("Warning: Failed to load model {}: code {}", file_name, load_result);
                                         }
                                         voicevox_voice_model_file_delete(model);
                                     } else {
-                                        println!(
-                                            "  ⚠️  Failed to open: {} (code: {})",
-                                            file_name, result
-                                        );
+                                        eprintln!("Warning: Failed to open model {}: code {}", file_name, result);
                                     }
                                 }
                             }
@@ -614,10 +506,9 @@ impl VoicevoxCore {
             }
         }
 
-        if loaded_count > 0 {
-            println!("✅ Successfully loaded {} VVM models", loaded_count);
-        } else {
-            println!("⚠️  No VVM models were loaded");
+        if loaded_count == 0 {
+            eprintln!("Warning: No VVM models were loaded");
+            return Err(anyhow!("Failed to load any models"));
         }
 
         Ok(())
@@ -725,17 +616,9 @@ impl VoicevoxCore {
     }
 
     pub fn synthesize(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
-        #[cfg(any(feature = "link_voicevox", feature = "dynamic_voicevox"))]
-        {
-            self.synthesize_real(text, style_id)
-        }
-        #[cfg(not(any(feature = "link_voicevox", feature = "dynamic_voicevox")))]
-        {
-            self.synthesize_dummy(text, style_id)
-        }
+        self.synthesize_real(text, style_id)
     }
     
-    #[cfg(any(feature = "link_voicevox", feature = "dynamic_voicevox"))]
     fn synthesize_real(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
         unsafe {
             let text_cstr = CString::new(text)?;
@@ -766,24 +649,11 @@ impl VoicevoxCore {
         }
     }
     
-    #[cfg(not(any(feature = "link_voicevox", feature = "dynamic_voicevox")))]
-    fn synthesize_dummy(&self, _text: &str, _style_id: u32) -> Result<Vec<u8>> {
-        // Return 1024 bytes of dummy WAV data
-        Ok(vec![0; 1024])
-    }
 
     pub fn get_speakers(&self) -> Result<Vec<Speaker>> {
-        #[cfg(any(feature = "link_voicevox", feature = "dynamic_voicevox"))]
-        {
-            self.get_speakers_real()
-        }
-        #[cfg(not(any(feature = "link_voicevox", feature = "dynamic_voicevox")))]
-        {
-            self.get_speakers_dummy()
-        }
+        self.get_speakers_real()
     }
     
-    #[cfg(any(feature = "link_voicevox", feature = "dynamic_voicevox"))]
     fn get_speakers_real(&self) -> Result<Vec<Speaker>> {
         unsafe {
             let metas_json = voicevox_synthesizer_create_metas_json(self.synthesizer);
@@ -800,32 +670,16 @@ impl VoicevoxCore {
         }
     }
     
-    #[cfg(not(any(feature = "link_voicevox", feature = "dynamic_voicevox")))]
-    fn get_speakers_dummy(&self) -> Result<Vec<Speaker>> {
-        // Return dummy speaker data
-        Ok(vec![Speaker {
-            name: "TestSpeaker".to_string(),
-            styles: vec![Style {
-                name: "Normal".to_string(),
-                id: 1,
-                style_type: None,
-            }],
-            version: "".to_string(),
-        }])
-    }
 }
 
 impl Drop for VoicevoxCore {
     fn drop(&mut self) {
-        #[cfg(any(feature = "link_voicevox", feature = "dynamic_voicevox"))]
-        {
-            unsafe {
-                if !self.synthesizer.is_null() {
-                    voicevox_synthesizer_delete(self.synthesizer);
-                }
-                if !self._open_jtalk_rc.is_null() {
-                    voicevox_open_jtalk_rc_delete(self._open_jtalk_rc);
-                }
+        unsafe {
+            if !self.synthesizer.is_null() {
+                voicevox_synthesizer_delete(self.synthesizer);
+            }
+            if !self._open_jtalk_rc.is_null() {
+                voicevox_open_jtalk_rc_delete(self._open_jtalk_rc);
             }
         }
     }
@@ -844,7 +698,7 @@ pub fn find_models_dir() -> Result<PathBuf> {
         }
     }
     
-    let mut additional_paths = vec![
+    let additional_paths = vec![
         
         // Priority 2: Local models directory (current working dir)
         Some(PathBuf::from("./models")),
@@ -941,7 +795,7 @@ pub fn find_openjtalk_dict() -> Result<String> {
         }
     }
     
-    let mut additional_paths = vec![
+    let additional_paths = vec![
         
         // Priority 2: Local dictionary (current working dir)
         Some(PathBuf::from("./dict")),

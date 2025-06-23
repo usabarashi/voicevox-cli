@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::process;
 // use tokio::io::{AsyncReadExt, AsyncWriteExt}; // Not needed for this implementation
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
@@ -19,24 +21,14 @@ struct DaemonState {
 }
 
 impl DaemonState {
-    async fn new(minimal_models: bool) -> Result<Self> {
-        println!("🚀 Initializing VOICEVOX Core for daemon...");
+    async fn new() -> Result<Self> {
         
         let core = VoicevoxCore::new()?;
         
-        if minimal_models {
-            println!("📦 Loading minimal models for faster startup...");
-            if let Err(e) = core.load_minimal_models() {
-                println!("⚠️  Warning: Failed to load some minimal models: {}", e);
-            }
-        } else {
-            println!("📦 Loading all available models for best user experience...");
-            if let Err(e) = core.load_all_models() {
-                println!("⚠️  Warning: Failed to load some models: {}", e);
-            }
+        // Always load all models for daemon
+        if let Err(e) = core.load_all_models() {
+            eprintln!("Warning: Failed to load some models: {}", e);
         }
-        
-        println!("✅ VOICEVOX Core daemon initialized successfully");
         
         Ok(DaemonState { core })
     }
@@ -44,28 +36,16 @@ impl DaemonState {
     async fn handle_request(&self, request: DaemonRequest) -> DaemonResponse {
         match request {
             DaemonRequest::Ping => {
-                println!("🏓 Ping received");
                 DaemonResponse::Pong
             }
             
-            DaemonRequest::Synthesize { text, style_id, options } => {
-                println!("🎤 Synthesizing: \"{}\" with style ID {} (rate: {})", 
-                    if text.chars().count() > 50 { 
-                        format!("{}...", text.chars().take(50).collect::<String>()) 
-                    } else { 
-                        text.clone() 
-                    }, 
-                    style_id, 
-                    options.rate
-                );
-                
+            DaemonRequest::Synthesize { text, style_id, options: _ } => {
                 match self.core.synthesize(&text, style_id) {
                     Ok(wav_data) => {
-                        println!("✅ Synthesis completed ({} bytes)", wav_data.len());
                         DaemonResponse::SynthesizeResult { wav_data }
                     }
                     Err(e) => {
-                        println!("❌ Synthesis failed: {}", e);
+                        eprintln!("Synthesis failed: {}", e);
                         DaemonResponse::Error {
                             message: format!("Synthesis failed: {}", e),
                         }
@@ -74,14 +54,12 @@ impl DaemonState {
             }
             
             DaemonRequest::ListSpeakers => {
-                println!("📋 Listing speakers");
                 match self.core.get_speakers() {
                     Ok(speakers) => {
-                        println!("✅ Found {} speakers", speakers.len());
                         DaemonResponse::SpeakersList { speakers }
                     }
                     Err(e) => {
-                        println!("❌ Failed to get speakers: {}", e);
+                        eprintln!("Failed to get speakers: {}", e);
                         DaemonResponse::Error {
                             message: format!("Failed to get speakers: {}", e),
                         }
@@ -196,7 +174,7 @@ async fn handle_client(stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Re
     Ok(())
 }
 
-async fn run_daemon(socket_path: PathBuf, minimal_models: bool, foreground: bool) -> Result<()> {
+async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     // Remove existing socket file if it exists
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
@@ -207,7 +185,7 @@ async fn run_daemon(socket_path: PathBuf, minimal_models: bool, foreground: bool
     println!("🎧 VOICEVOX daemon listening on: {}", socket_path.display());
     
     // Initialize daemon state
-    let state = Arc::new(Mutex::new(DaemonState::new(minimal_models).await?));
+    let state = Arc::new(Mutex::new(DaemonState::new().await?));
     
     if !foreground {
         println!("🌙 Running in background mode. Use Ctrl+C to stop gracefully.");
@@ -267,12 +245,6 @@ async fn main() -> Result<()> {
                 .value_name("PATH"),
         )
         .arg(
-            Arg::new("minimal-models")
-                .help("Load only minimal models for faster startup")
-                .long("minimal-models")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("foreground")
                 .help("Run in foreground (don't daemonize)")
                 .long("foreground")
@@ -309,18 +281,74 @@ async fn main() -> Result<()> {
         get_socket_path()
     };
     
-    let minimal_models = matches.get_flag("minimal-models");
     let foreground = matches.get_flag("foreground");
+    
+    // Check for existing daemon process
+    if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
+        eprintln!("❌ {}", e);
+        std::process::exit(1);
+    }
     
     // Display startup banner
     println!("🫛 VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
     println!("Socket: {}", socket_path.display());
-    if minimal_models {
-        println!("Mode: Minimal models (faster startup)");
-    } else {
-        println!("Mode: All models (best compatibility)");
-    }
+    println!("Mode: All models (best compatibility)");
     println!();
     
-    run_daemon(socket_path, minimal_models, foreground).await
+    run_daemon(socket_path, foreground).await
+}
+
+// Check for existing daemon and prevent duplicate processes
+async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
+    // Check if socket file exists
+    if socket_path.exists() {
+        // Try to connect to existing daemon
+        match tokio::net::UnixStream::connect(socket_path).await {
+            Ok(_) => {
+                return Err(anyhow!(
+                    "VOICEVOX daemon is already running at {}. Use 'pkill -f voicevox-daemon' to stop it.",
+                    socket_path.display()
+                ));
+            }
+            Err(_) => {
+                // Socket exists but no daemon responding, remove stale socket
+                println!("🧹 Removing stale socket file: {}", socket_path.display());
+                if let Err(e) = fs::remove_file(socket_path) {
+                    return Err(anyhow!("Failed to remove stale socket: {}", e));
+                }
+            }
+        }
+    }
+    
+    // Check for running daemon processes
+    match process::Command::new("pgrep")
+        .arg("-f")
+        .arg("voicevox-daemon")
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() && !output.stdout.is_empty() {
+                let pids = String::from_utf8_lossy(&output.stdout);
+                let current_pid = process::id();
+                let other_pids: Vec<&str> = pids
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .filter(|pid| pid.trim().parse::<u32>().unwrap_or(0) != current_pid)
+                    .collect();
+                
+                if !other_pids.is_empty() {
+                    return Err(anyhow!(
+                        "VOICEVOX daemon process(es) already running (PIDs: {}). Stop them first with 'pkill -f voicevox-daemon'",
+                        other_pids.join(", ")
+                    ));
+                }
+            }
+        }
+        Err(_) => {
+            // pgrep not available, continue anyway
+            println!("⚠️  Could not check for existing processes (pgrep not available)");
+        }
+    }
+    
+    Ok(())
 }

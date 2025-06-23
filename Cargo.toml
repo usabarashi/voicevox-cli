@@ -40,7 +40,7 @@ libloading = { version = "0.8", optional = true }
 bindgen = { version = "0.69", optional = true }
 
 [features]
-default = []
+default = ["link_voicevox"]
 use_bindgen = ["bindgen"]
 dynamic_voicevox = ["libloading"]
 link_voicevox = []

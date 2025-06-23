@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{self, Read, Cursor};
 use std::path::PathBuf;
 use std::time::Duration;
+use std::process::{Command as ProcessCommand, Stdio};
 use rodio::{Decoder, OutputStream, Sink};
 // use tokio::io::{AsyncReadExt, AsyncWriteExt}; // Not needed for this implementation
 use tokio::net::UnixStream;
@@ -67,14 +68,13 @@ fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
 async fn standalone_mode(
     text: &str,
     style_id: u32,
-    voice_description: &str,
+    _voice_description: &str,
     output_file: Option<&String>,
     quiet: bool,
-    rate: f32,
+    _rate: f32,
     _streaming: bool,
     minimal_models: bool,
 ) -> Result<()> {
-    println!("⚠️  Daemon not available, falling back to standalone mode...");
     println!("🚀 Initializing VOICEVOX Core...");
     
     let core = VoicevoxCore::new()?;
@@ -93,10 +93,6 @@ async fn standalone_mode(
     }
     
     println!("✅ VOICEVOX Core initialized successfully");
-    println!("🎭 Voice: {}", voice_description);
-    if rate != 1.0 {
-        println!("⚡ Rate: {}x", rate);
-    }
     
     // Synthesize speech
     println!("🎤 Synthesizing speech...");
@@ -132,8 +128,14 @@ async fn daemon_mode(
     // Connect to daemon with timeout
     let stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
         .await
-        .map_err(|_| anyhow!("Daemon connection timeout"))?
-        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+        .map_err(|_| {
+            println!("❌ Daemon connection timeout after 5 seconds");
+            anyhow!("Daemon connection timeout")
+        })?
+        .map_err(|e| {
+            println!("❌ Daemon connection failed: {}", e);
+            anyhow!("Failed to connect to daemon: {}", e)
+        })?;
     
     let (reader, writer) = stream.into_split();
     let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
@@ -147,39 +149,56 @@ async fn daemon_mode(
     };
     
     let request_data = bincode::serialize(&request)
-        .map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
+        .map_err(|e| {
+            println!("❌ Failed to serialize request: {}", e);
+            anyhow!("Failed to serialize request: {}", e)
+        })?;
     
     framed_writer
         .send(request_data.into())
         .await
-        .map_err(|e| anyhow!("Failed to send request: {}", e))?;
+        .map_err(|e| {
+            println!("❌ Failed to send request: {}", e);
+            anyhow!("Failed to send request: {}", e)
+        })?;
     
     // Receive response
     let response_frame = timeout(Duration::from_secs(30), framed_reader.next())
         .await
-        .map_err(|_| anyhow!("Daemon response timeout"))?
-        .ok_or_else(|| anyhow!("Connection closed by daemon"))?
-        .map_err(|e| anyhow!("Failed to receive response: {}", e))?;
+        .map_err(|_| {
+            println!("❌ Daemon response timeout after 30 seconds");
+            anyhow!("Daemon response timeout")
+        })?
+        .ok_or_else(|| {
+            println!("❌ Connection closed by daemon");
+            anyhow!("Connection closed by daemon")
+        })?
+        .map_err(|e| {
+            println!("❌ Failed to receive response: {}", e);
+            anyhow!("Failed to receive response: {}", e)
+        })?;
     
     let response: DaemonResponse = bincode::deserialize(&response_frame)
-        .map_err(|e| anyhow!("Failed to deserialize response: {}", e))?;
+        .map_err(|e| {
+            println!("❌ Failed to deserialize response: {}", e);
+            anyhow!("Failed to deserialize response: {}", e)
+        })?;
     
     match response {
         DaemonResponse::SynthesizeResult { wav_data } => {
-            println!("✅ Speech synthesis completed ({} bytes)", wav_data.len());
             
             // Handle output
             if let Some(output_file) = output_file {
                 fs::write(output_file, &wav_data)?;
-                println!("💾 Audio saved to: {}", output_file);
             }
             
             // Play audio if not quiet and no output file (like macOS say command)
             if !quiet && output_file.is_none() {
                 if let Err(e) = play_audio_from_memory(&wav_data) {
-                    eprintln!("Warning: Audio playback failed: {}", e);
+                    println!("⚠️  Audio playback failed: {}", e);
                 }
             }
+            
             
             Ok(())
         }
@@ -208,20 +227,20 @@ async fn check_daemon_status(socket_path: &PathBuf) -> Result<()> {
                 
                 match response {
                     DaemonResponse::Pong => {
-                        println!("✅ VOICEVOX daemon is running and responsive");
-                        println!("📍 Socket: {}", socket_path.display());
+                        println!("VOICEVOX daemon is running and responsive");
+                        println!("Socket: {}", socket_path.display());
                         return Ok(());
                     }
                     _ => {
-                        println!("❌ Daemon responded with unexpected message");
+                        eprintln!("Error: Daemon responded with unexpected message");
                     }
                 }
             }
         }
         Err(_) => {
-            println!("❌ VOICEVOX daemon is not running");
-            println!("📍 Expected socket: {}", socket_path.display());
-            println!("💡 Start daemon with: voicevox-daemon");
+            println!("VOICEVOX daemon is not running");
+            println!("Expected socket: {}", socket_path.display());
+            println!("Start daemon with: voicevox-daemon");
         }
     }
     Err(anyhow!("Daemon not available"))
@@ -295,6 +314,48 @@ fn get_input_text(matches: &clap::ArgMatches) -> Result<String> {
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer)?;
     Ok(buffer.trim().to_string())
+}
+
+// Start daemon process if not already running
+async fn start_daemon_if_needed() -> Result<()> {
+    // Find daemon binary
+    let daemon_path = if let Ok(current_exe) = std::env::current_exe() {
+        let mut daemon_path = current_exe.clone();
+        daemon_path.set_file_name("voicevox-daemon");
+        if daemon_path.exists() {
+            daemon_path
+        } else {
+            PathBuf::from("./target/debug/voicevox-daemon")
+        }
+    } else {
+        PathBuf::from("voicevox-daemon")
+    };
+    
+    // Start daemon process
+    let mut cmd = ProcessCommand::new(&daemon_path);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    
+    // Set environment variables for dynamic linking
+    if let Ok(current_dir) = std::env::current_dir() {
+        let lib_path = format!(
+            "{}:{}",
+            current_dir.join("voicevox_core/c_api/lib").display(),
+            current_dir.join("voicevox_core/onnxruntime/lib").display()
+        );
+        cmd.env("DYLD_LIBRARY_PATH", &lib_path);
+    }
+    
+    match cmd.spawn() {
+        Ok(_) => {
+            Ok(())
+        }
+        Err(e) => {
+            println!("❌ Failed to start daemon: {}", e);
+            Err(anyhow!("Failed to start daemon: {}", e))
+        }
+    }
 }
 
 #[tokio::main]
@@ -443,8 +504,7 @@ async fn main() -> Result<()> {
             if let Ok(_) = list_speakers_daemon(&socket_path).await {
                 return Ok(());
             }
-            println!("⚠️  Daemon not available, falling back to standalone mode...");
-        }
+                }
         
         // Fallback to standalone
         println!("🚀 Initializing VOICEVOX Core...");
@@ -506,10 +566,6 @@ async fn main() -> Result<()> {
     
     let options = SynthesizeOptions { rate, streaming };
     
-    println!("🎭 Voice: {}", voice_description);
-    if rate != 1.0 {
-        println!("⚡ Rate: {}x", rate);
-    }
     
     // Try daemon mode first (unless forced standalone)
     if !force_standalone {
@@ -519,18 +575,39 @@ async fn main() -> Result<()> {
             get_socket_path()
         };
         
-        if let Ok(_) = daemon_mode(
+        match daemon_mode(
             &text,
             style_id,
             &voice_description,
-            options,
+            options.clone(),
             output_file,
             quiet,
             &socket_path,
         )
         .await
         {
-            return Ok(());
+            Ok(_) => return Ok(()),
+            Err(_) => {
+                // Try to start daemon automatically
+                        if start_daemon_if_needed().await.is_ok() {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    
+                    // Try daemon mode again
+                    if let Ok(_) = daemon_mode(
+                        &text,
+                        style_id,
+                        &voice_description,
+                        options,
+                        output_file,
+                        quiet,
+                        &socket_path,
+                    )
+                    .await
+                    {
+                        return Ok(());
+                    }
+                }
+            }
         }
     }
     

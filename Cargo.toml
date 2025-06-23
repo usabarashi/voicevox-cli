@@ -9,7 +9,19 @@ repository = "https://github.com/gen/voicevox-cli"
 
 [[bin]]
 name = "voicevox-say"
+path = "src/bin/client.rs"
+
+[[bin]]
+name = "voicevox-daemon"
+path = "src/bin/daemon.rs"
+
+[[bin]]
+name = "voicevox-cli"
 path = "src/main.rs"
+
+[lib]
+name = "voicevox_cli"
+path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0"
@@ -18,6 +30,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rodio = { version = "0.17", features = ["wav"] }
 libc = "0.2"
+bincode = "1.3"
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+futures-util = { version = "0.3", features = ["sink"] }
+libloading = { version = "0.8", optional = true }
 
 [build-dependencies]
 bindgen = { version = "0.69", optional = true }
@@ -25,6 +42,8 @@ bindgen = { version = "0.69", optional = true }
 [features]
 default = []
 use_bindgen = ["bindgen"]
+dynamic_voicevox = ["libloading"]
+link_voicevox = []
 
 [profile.release]
 lto = true

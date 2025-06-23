@@ -1,38 +1,21 @@
 # VOICEVOX TTS
 
-Production-ready daemon-client TTS tool using VOICEVOX Core 0.16.0
+Production-ready daemon-client TTS tool using VOICEVOX Core
 
 ## Features
 
-- **Daemon-Client Architecture**: High-performance daemon process for fast voice synthesis
+- **Fast Voice Synthesis**: Background service for instant voice generation
 - **macOS say Compatible**: Silent operation like macOS say command
 - **99 Voice Styles**: 26 characters including ずんだもん (Zundamon), 四国めたん (Shikoku Metan), 春日部つむぎ (Kasukabe Tsumugi)
 - **Instant Voice Synthesis**: Pre-loaded models for immediate voice generation
 - **CPU-Only Processing**: macOS optimized (CUDA/DirectML disabled)
-- **XDG Compliant**: Standard Unix file placement rules
-- **Environment Independent**: Zero-configuration with automatic path discovery
+- **Zero Configuration**: Automatic setup with smart path discovery
 
-## Architecture
+## How It Works
 
-### Production System
-
-1. **`voicevox-daemon`**: Background process with all VVM models pre-loaded
-2. **`voicevox-say`**: Lightweight CLI client (primary interface)
-3. **`voicevox-tts`**: Legacy standalone binary (compatibility maintained)
-
-### IPC Communication
-
-- **Unix Sockets**: XDG-compliant file placement
-- **Tokio Async**: High-performance asynchronous I/O communication
-- **Bincode**: Efficient binary protocol
-
-### Socket Path Priority
-
-1. `$VOICEVOX_SOCKET_PATH` (environment variable)
-2. `$XDG_RUNTIME_DIR/voicevox/daemon.sock` (runtime)
-3. `$XDG_STATE_HOME/voicevox/daemon.sock` (state)
-4. `~/.local/state/voicevox/daemon.sock` (fallback)
-5. `$TMPDIR/voicevox-daemon-{pid}.sock` (temporary)
+The tool consists of two simple parts:
+- **`voicevox-say`**: Main command you use (like macOS `say`)
+- **`voicevox-daemon`**: Background service that loads voice models once for speed
 
 ## Installation
 
@@ -49,46 +32,16 @@ nix run . -- "こんにちは、ずんだもんなのだ"
 nix develop
 ```
 
-### Using as Nix Flake
-
-#### Add as Input
-
-```nix
-{
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    voicevox-tts.url = "github:usabarashi/voicevox-tts";
-  };
-
-  outputs = { nixpkgs, voicevox-tts, ... }: {
-    packages.aarch64-darwin.default = nixpkgs.legacyPackages.aarch64-darwin.mkShell {
-      buildInputs = [ voicevox-tts.packages.aarch64-darwin.default ];
-    };
-  };
-}
-```
-
-#### Using as Overlay
-
-```nix
-nixpkgs.overlays = [ voicevox-tts.overlays.default ];
-
-environment.systemPackages = with pkgs; [
-  voicevox-tts   # or voicevox-say
-];
-```
-
-### Cargo (Development)
+### From Source
 
 ```bash
-# Required environment variables
-export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
+# Clone and build
+git clone https://github.com/usabarashi/voicevox-tts
+cd voicevox-tts
+nix build
 
-# Production build
-cargo build --release --bin voicevox-daemon --bin voicevox-say
-
-# Development build
-cargo build --bin voicevox-daemon --bin voicevox-say
+# Or with Cargo (requires VOICEVOX Core libraries)
+cargo build --release
 ```
 
 ## Usage
@@ -113,19 +66,6 @@ echo "パイプからの入力" | voicevox-say
 voicevox-say --daemon-status
 ```
 
-### Direct Daemon Operations
-
-```bash
-# Manual daemon startup (foreground)
-voicevox-daemon --foreground
-
-# Manual daemon startup (background)
-voicevox-daemon
-
-# Stop daemon
-pkill -f voicevox-daemon
-```
-
 ### Voice Discovery
 
 ```bash
@@ -139,14 +79,11 @@ voicevox-say --list-speakers
 voicevox-say --speaker-id 3 "ずんだもん（ノーマル）"
 ```
 
-### Standalone Mode
+### Advanced Options
 
 ```bash
-# Force standalone without daemon
+# Use without daemon (slower but self-contained)
 voicevox-say --standalone "独立実行モード"
-
-# Minimal models (fast startup)
-voicevox-say --standalone --minimal-models "軽量モード"
 ```
 
 ## Voice Characters
@@ -170,52 +107,15 @@ voicevox-say --standalone --minimal-models "軽量モード"
 **Other 16 Characters**
 - 春日部つむぎ (Kasukabe Tsumugi), 雨晴はう (Amehare Hau), 波音リツ (Namine Ritsu), 玄野武宏 (Kurono Takehiro), 白上虎太郎 (Shiragami Kotaro), etc.
 
-## Technical Specifications
+## System Requirements
 
-### Core Technology
+- **Platform**: macOS (Apple Silicon or Intel)
+- **Audio Format**: WAV output
+- **Performance**: Near-instant voice synthesis after initial setup
 
-- **VOICEVOX Core**: 0.16.0 (MIT License)
-- **Runtime**: CPU-only processing on macOS
-- **Audio Format**: WAV (16bit, 24kHz)
-- **Language**: Rust with async/await
-- **Communication**: Unix sockets + tokio
-- **Platform**: macOS (aarch64/x86_64)
+## Contributing
 
-### Performance
-
-- **Daemon Startup Time**: ~3 seconds (all models loaded)
-- **Voice Synthesis Time**: ~100ms (daemon mode)
-- **Memory Usage**: ~500MB (all models loaded)
-- **File Size**: ~20MB (minimal configuration)
-
-## Development
-
-### Development Environment
-
-```bash
-# Nix development environment
-nix develop
-
-# Check dependencies
-cargo build --bin voicevox-daemon --bin voicevox-say
-
-# Run tests
-cargo test
-
-# Functional test
-./target/debug/voicevox-daemon --foreground &
-./target/debug/voicevox-say "動作テスト"
-```
-
-### Architecture Details
-
-**Important Files**:
-- `src/lib.rs` - Shared library, VoicevoxCore, IPC protocols
-- `src/bin/daemon.rs` - Background daemon, model management
-- `src/bin/client.rs` - Lightweight CLI client, primary interface
-- `voicevox_core/` - VOICEVOX Core runtime libraries
-- `models/*.vvm` - Voice model files (19 models)
-- `dict/` - OpenJTalk dictionary
+Issues and Pull Requests are welcome! See CLAUDE.md for development details.
 
 ## License
 
@@ -248,7 +148,6 @@ Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
 - [VOICEVOX](https://voicevox.hiroshiba.jp/)
 - [VOICEVOX Core](https://github.com/VOICEVOX/voicevox_core)
 - [Nix](https://nixos.org/)
-- [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html)
 
 ---
 

@@ -194,10 +194,17 @@ pkill -f voicevox-daemon
 - **Duplicate Prevention**: Multiple daemon startup protection
 
 ### IPC Protocol
-- **Unix Sockets**: `/Users/{user}/.voicevox/daemon.sock` default path
+- **Unix Sockets**: XDG-compliant socket paths with automatic directory creation
 - **Tokio Async**: Full async/await support with length-delimited frames
 - **Bincode Serialization**: Efficient binary protocol for requests/responses
 - **Automatic Fallback**: Client automatically starts daemon if needed
+
+### Socket Path Priority (XDG Base Directory Specification)
+1. `$VOICEVOX_SOCKET_PATH` (environment override)
+2. `$XDG_RUNTIME_DIR/voicevox/daemon.sock` (runtime files)
+3. `$XDG_STATE_HOME/voicevox/daemon.sock` (persistent state)
+4. `~/.local/state/voicevox/daemon.sock` (XDG fallback)
+5. `$TMPDIR/voicevox-daemon-{pid}.sock` (temporary)
 
 ### Voice System
 - **99 Voice Styles**: 26 characters with multiple emotional variants

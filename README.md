@@ -1,34 +1,55 @@
-# VOICEVOX CLI
+# VOICEVOX TTS
 
-VOICEVOX Core 0.16.0 を使用した macOS 向け CLI ツール（CPU 専用処理）
+VOICEVOX Core 0.16.0 を使用した production-ready daemon-client 型 TTS ツール
 
-## 🫛 特徴
+## 特徴
 
-- ✅ **macOS CPU 専用**: CUDA/DirectML を無効化、CPU のみで動作
-- ✅ **say コマンド互換**: macOS の say コマンドと同様の使い方
-- ✅ **全キャラクター対応**: ずんだもん、四国めたん、春日部つむぎなど全スタイル
-- ✅ **ストリーミング再生**: ファイル出力なしでリアルタイム音声再生
-- ✅ **名前・ID 両対応**: 音声名での指定と数値 ID での指定の両方に対応
-- ✅ **Nix パッケージ**: 再現可能なビルドとデプロイ
+- **Daemon-Client アーキテクチャ**: 高速な音声合成のための daemon プロセス
+- **macOS say 互換**: macOS の say コマンドと同様の silent 動作
+- **99 音声スタイル**: ずんだもん、四国めたん、春日部つむぎなど 26 キャラクター
+- **即座の音声合成**: 事前読み込み済みモデルによる瞬時の音声生成
+- **CPU 専用処理**: macOS 向け最適化（CUDA/DirectML 無効）
+- **XDG 準拠**: 標準的な Unix ファイル配置規則
+- **環境独立**: 自動パス発見による設定不要
 
-## 📦 インストール
+## アーキテクチャ
 
-### Nix を使用（推奨）
+### Production システム
+
+1. **`voicevox-daemon`**: 全 VVM モデル事前読み込み済み background プロセス
+2. **`voicevox-say`**: 軽量 CLI client（primary interface）
+3. **`voicevox-tts`**: Legacy standalone binary（互換性維持）
+
+### IPC 通信
+
+- **Unix Sockets**: XDG 準拠ファイル配置
+- **Tokio Async**: 非同期 I/O による高性能通信
+- **Bincode**: 効率的なバイナリ protocol
+
+### Socket パス優先順位
+
+1. `$VOICEVOX_SOCKET_PATH` (環境変数)
+2. `$XDG_RUNTIME_DIR/voicevox/daemon.sock` (runtime)
+3. `$XDG_STATE_HOME/voicevox/daemon.sock` (state)  
+4. `~/.local/state/voicevox/daemon.sock` (fallback)
+5. `$TMPDIR/voicevox-daemon-{pid}.sock` (temporary)
+
+## インストール
+
+### Nix（推奨）
 
 ```bash
-# ビルド
+# ビルドとインストール
 nix build
 
-# 実行
-./result/bin/voicevox-say --help
-
 # 直接実行
-nix run . -- --help
+nix run . -- "こんにちは、ずんだもんなのだ"
+
+# 開発環境
+nix develop
 ```
 
-### 他の Nix Flake から使用
-
-このパッケージは他の Nix Flake から input として使用できるのだ！
+### Nix Flake として使用
 
 #### Input として追加
 
@@ -36,138 +57,138 @@ nix run . -- --help
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    voicevox-cli.url = "github:your-username/voicevox-cli";
+    voicevox-tts.url = "github:usabarashi/voicevox-tts";
   };
 
-  outputs = { self, nixpkgs, voicevox-cli }:
-    # 使用例は以下を参照
+  outputs = { nixpkgs, voicevox-tts, ... }: {
+    packages.aarch64-darwin.default = nixpkgs.legacyPackages.aarch64-darwin.mkShell {
+      buildInputs = [ voicevox-tts.packages.aarch64-darwin.default ];
+    };
+  };
 }
-```
-
-#### パッケージとして使用
-
-```nix
-# パッケージを直接使用
-environment.systemPackages = [
-  voicevox-cli.packages.${system}.default
-];
-
-# または名前付きで
-environment.systemPackages = [
-  voicevox-cli.packages.${system}.voicevox-cli
-];
 ```
 
 #### Overlay として使用
 
 ```nix
-# overlay を適用
-nixpkgs.overlays = [ voicevox-cli.overlays.default ];
+nixpkgs.overlays = [ voicevox-tts.overlays.default ];
 
-# その後、通常のパッケージとして利用可能
 environment.systemPackages = with pkgs; [
-  voicevox-cli
-  voicevox-say  # alias
+  voicevox-tts   # or voicevox-say
 ];
 ```
 
-#### App として実行
-
-```nix
-# 他の flake から直接実行
-nix run github:your-username/voicevox-cli -- "こんにちはなのだ！"
-```
-
-#### ライブラリ関数として使用
-
-```nix
-let
-  # カスタム nixpkgs でビルド
-  voicevox-package = voicevox-cli.lib.${system}.mkVoicevoxCli pkgs;
-in
-{
-  environment.systemPackages = [ voicevox-package ];
-}
-```
-
-### Cargo を使用
+### Cargo（Development）
 
 ```bash
-# 開発環境
-nix develop
+# 必要な環境変数設定
+export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
 
-# ビルド
-cargo build --release
+# Production build
+cargo build --release --bin voicevox-daemon --bin voicevox-say
 
-# 実行
-./target/release/voicevox-cli --help
+# Development build
+cargo build --bin voicevox-daemon --bin voicevox-say
 ```
 
-## 🎯 使い方
+## 使い方
 
-### 基本的な使い方（say コマンドスタイル）
+### Daemon-Client モード（推奨）
 
 ```bash
-# テキスト指定
-voicevox-cli "こんにちは、ずんだもんなのだ！"
+# Daemon 自動起動による音声合成
+voicevox-say "こんにちは、ずんだもんなのだ"
 
 # 音声指定
-voicevox-cli -v zundamon-amama "あまあまモードなのだ♪"
-voicevox-cli -v zundamon-tsuyo "強気モードなのだ！"
+voicevox-say -v zundamon-amama "あまあまモードなのだ♪"
+voicevox-say -v metan-tsundere "ツンツンめたんです"
 
-# ファイルから読み込み
-voicevox-cli -f input.txt -o output.wav
+# ファイル保存
+voicevox-say -o output.wav "保存するテキスト"
 
 # 標準入力から
-echo "テキスト" | voicevox-cli
+echo "パイプからの入力" | voicevox-say
+
+# Daemon 状況確認
+voicevox-say --daemon-status
 ```
 
-### 音声一覧表示
+### Daemon 直接操作
 
 ```bash
-# 利用可能な音声を表示
-voicevox-cli -v "?"
+# Daemon 手動起動（foreground）
+voicevox-daemon --foreground
 
-# スピーカー一覧（詳細）
-voicevox-cli --list-speakers
+# Daemon 手動起動（background）
+voicevox-daemon
+
+# Daemon 停止
+pkill -f voicevox-daemon
 ```
 
-### ストリーミング再生
+### 音声発見
 
 ```bash
-# リアルタイム再生（ファイル出力なし）
-voicevox-cli --streaming "長いテキストもリアルタイムで再生するのだ！"
+# 音声一覧表示
+voicevox-say -v "?"
+
+# 詳細スピーカー情報
+voicevox-say --list-speakers
+
+# Speaker ID 直接指定
+voicevox-say --speaker-id 3 "ずんだもん（ノーマル）"
 ```
 
-## 🔧 技術仕様
+### Standalone モード
 
-- **VOICEVOX Core**: 0.16.0
-- **プラットフォーム**: macOS (aarch64/x86_64)
-- **処理モード**: CPU専用（GPU無効化）
-- **音声形式**: WAV (16bit, 24kHz)
-- **言語**: Rust
-- **ビルドシステム**: Nix + Cargo
+```bash
+# Daemon 使用しない強制 standalone
+voicevox-say --standalone "独立実行モード"
 
-## 🔬 CPU 専用処理について
-
-このツールは macOS 環境において以下の理由で CPU 専用処理をハードコーディングしています：
-
-- macOS では CUDA サポートがない
-- DirectML は Windows 専用
-- Apple Silicon の高性能 CPU により十分な性能を実現
-
-```rust
-// macOS では強制的に CPU モードで初期化
-#[cfg(target_os = "macos")]
-{
-    let init_options = voicevox_initialize_options_new(
-        VoicevoxAccelerationMode::Cpu,
-        cpu_threads
-    );
-}
+# Minimal models（高速起動）
+voicevox-say --standalone --minimal-models "軽量モード"
 ```
 
-## 🚀 開発
+## 音声キャラクター
+
+### 主要キャラクター
+
+**ずんだもん（8種類）**
+- `zundamon` / `--speaker-id 3` - ノーマル
+- `zundamon-amama` / `--speaker-id 1` - あまあま
+- `zundamon-tsundere` / `--speaker-id 7` - ツンツン
+- `zundamon-sexy` / `--speaker-id 5` - セクシー
+- `zundamon-whisper` / `--speaker-id 22` - ささやき
+- その他3種類の感情表現
+
+**四国めたん（6種類）**
+- `metan` / `--speaker-id 2` - ノーマル
+- `metan-amama` / `--speaker-id 0` - あまあま
+- `metan-tsundere` / `--speaker-id 6` - ツンツン
+- その他3種類の感情表現
+
+**その他 16キャラクター**
+- 春日部つむぎ、雨晴はう、波音リツ、玄野武宏、白上虎太郎等
+
+## 技術仕様
+
+### Core 技術
+
+- **VOICEVOX Core**: 0.16.0 (MIT License)
+- **Runtime**: CPU-only processing on macOS
+- **Audio Format**: WAV (16bit, 24kHz)
+- **Language**: Rust with async/await
+- **Communication**: Unix sockets + tokio
+- **Platform**: macOS (aarch64/x86_64)
+
+### パフォーマンス
+
+- **Daemon 起動時間**: ~3秒（全モデル読み込み）
+- **音声合成時間**: ~100ms（daemon モード）
+- **メモリ使用量**: ~500MB（全モデル読み込み時）
+- **ファイルサイズ**: ~20MB（最小構成）
+
+## 開発
 
 ### 開発環境
 
@@ -175,49 +196,71 @@ voicevox-cli --streaming "長いテキストもリアルタイムで再生する
 # Nix 開発環境
 nix develop
 
-# Rust ツールチェーンが利用可能
-cargo --version
-rustc --version
-```
+# 依存関係確認
+cargo build --bin voicevox-daemon --bin voicevox-say
 
-### ビルド
-
-```bash
-# デバッグビルド
-cargo build
-
-# リリースビルド
-cargo build --release
-
-# Nix ビルド
-nix build
-```
-
-### テスト
-
-```bash
-# ユニットテスト
+# テスト実行
 cargo test
 
-# 統合テスト（実際の音声合成）
-cargo run -- --list-speakers
-cargo run -- "テストメッセージ"
+# 実動作確認
+./target/debug/voicevox-daemon --foreground &
+./target/debug/voicevox-say "動作テスト"
 ```
 
-## 📄 ライセンス
+### アーキテクチャ詳細
 
-MIT License
+**重要ファイル**:
+- `src/lib.rs` - 共有ライブラリ、VoicevoxCore、IPC プロトコル
+- `src/bin/daemon.rs` - バックグラウンド daemon、モデル管理  
+- `src/bin/client.rs` - 軽量 CLI client、primary interface
+- `voicevox_core/` - VOICEVOX Core runtime ライブラリ
+- `models/*.vvm` - 音声モデルファイル（19 models）
+- `dict/` - OpenJTalk 辞書
 
-## 🤝 貢献
+## ライセンス
 
-Issues や Pull Requests は歓迎です！
+### CLI ツール
 
-## 🔗 関連リンク
+MIT License OR Apache License 2.0
+
+### VOICEVOX Core
+
+MIT License  
+Copyright (c) 2021 Hiroshiba Kazuyuki
+
+### ONNX Runtime
+
+Custom License Terms  
+Commercial use allowed with attribution required  
+See: `voicevox_core/onnxruntime/TERMS.txt`
+
+### 使用時の注意
+
+**音声生成時のクレジット表記が必要です**:
+- 「VOICEVOX を使用して生成」
+- キャラクター別の利用規約に従ってください
+- 商用利用時は個別ライセンスを確認してください
+
+詳細: [VOICEVOX 利用規約](https://voicevox.hiroshiba.jp/term)
+
+## 貢献
+
+Issues や Pull Requests を歓迎します！
+
+### 開発ガイドライン
+
+- 実装前に Issue で相談推奨
+- Rust 標準スタイル（rustfmt）準拠
+- 全てのテストが通ることを確認
+- Commit message は英語で簡潔に
+
+## 関連リンク
 
 - [VOICEVOX](https://voicevox.hiroshiba.jp/)
 - [VOICEVOX Core](https://github.com/VOICEVOX/voicevox_core)
 - [Nix](https://nixos.org/)
+- [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html)
 
 ---
 
-🫛 ずんだもんと一緒に楽しい TTS ライフを送るのだ！
+ずんだもんと一緒に楽しい TTS ライフを送るのだ！

@@ -1042,28 +1042,45 @@ pub fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
 
 // Socket path for IPC
 pub fn get_socket_path() -> PathBuf {
-    // Priority 1: XDG runtime directory (Linux standard)
-    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(runtime_dir).join("voicevox-daemon.sock");
+    // Priority 1: Environment variable override
+    if let Ok(custom_path) = std::env::var("VOICEVOX_SOCKET_PATH") {
+        return PathBuf::from(custom_path);
     }
     
-    // Priority 2: User's home directory
-    if let Ok(home_dir) = std::env::var("HOME") {
-        let user_socket = PathBuf::from(home_dir).join(".voicevox/daemon.sock");
-        // Create directory if it doesn't exist
-        if let Some(parent) = user_socket.parent() {
+    // Priority 2: XDG_RUNTIME_DIR (ideal for runtime files like sockets)
+    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        let socket_path = PathBuf::from(runtime_dir).join("voicevox/daemon.sock");
+        if let Some(parent) = socket_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        return user_socket;
+        return socket_path;
     }
     
-    // Priority 3: System temp directory with user-specific name
+    // Priority 3: XDG_STATE_HOME (for persistent state files)
+    if let Ok(state_dir) = std::env::var("XDG_STATE_HOME") {
+        let socket_path = PathBuf::from(state_dir).join("voicevox/daemon.sock");
+        if let Some(parent) = socket_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        return socket_path;
+    }
+    
+    // Priority 4: XDG fallback - ~/.local/state/voicevox/
+    if let Ok(home_dir) = std::env::var("HOME") {
+        let socket_path = PathBuf::from(home_dir).join(".local/state/voicevox/daemon.sock");
+        if let Some(parent) = socket_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        return socket_path;
+    }
+    
+    // Priority 5: System temp directory with user-specific name
     if let Ok(temp_dir) = std::env::var("TMPDIR") {
         let user_id = std::process::id();
         return PathBuf::from(temp_dir).join(format!("voicevox-daemon-{}.sock", user_id));
     }
     
-    // Priority 4: Platform-specific fallback
+    // Priority 6: Platform-specific fallback
     let user_id = std::process::id();
     #[cfg(target_os = "macos")]
     {

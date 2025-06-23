@@ -68,14 +68,14 @@ impl DaemonState {
             }
             
             DaemonRequest::LoadModel { model_name } => {
-                println!("📦 Loading model: {}", model_name);
+                println!("Loading model: {}", model_name);
                 match self.core.load_specific_model(&model_name) {
                     Ok(_) => {
-                        println!("✅ Model loaded successfully: {}", model_name);
+                        println!("Model loaded successfully: {}", model_name);
                         DaemonResponse::Success
                     }
                     Err(e) => {
-                        println!("❌ Failed to load model {}: {}", model_name, e);
+                        println!("Failed to load model {}: {}", model_name, e);
                         DaemonResponse::Error {
                             message: format!("Failed to load model {}: {}", model_name, e),
                         }
@@ -84,7 +84,7 @@ impl DaemonState {
             }
             
             DaemonRequest::GetVoiceMapping => {
-                println!("🎭 Getting voice mapping");
+                println!("Getting voice mapping");
                 let mapping = get_voice_mapping();
                 let mapping_strings: std::collections::HashMap<String, (u32, String)> = mapping
                     .into_iter()
@@ -96,17 +96,17 @@ impl DaemonState {
             }
             
             DaemonRequest::ResolveVoiceName { voice_name } => {
-                println!("🔍 Resolving voice name: {}", voice_name);
+                println!("Resolving voice name: {}", voice_name);
                 match resolve_voice_name(&voice_name) {
                     Ok((style_id, description)) => {
-                        println!("✅ Resolved to style ID {} ({})", style_id, description);
+                        println!("Resolved to style ID {} ({})", style_id, description);
                         DaemonResponse::VoiceResolution {
                             style_id,
                             description,
                         }
                     }
                     Err(e) => {
-                        println!("❌ Failed to resolve voice name {}: {}", voice_name, e);
+                        println!("Failed to resolve voice name {}: {}", voice_name, e);
                         DaemonResponse::Error {
                             message: format!("Failed to resolve voice name {}: {}", voice_name, e),
                         }
@@ -122,7 +122,7 @@ async fn handle_client(stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Re
     let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
     let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
     
-    println!("🔗 New client connected");
+    println!("New client connected");
     
     while let Some(frame) = framed_reader.next().await {
         match frame {
@@ -140,18 +140,18 @@ async fn handle_client(stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Re
                         match bincode::serialize(&response) {
                             Ok(response_data) => {
                                 if let Err(e) = framed_writer.send(response_data.into()).await {
-                                    println!("❌ Failed to send response: {}", e);
+                                    println!("Failed to send response: {}", e);
                                     break;
                                 }
                             }
                             Err(e) => {
-                                println!("❌ Failed to serialize response: {}", e);
+                                println!("Failed to serialize response: {}", e);
                                 break;
                             }
                         }
                     }
                     Err(e) => {
-                        println!("❌ Failed to deserialize request: {}", e);
+                        println!("Failed to deserialize request: {}", e);
                         let error_response = DaemonResponse::Error {
                             message: format!("Failed to deserialize request: {}", e),
                         };
@@ -164,13 +164,13 @@ async fn handle_client(stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Re
                 }
             }
             Err(e) => {
-                println!("❌ Frame error: {}", e);
+                println!("Frame error: {}", e);
                 break;
             }
         }
     }
     
-    println!("🔌 Client disconnected");
+    println!("Client disconnected");
     Ok(())
 }
 
@@ -182,19 +182,20 @@ async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     
     // Create Unix socket listener
     let listener = UnixListener::bind(&socket_path)?;
-    println!("🎧 VOICEVOX daemon listening on: {}", socket_path.display());
+    println!("VOICEVOX daemon started successfully");
+    println!("Listening on: {}", socket_path.display());
     
     // Initialize daemon state
     let state = Arc::new(Mutex::new(DaemonState::new().await?));
     
     if !foreground {
-        println!("🌙 Running in background mode. Use Ctrl+C to stop gracefully.");
+        println!("Running in background mode. Use Ctrl+C to stop gracefully.");
     }
     
     // Set up graceful shutdown
     let shutdown = async {
         signal::ctrl_c().await.expect("Failed to listen for ctrl-c");
-        println!("\n🛑 Received shutdown signal, cleaning up...");
+        println!("\nShutting down daemon...");
     };
     
     // Accept connections
@@ -205,12 +206,12 @@ async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
                     let state_clone = Arc::clone(&state);
                     tokio::spawn(async move {
                         if let Err(e) = handle_client(stream, state_clone).await {
-                            println!("❌ Client handler error: {}", e);
+                            println!("Client handler error: {}", e);
                         }
                     });
                 }
                 Err(e) => {
-                    println!("❌ Failed to accept connection: {}", e);
+                    println!("Failed to accept connection: {}", e);
                 }
             }
         }
@@ -225,10 +226,9 @@ async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     // Cleanup
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
-        println!("🧹 Cleaned up socket file");
     }
     
-    println!("👋 VOICEVOX daemon stopped");
+    println!("VOICEVOX daemon stopped");
     Ok(())
 }
 
@@ -236,7 +236,7 @@ async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
 async fn main() -> Result<()> {
     let app = Command::new("voicevox-daemon")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("🫛 VOICEVOX Daemon - Background TTS service with pre-loaded models")
+        .about("VOICEVOX Daemon - Background TTS service with pre-loaded models")
         .arg(
             Arg::new("socket-path")
                 .help("Specify custom Unix socket path")
@@ -285,15 +285,15 @@ async fn main() -> Result<()> {
     
     // Check for existing daemon process
     if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
-        eprintln!("❌ {}", e);
+        eprintln!("{}", e);
         std::process::exit(1);
     }
     
     // Display startup banner
-    println!("🫛 VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
+    println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
+    println!("Starting daemon...");
     println!("Socket: {}", socket_path.display());
     println!("Mode: All models (best compatibility)");
-    println!();
     
     run_daemon(socket_path, foreground).await
 }
@@ -312,7 +312,7 @@ async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
             }
             Err(_) => {
                 // Socket exists but no daemon responding, remove stale socket
-                println!("🧹 Removing stale socket file: {}", socket_path.display());
+                println!("Removing stale socket file: {}", socket_path.display());
                 if let Err(e) = fs::remove_file(socket_path) {
                     return Err(anyhow!("Failed to remove stale socket: {}", e));
                 }
@@ -346,7 +346,7 @@ async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
         }
         Err(_) => {
             // pgrep not available, continue anyway
-            println!("⚠️  Could not check for existing processes (pgrep not available)");
+            println!("Could not check for existing processes (pgrep not available)");
         }
     }
     

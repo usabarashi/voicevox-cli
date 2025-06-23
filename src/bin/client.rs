@@ -75,34 +75,34 @@ async fn standalone_mode(
     _streaming: bool,
     minimal_models: bool,
 ) -> Result<()> {
-    println!("🚀 Initializing VOICEVOX Core...");
+    println!("Initializing VOICEVOX Core...");
     
     let core = VoicevoxCore::new()?;
     
     // Load models
     if minimal_models {
-        println!("📦 Loading minimal models for faster startup...");
+        println!("Loading minimal models for faster startup...");
         if let Err(e) = core.load_minimal_models() {
-            println!("⚠️  Warning: Failed to load some minimal models: {}", e);
+            println!("Warning: Failed to load some minimal models: {}", e);
         }
     } else {
-        println!("📦 Loading all available models...");
+        println!("Loading all available models...");
         if let Err(e) = core.load_all_models() {
-            println!("⚠️  Warning: Failed to load some models: {}", e);
+            println!("Warning: Failed to load some models: {}", e);
         }
     }
     
-    println!("✅ VOICEVOX Core initialized successfully");
+    println!("VOICEVOX Core initialized successfully");
     
     // Synthesize speech
-    println!("🎤 Synthesizing speech...");
+    println!("Synthesizing speech...");
     let wav_data = core.synthesize(text, style_id)?;
-    println!("✅ Speech synthesis completed ({} bytes)", wav_data.len());
+    println!("Speech synthesis completed ({} bytes)", wav_data.len());
     
     // Handle output
     if let Some(output_file) = output_file {
         fs::write(output_file, &wav_data)?;
-        println!("💾 Audio saved to: {}", output_file);
+        println!("Audio saved to: {}", output_file);
     }
     
     // Play audio if not quiet and no output file (like macOS say command)
@@ -129,11 +129,11 @@ async fn daemon_mode(
     let stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
         .await
         .map_err(|_| {
-            println!("❌ Daemon connection timeout after 5 seconds");
+            println!("Daemon connection timeout after 5 seconds");
             anyhow!("Daemon connection timeout")
         })?
         .map_err(|e| {
-            println!("❌ Daemon connection failed: {}", e);
+            println!("Daemon connection failed: {}", e);
             anyhow!("Failed to connect to daemon: {}", e)
         })?;
     
@@ -150,7 +150,7 @@ async fn daemon_mode(
     
     let request_data = bincode::serialize(&request)
         .map_err(|e| {
-            println!("❌ Failed to serialize request: {}", e);
+            println!("Failed to serialize request: {}", e);
             anyhow!("Failed to serialize request: {}", e)
         })?;
     
@@ -158,7 +158,7 @@ async fn daemon_mode(
         .send(request_data.into())
         .await
         .map_err(|e| {
-            println!("❌ Failed to send request: {}", e);
+            println!("Failed to send request: {}", e);
             anyhow!("Failed to send request: {}", e)
         })?;
     
@@ -166,21 +166,21 @@ async fn daemon_mode(
     let response_frame = timeout(Duration::from_secs(30), framed_reader.next())
         .await
         .map_err(|_| {
-            println!("❌ Daemon response timeout after 30 seconds");
+            println!("Daemon response timeout after 30 seconds");
             anyhow!("Daemon response timeout")
         })?
         .ok_or_else(|| {
-            println!("❌ Connection closed by daemon");
+            println!("Connection closed by daemon");
             anyhow!("Connection closed by daemon")
         })?
         .map_err(|e| {
-            println!("❌ Failed to receive response: {}", e);
+            println!("Failed to receive response: {}", e);
             anyhow!("Failed to receive response: {}", e)
         })?;
     
     let response: DaemonResponse = bincode::deserialize(&response_frame)
         .map_err(|e| {
-            println!("❌ Failed to deserialize response: {}", e);
+            println!("Failed to deserialize response: {}", e);
             anyhow!("Failed to deserialize response: {}", e)
         })?;
     
@@ -195,7 +195,7 @@ async fn daemon_mode(
             // Play audio if not quiet and no output file (like macOS say command)
             if !quiet && output_file.is_none() {
                 if let Err(e) = play_audio_from_memory(&wav_data) {
-                    println!("⚠️  Audio playback failed: {}", e);
+                    println!("Audio playback failed: {}", e);
                 }
             }
             
@@ -265,11 +265,11 @@ async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
         
         match response {
             DaemonResponse::SpeakersList { speakers } => {
-                println!("📋 All available speakers and styles from daemon:");
+                println!("All available speakers and styles from daemon:");
                 for speaker in &speakers {
-                    println!("  👤 {}", speaker.name);
+                    println!("  {}", speaker.name);
                     for style in &speaker.styles {
-                        println!("    🎭 {} (ID: {})", style.name, style.id);
+                        println!("    {} (ID: {})", style.name, style.id);
                         if let Some(style_type) = &style.style_type {
                             println!("        Type: {}", style_type);
                         }
@@ -352,7 +352,7 @@ async fn start_daemon_if_needed() -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            println!("❌ Failed to start daemon: {}", e);
+            println!("Failed to start daemon: {}", e);
             Err(anyhow!("Failed to start daemon: {}", e))
         }
     }
@@ -507,25 +507,25 @@ async fn main() -> Result<()> {
                 }
         
         // Fallback to standalone
-        println!("🚀 Initializing VOICEVOX Core...");
+        println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
         
         if matches.get_flag("minimal-models") {
             if let Err(e) = core.load_minimal_models() {
-                println!("⚠️  Warning: Failed to load some minimal models: {}", e);
+                println!("Warning: Failed to load some minimal models: {}", e);
             }
         } else {
             if let Err(e) = core.load_all_models() {
-                println!("⚠️  Warning: Failed to load some models: {}", e);
+                println!("Warning: Failed to load some models: {}", e);
             }
         }
         
-        println!("📋 All available speakers and styles from loaded models:");
+        println!("All available speakers and styles from loaded models:");
         let speakers = core.get_speakers()?;
         for speaker in &speakers {
-            println!("  👤 {}", speaker.name);
+            println!("  {}", speaker.name);
             for style in &speaker.styles {
-                println!("    🎭 {} (ID: {})", style.name, style.id);
+                println!("    {} (ID: {})", style.name, style.id);
                 if let Some(style_type) = &style.style_type {
                     println!("        Type: {}", style_type);
                 }

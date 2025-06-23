@@ -20,12 +20,15 @@ result-*
 # Logs
 *.log
 
-# Runtime
+# Runtime (downloaded at build time)
 /voicevox_models/
 /dict/
 /models/
 *.wav
 *.vvm
+
+# VOICEVOX Core binaries (downloaded at build time)
+/voicevox_core/
 
 # Build artifacts
 .cargo/

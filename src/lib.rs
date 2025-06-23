@@ -200,23 +200,23 @@ impl DynamicVoicevoxCore {
         let voicevox_lib = voicevox_lib_paths
             .iter()
             .find_map(|path| {
-                println!("🔍 Trying to load VOICEVOX Core library: {}", path.display());
+                println!("Trying to load VOICEVOX Core library: {}", path.display());
                 unsafe { Library::new(path).ok() }
             })
             .ok_or_else(|| anyhow!("Failed to load VOICEVOX Core library from any path"))?;
         
-        println!("✅ VOICEVOX Core library loaded successfully");
+        println!("VOICEVOX Core library loaded successfully");
         
         // Load ONNX Runtime library
         let onnxruntime_lib = onnxruntime_lib_paths
             .iter()
             .find_map(|path| {
-                println!("🔍 Trying to load ONNX Runtime library: {}", path.display());
+                println!("Trying to load ONNX Runtime library: {}", path.display());
                 unsafe { Library::new(path).ok() }
             })
             .ok_or_else(|| anyhow!("Failed to load ONNX Runtime library from any path"))?;
         
-        println!("✅ ONNX Runtime library loaded successfully");
+        println!("ONNX Runtime library loaded successfully");
         
         // Load function symbols
         let core = unsafe {
@@ -240,7 +240,7 @@ impl DynamicVoicevoxCore {
             }
         };
         
-        println!("✅ All VOICEVOX Core functions loaded successfully");
+        println!("All VOICEVOX Core functions loaded successfully");
         Ok(core)
     }
 }
@@ -521,7 +521,7 @@ impl VoicevoxCore {
 
         let models_dir = find_models_dir()?;
 
-        println!("📦 Loading minimal VVM models for faster startup...");
+        println!("Loading minimal VVM models for faster startup...");
 
         let mut loaded_count = 0;
         for model_name in &default_models {
@@ -538,33 +538,33 @@ impl VoicevoxCore {
                                     voicevox_synthesizer_load_voice_model(self.synthesizer, model);
                                 if load_result == VOICEVOX_RESULT_OK {
                                     loaded_count += 1;
-                                    println!("  ✅ Loaded: {}", model_name);
+                                    println!("  Loaded: {}", model_name);
                                 } else if load_result == 18 {
                                     // MODEL_ALREADY_LOADED_ERROR
                                     println!("  ℹ️  Model {} already loaded", model_name);
                                     loaded_count += 1;
                                 } else {
                                     println!(
-                                        "  ⚠️  Failed to load: {} (code: {})",
+                                        "  Failed to load: {} (code: {})",
                                         model_name, load_result
                                     );
                                 }
                                 voicevox_voice_model_file_delete(model);
                             } else {
-                                println!("  ⚠️  Failed to open: {} (code: {})", model_name, result);
+                                println!("  Failed to open: {} (code: {})", model_name, result);
                             }
                         }
                     }
                 }
             } else {
-                println!("  ⚠️  Model not found: {}", model_name);
+                println!("  Model not found: {}", model_name);
             }
         }
 
         if loaded_count > 0 {
-            println!("✅ Successfully loaded {} minimal VVM models", loaded_count);
+            println!("Successfully loaded {} minimal VVM models", loaded_count);
         } else {
-            println!("⚠️  No minimal VVM models were loaded");
+            println!("No minimal VVM models were loaded");
         }
 
         Ok(())
@@ -578,7 +578,7 @@ impl VoicevoxCore {
             return Err(anyhow!("Model not found: {}.vvm", model_name));
         }
 
-        println!("📦 Loading model: {}.vvm", model_name);
+        println!("Loading model: {}.vvm", model_name);
 
         if let Some(path_str) = model_path.to_str() {
             if let Ok(path_cstr) = CString::new(path_str) {
@@ -589,7 +589,7 @@ impl VoicevoxCore {
                         let load_result =
                             voicevox_synthesizer_load_voice_model(self.synthesizer, model);
                         if load_result == VOICEVOX_RESULT_OK {
-                            println!("  ✅ Successfully loaded: {}.vvm", model_name);
+                            println!("  Successfully loaded: {}.vvm", model_name);
                         } else if load_result == 18 {
                             // MODEL_ALREADY_LOADED_ERROR
                             println!("  ℹ️  Model {}.vvm already loaded", model_name);
@@ -747,7 +747,7 @@ pub fn find_models_dir() -> Result<PathBuf> {
 
     for path_option in search_paths.into_iter() {
         if path_option.exists() && is_valid_models_directory(&path_option) {
-            println!("📁 Found models directory: {}", path_option.display());
+            println!("Found models directory: {}", path_option.display());
             return Ok(path_option);
         }
     }
@@ -856,7 +856,7 @@ pub fn find_openjtalk_dict() -> Result<String> {
     for path_option in search_paths.into_iter() {
         if path_option.exists() && has_dic_files(&path_option) {
             let path_str = path_option.to_string_lossy().to_string();
-            println!("📚 Found OpenJTalk dictionary: {}", path_str);
+            println!("Found OpenJTalk dictionary: {}", path_str);
             return Ok(path_str);
         }
     }
@@ -983,11 +983,11 @@ pub fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
 
     // 音声一覧表示の特別なケース
     if voice_name == "?" {
-        println!("🎭 Available VOICEVOX voices:");
+        println!("Available VOICEVOX voices:");
         println!();
 
         // キャラクター別にグループ化して表示
-        println!("  📝 ずんだもん:");
+        println!("  ずんだもん:");
         println!("    zundamon, zundamon-normal    (ID: 3)  - ずんだもん (ノーマル)");
         println!("    zundamon-amama              (ID: 1)  - ずんだもん (あまあま)");
         println!("    zundamon-tsundere           (ID: 7)  - ずんだもん (ツンツン)");
@@ -996,7 +996,7 @@ pub fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
         println!("    zundamon-excited            (ID: 38) - ずんだもん (ヘロヘロ)");
         println!();
 
-        println!("  🍊 四国めたん:");
+        println!("  四国めたん:");
         println!("    metan, metan-normal         (ID: 2)  - 四国めたん (ノーマル)");
         println!("    metan-amama                 (ID: 0)  - 四国めたん (あまあま)");
         println!("    metan-tsundere              (ID: 6)  - 四国めたん (ツンツン)");
@@ -1005,7 +1005,7 @@ pub fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
         println!("    metan-excited               (ID: 37) - 四国めたん (ヘロヘロ)");
         println!();
 
-        println!("  🌸 その他のキャラクター:");
+        println!("  その他のキャラクター:");
         println!("    tsumugi                     (ID: 8)  - 春日部つむぎ (ノーマル)");
         println!("    hau                         (ID: 10) - 雨晴はう (ノーマル)");
         println!("    ritsu                       (ID: 9)  - 波音リツ (ノーマル)");
@@ -1015,7 +1015,7 @@ pub fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
         println!("    sora                        (ID: 16) - 九州そら (ノーマル)");
         println!();
 
-        println!("  💡 Tips:");
+        println!("  Tips:");
         println!("    - 数値IDを直接指定することも可能です: -v 3");
         println!("    - キャラクター名のみでデフォルトモードを使用: -v zundamon");
         println!("    - 特定のモードを指定: -v zundamon-amama");

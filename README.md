@@ -44,13 +44,50 @@ nix build
 cargo build --release
 ```
 
-**Note**: All dependencies are automatically downloaded during build:
+**Note**: Nix builds use fixed SHA256 hashes for reproducible dependency management:
 - VOICEVOX Core 0.16.0 libraries
-- ONNX Runtime 1.17.3
-- Essential voice models (Zundamon, Metan, Tsumugi)
+- ONNX Runtime 1.17.3  
 - OpenJTalk dictionary
+- VOICEVOX Core downloader tool
 
-No manual setup required!
+Voice models are managed in user directories (`~/.local/share/voicevox/models/`) for mutable storage.
+
+## Initial Setup
+
+### Automatic First-Run Setup (Recommended)
+
+On first use, VOICEVOX TTS will automatically detect missing voice models and offer to download them:
+
+```bash
+# First time usage - automatic setup prompt will appear
+voicevox-say "こんにちは、ずんだもんなのだ"
+
+# You'll see:
+# 🎭 VOICEVOX TTS - First Run Setup
+# Voice models are required for text-to-speech synthesis.
+# Would you like to download voice models now? [Y/n]: y
+# 
+# 🔄 Starting voice model download...
+# Note: This will require accepting VOICEVOX license terms.
+```
+
+The setup process will:
+- Download all official voice models (~1.1GB)
+- Show VOICEVOX license terms for user agreement
+- Install models to `~/.local/share/voicevox/models/`
+- Enable immediate voice synthesis
+
+### Manual Setup
+
+If you prefer manual setup or need to reinstall models:
+
+```bash
+# Download essential voice models (Zundamon, Metan, Tsumugi)
+voicevox-setup-models
+
+# Or manually using the downloader
+voicevox-download --output ~/.local/share/voicevox/models
+```
 
 ## Usage
 

@@ -9,6 +9,9 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use std::ptr;
 
+// Import lib functions
+use voicevox_tts::attempt_first_run_setup;
+
 // Use bindgen-generated bindings if available
 #[cfg(feature = "use_bindgen")]
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -342,7 +345,7 @@ impl VoicevoxCore {
     }
 
     fn load_models(synthesizer: *mut VoicevoxSynthesizer) -> Result<()> {
-        // Find the models directory
+        // Find the models directory - this may trigger first-run setup
         let models_dir = find_models_dir()?;
 
         println!("📦 Loading VVM models from: {}", models_dir.display());
@@ -1105,17 +1108,73 @@ fn main() -> Result<()> {
     let mut core = VoicevoxCore::new()?;
 
     // Load models (all by default, minimal on request)
-    if matches.get_flag("minimal-models") {
+    let models_loaded = if matches.get_flag("minimal-models") {
         println!("📦 Loading minimal models for faster startup (--minimal-models specified)...");
-        if let Err(e) = VoicevoxCore::load_default_models(core.synthesizer) {
-            println!("⚠️  Warning: Failed to load some models: {}", e);
+        match VoicevoxCore::load_default_models(core.synthesizer) {
+            Ok(_) => true,
+            Err(e) => {
+                println!("⚠️  Warning: Failed to load some models: {}", e);
+                // Check if this is a "models directory not found" error and attempt setup
+                if e.to_string().contains("VVM models directory not found") {
+                    println!("🔧 Attempting first-run setup...");
+                    match attempt_first_run_setup() {
+                        Ok(_) => {
+                            println!("🎉 Setup completed! Retrying model loading...");
+                            match VoicevoxCore::load_default_models(core.synthesizer) {
+                                Ok(_) => {
+                                    println!("✅ Models loaded successfully after setup");
+                                    true
+                                },
+                                Err(retry_e) => {
+                                    println!("❌ Failed to load models even after setup: {}", retry_e);
+                                    false
+                                }
+                            }
+                        },
+                        Err(setup_e) => {
+                            println!("❌ Setup failed: {}", setup_e);
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
         }
     } else {
         println!("📦 Loading all available models for best user experience...");
-        if let Err(e) = VoicevoxCore::load_models(core.synthesizer) {
-            println!("⚠️  Warning: Failed to load some models: {}", e);
+        match VoicevoxCore::load_models(core.synthesizer) {
+            Ok(_) => true,
+            Err(e) => {
+                println!("⚠️  Warning: Failed to load some models: {}", e);
+                // Check if this is a "models directory not found" error and attempt setup
+                if e.to_string().contains("VVM models directory not found") {
+                    println!("🔧 Attempting first-run setup...");
+                    match attempt_first_run_setup() {
+                        Ok(_) => {
+                            println!("🎉 Setup completed! Retrying model loading...");
+                            match VoicevoxCore::load_models(core.synthesizer) {
+                                Ok(_) => {
+                                    println!("✅ Models loaded successfully after setup");
+                                    true
+                                },
+                                Err(retry_e) => {
+                                    println!("❌ Failed to load models even after setup: {}", retry_e);
+                                    false
+                                }
+                            }
+                        },
+                        Err(setup_e) => {
+                            println!("❌ Setup failed: {}", setup_e);
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
         }
-    }
+    };
 
     println!("✅ VOICEVOX Core initialized successfully");
 

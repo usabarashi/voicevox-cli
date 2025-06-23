@@ -12,7 +12,7 @@ use tokio::time::timeout;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use futures_util::{SinkExt, StreamExt};
 
-use voicevox_cli::{
+use voicevox_tts::{
     get_socket_path, resolve_voice_name, DaemonRequest, DaemonResponse, SynthesizeOptions,
     VoicevoxCore,
 };

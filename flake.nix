@@ -87,20 +87,20 @@
 
               # Copy OpenJTalk dictionary from project
               if [ -d "dict" ]; then
-                echo "📚 Copying OpenJTalk dictionary from project dict/"
+                echo "Copying OpenJTalk dictionary from project dict/"
                 cp -r dict/* $out/share/voicevox/dict/
-                echo "📚 Included OpenJTalk dictionary in package"
+                echo "Included OpenJTalk dictionary in package"
               else
-                echo "⚠️  OpenJTalk dictionary not found in project dict/"
+                echo "OpenJTalk dictionary not found in project dict/"
               fi
 
               # Copy VVM models from project
               if [ -d "models" ]; then
-                echo "🎭 Copying VVM models from project models/"
+                echo "Copying VVM models from project models/"
                 cp -r models/* $out/share/voicevox/models/
-                echo "🎭 Included VVM models in package"
+                echo "Included VVM models in package"
               else
-                echo "⚠️  VVM models not found in project models/"
+                echo "VVM models not found in project models/"
               fi
 
               # Set up library path for runtime
@@ -154,7 +154,7 @@
             ];
 
             shellHook = ''
-              echo "🫛 VOICEVOX CLI Development Environment"
+              echo "VOICEVOX CLI Development Environment"
               echo "Available commands:"
               echo "  cargo build    - Build the project"
               echo "  cargo run      - Run voicevox-say"
@@ -223,10 +223,10 @@
 
         # Important notices for users
         notices = [
-          "🫛 Credit VOICEVOX when using generated audio"
-          "📄 Follow individual voice library terms"
-          "⚖️  See voicevox_core/onnxruntime/TERMS.txt for details"
-          "🚫 Reverse engineering prohibited"
+          "Credit VOICEVOX when using generated audio"
+          "Follow individual voice library terms"
+          "See voicevox_core/onnxruntime/TERMS.txt for details"
+          "Reverse engineering prohibited"
         ];
       };
     };

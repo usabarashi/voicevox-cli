@@ -36,12 +36,8 @@ tokio-util = { version = "0.7", features = ["codec"] }
 futures-util = { version = "0.3", features = ["sink"] }
 libloading = { version = "0.8", optional = true }
 
-[build-dependencies]
-bindgen = { version = "0.69", optional = true }
-
 [features]
 default = ["link_voicevox"]
-use_bindgen = ["bindgen"]
 dynamic_voicevox = ["libloading"]
 link_voicevox = []
 

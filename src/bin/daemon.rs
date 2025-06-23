@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use futures_util::{SinkExt, StreamExt};
 
-use voicevox_cli::{
+use voicevox_tts::{
     get_socket_path, get_voice_mapping, resolve_voice_name, DaemonRequest, DaemonResponse,
     VoicevoxCore,
 };

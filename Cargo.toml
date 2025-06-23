@@ -1,11 +1,11 @@
 [package]
-name = "voicevox-cli"
+name = "voicevox-tts"
 version = "0.1.0"
 edition = "2021"
 authors = ["gen <gen@example.com>"]
-description = "VOICEVOX CLI tool for text-to-speech synthesis"
+description = "VOICEVOX TTS tool for text-to-speech synthesis"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/gen/voicevox-cli"
+repository = "https://github.com/gen/voicevox-tts"
 
 [[bin]]
 name = "voicevox-say"
@@ -20,7 +20,7 @@ name = "voicevox-cli"
 path = "src/main.rs"
 
 [lib]
-name = "voicevox_cli"
+name = "voicevox_tts"
 path = "src/lib.rs"
 
 [dependencies]

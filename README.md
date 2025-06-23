@@ -40,9 +40,17 @@ git clone https://github.com/usabarashi/voicevox-tts
 cd voicevox-tts
 nix build
 
-# Or with Cargo (requires VOICEVOX Core libraries)
+# Or with Cargo (automatically downloads VOICEVOX Core)
 cargo build --release
 ```
+
+**Note**: All dependencies are automatically downloaded during build:
+- VOICEVOX Core 0.16.0 libraries
+- ONNX Runtime 1.17.3
+- Essential voice models (Zundamon, Metan, Tsumugi)
+- OpenJTalk dictionary
+
+No manual setup required!
 
 ## Usage
 

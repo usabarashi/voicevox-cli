@@ -1,57 +1,57 @@
 # VOICEVOX TTS
 
-VOICEVOX Core 0.16.0 を使用した production-ready daemon-client 型 TTS ツール
+Production-ready daemon-client TTS tool using VOICEVOX Core 0.16.0
 
-## 特徴
+## Features
 
-- **Daemon-Client アーキテクチャ**: 高速な音声合成のための daemon プロセス
-- **macOS say 互換**: macOS の say コマンドと同様の silent 動作
-- **99 音声スタイル**: ずんだもん、四国めたん、春日部つむぎなど 26 キャラクター
-- **即座の音声合成**: 事前読み込み済みモデルによる瞬時の音声生成
-- **CPU 専用処理**: macOS 向け最適化（CUDA/DirectML 無効）
-- **XDG 準拠**: 標準的な Unix ファイル配置規則
-- **環境独立**: 自動パス発見による設定不要
+- **Daemon-Client Architecture**: High-performance daemon process for fast voice synthesis
+- **macOS say Compatible**: Silent operation like macOS say command
+- **99 Voice Styles**: 26 characters including ずんだもん (Zundamon), 四国めたん (Shikoku Metan), 春日部つむぎ (Kasukabe Tsumugi)
+- **Instant Voice Synthesis**: Pre-loaded models for immediate voice generation
+- **CPU-Only Processing**: macOS optimized (CUDA/DirectML disabled)
+- **XDG Compliant**: Standard Unix file placement rules
+- **Environment Independent**: Zero-configuration with automatic path discovery
 
-## アーキテクチャ
+## Architecture
 
-### Production システム
+### Production System
 
-1. **`voicevox-daemon`**: 全 VVM モデル事前読み込み済み background プロセス
-2. **`voicevox-say`**: 軽量 CLI client（primary interface）
-3. **`voicevox-tts`**: Legacy standalone binary（互換性維持）
+1. **`voicevox-daemon`**: Background process with all VVM models pre-loaded
+2. **`voicevox-say`**: Lightweight CLI client (primary interface)
+3. **`voicevox-tts`**: Legacy standalone binary (compatibility maintained)
 
-### IPC 通信
+### IPC Communication
 
-- **Unix Sockets**: XDG 準拠ファイル配置
-- **Tokio Async**: 非同期 I/O による高性能通信
-- **Bincode**: 効率的なバイナリ protocol
+- **Unix Sockets**: XDG-compliant file placement
+- **Tokio Async**: High-performance asynchronous I/O communication
+- **Bincode**: Efficient binary protocol
 
-### Socket パス優先順位
+### Socket Path Priority
 
-1. `$VOICEVOX_SOCKET_PATH` (環境変数)
+1. `$VOICEVOX_SOCKET_PATH` (environment variable)
 2. `$XDG_RUNTIME_DIR/voicevox/daemon.sock` (runtime)
-3. `$XDG_STATE_HOME/voicevox/daemon.sock` (state)  
+3. `$XDG_STATE_HOME/voicevox/daemon.sock` (state)
 4. `~/.local/state/voicevox/daemon.sock` (fallback)
 5. `$TMPDIR/voicevox-daemon-{pid}.sock` (temporary)
 
-## インストール
+## Installation
 
-### Nix（推奨）
+### Nix (Recommended)
 
 ```bash
-# ビルドとインストール
+# Build and install
 nix build
 
-# 直接実行
+# Direct execution
 nix run . -- "こんにちは、ずんだもんなのだ"
 
-# 開発環境
+# Development environment
 nix develop
 ```
 
-### Nix Flake として使用
+### Using as Nix Flake
 
-#### Input として追加
+#### Add as Input
 
 ```nix
 {
@@ -68,7 +68,7 @@ nix develop
 }
 ```
 
-#### Overlay として使用
+#### Using as Overlay
 
 ```nix
 nixpkgs.overlays = [ voicevox-tts.overlays.default ];
@@ -78,10 +78,10 @@ environment.systemPackages = with pkgs; [
 ];
 ```
 
-### Cargo（Development）
+### Cargo (Development)
 
 ```bash
-# 必要な環境変数設定
+# Required environment variables
 export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
 
 # Production build
@@ -91,88 +91,88 @@ cargo build --release --bin voicevox-daemon --bin voicevox-say
 cargo build --bin voicevox-daemon --bin voicevox-say
 ```
 
-## 使い方
+## Usage
 
-### Daemon-Client モード（推奨）
+### Daemon-Client Mode (Recommended)
 
 ```bash
-# Daemon 自動起動による音声合成
+# Voice synthesis with automatic daemon startup
 voicevox-say "こんにちは、ずんだもんなのだ"
 
-# 音声指定
+# Voice selection
 voicevox-say -v zundamon-amama "あまあまモードなのだ♪"
 voicevox-say -v metan-tsundere "ツンツンめたんです"
 
-# ファイル保存
+# File output
 voicevox-say -o output.wav "保存するテキスト"
 
-# 標準入力から
+# From stdin
 echo "パイプからの入力" | voicevox-say
 
-# Daemon 状況確認
+# Daemon status check
 voicevox-say --daemon-status
 ```
 
-### Daemon 直接操作
+### Direct Daemon Operations
 
 ```bash
-# Daemon 手動起動（foreground）
+# Manual daemon startup (foreground)
 voicevox-daemon --foreground
 
-# Daemon 手動起動（background）
+# Manual daemon startup (background)
 voicevox-daemon
 
-# Daemon 停止
+# Stop daemon
 pkill -f voicevox-daemon
 ```
 
-### 音声発見
+### Voice Discovery
 
 ```bash
-# 音声一覧表示
+# List available voices
 voicevox-say -v "?"
 
-# 詳細スピーカー情報
+# Detailed speaker information
 voicevox-say --list-speakers
 
-# Speaker ID 直接指定
+# Direct speaker ID specification
 voicevox-say --speaker-id 3 "ずんだもん（ノーマル）"
 ```
 
-### Standalone モード
+### Standalone Mode
 
 ```bash
-# Daemon 使用しない強制 standalone
+# Force standalone without daemon
 voicevox-say --standalone "独立実行モード"
 
-# Minimal models（高速起動）
+# Minimal models (fast startup)
 voicevox-say --standalone --minimal-models "軽量モード"
 ```
 
-## 音声キャラクター
+## Voice Characters
 
-### 主要キャラクター
+### Main Characters
 
-**ずんだもん（8種類）**
-- `zundamon` / `--speaker-id 3` - ノーマル
-- `zundamon-amama` / `--speaker-id 1` - あまあま
-- `zundamon-tsundere` / `--speaker-id 7` - ツンツン
-- `zundamon-sexy` / `--speaker-id 5` - セクシー
-- `zundamon-whisper` / `--speaker-id 22` - ささやき
-- その他3種類の感情表現
+**ずんだもん (Zundamon) - 8 Variations**
+- `zundamon` / `--speaker-id 3` - ノーマル (Normal)
+- `zundamon-amama` / `--speaker-id 1` - あまあま (Sweet)
+- `zundamon-tsundere` / `--speaker-id 7` - ツンツン (Tsundere)
+- `zundamon-sexy` / `--speaker-id 5` - セクシー (Sexy)
+- `zundamon-whisper` / `--speaker-id 22` - ささやき (Whisper)
+- Plus 3 additional emotional expressions
 
-**四国めたん（6種類）**
-- `metan` / `--speaker-id 2` - ノーマル
-- `metan-amama` / `--speaker-id 0` - あまあま
-- `metan-tsundere` / `--speaker-id 6` - ツンツン
-- その他3種類の感情表現
+**四国めたん (Shikoku Metan) - 6 Variations**
+- `metan` / `--speaker-id 2` - ノーマル (Normal)
+- `metan-amama` / `--speaker-id 0` - あまあま (Sweet)
+- `metan-tsundere` / `--speaker-id 6` - ツンツン (Tsundere)
+- Plus 3 additional emotional expressions
 
-**その他 16キャラクター**
-- 春日部つむぎ、雨晴はう、波音リツ、玄野武宏、白上虎太郎等
+**Other 16 Characters**
+- 春日部つむぎ (Kasukabe Tsumugi), 雨晴はう (Amehare Hau), 波音リツ (Namine Ritsu), 玄野武宏 (Kurono Takehiro), 白上虎太郎 (Shiragami Kotaro), etc.
 
-## 技術仕様
+## Technical Specifications
 
-### Core 技術
+### Core Technology
 
 - **VOICEVOX Core**: 0.16.0 (MIT License)
 - **Runtime**: CPU-only processing on macOS
@@ -181,80 +181,69 @@ voicevox-say --standalone --minimal-models "軽量モード"
 - **Communication**: Unix sockets + tokio
 - **Platform**: macOS (aarch64/x86_64)
 
-### パフォーマンス
+### Performance
 
-- **Daemon 起動時間**: ~3秒（全モデル読み込み）
-- **音声合成時間**: ~100ms（daemon モード）
-- **メモリ使用量**: ~500MB（全モデル読み込み時）
-- **ファイルサイズ**: ~20MB（最小構成）
+- **Daemon Startup Time**: ~3 seconds (all models loaded)
+- **Voice Synthesis Time**: ~100ms (daemon mode)
+- **Memory Usage**: ~500MB (all models loaded)
+- **File Size**: ~20MB (minimal configuration)
 
-## 開発
+## Development
 
-### 開発環境
+### Development Environment
 
 ```bash
-# Nix 開発環境
+# Nix development environment
 nix develop
 
-# 依存関係確認
+# Check dependencies
 cargo build --bin voicevox-daemon --bin voicevox-say
 
-# テスト実行
+# Run tests
 cargo test
 
-# 実動作確認
+# Functional test
 ./target/debug/voicevox-daemon --foreground &
 ./target/debug/voicevox-say "動作テスト"
 ```
 
-### アーキテクチャ詳細
+### Architecture Details
 
-**重要ファイル**:
-- `src/lib.rs` - 共有ライブラリ、VoicevoxCore、IPC プロトコル
-- `src/bin/daemon.rs` - バックグラウンド daemon、モデル管理  
-- `src/bin/client.rs` - 軽量 CLI client、primary interface
-- `voicevox_core/` - VOICEVOX Core runtime ライブラリ
-- `models/*.vvm` - 音声モデルファイル（19 models）
-- `dict/` - OpenJTalk 辞書
+**Important Files**:
+- `src/lib.rs` - Shared library, VoicevoxCore, IPC protocols
+- `src/bin/daemon.rs` - Background daemon, model management
+- `src/bin/client.rs` - Lightweight CLI client, primary interface
+- `voicevox_core/` - VOICEVOX Core runtime libraries
+- `models/*.vvm` - Voice model files (19 models)
+- `dict/` - OpenJTalk dictionary
 
-## ライセンス
+## License
 
-### CLI ツール
+### CLI Tool
 
 MIT License OR Apache License 2.0
 
 ### VOICEVOX Core
 
-MIT License  
+MIT License
 Copyright (c) 2021 Hiroshiba Kazuyuki
 
 ### ONNX Runtime
 
-Custom License Terms  
-Commercial use allowed with attribution required  
+Custom License Terms
+Commercial use allowed with attribution required
 See: `voicevox_core/onnxruntime/TERMS.txt`
 
-### 使用時の注意
+### Usage Notice
 
-**音声生成時のクレジット表記が必要です**:
-- 「VOICEVOX を使用して生成」
-- キャラクター別の利用規約に従ってください
-- 商用利用時は個別ライセンスを確認してください
+**Attribution required when generating audio**:
+- "Generated using VOICEVOX" ("VOICEVOX を使用して生成")
+- Follow individual character license terms
+- Check individual licenses for commercial use
 
-詳細: [VOICEVOX 利用規約](https://voicevox.hiroshiba.jp/term)
+Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
 
-## 貢献
-
-Issues や Pull Requests を歓迎します！
-
-### 開発ガイドライン
-
-- 実装前に Issue で相談推奨
-- Rust 標準スタイル（rustfmt）準拠
-- 全てのテストが通ることを確認
-- Commit message は英語で簡潔に
-
-## 関連リンク
+## Related Links
 
 - [VOICEVOX](https://voicevox.hiroshiba.jp/)
 - [VOICEVOX Core](https://github.com/VOICEVOX/voicevox_core)
@@ -264,3 +253,4 @@ Issues や Pull Requests を歓迎します！
 ---
 
 ずんだもんと一緒に楽しい TTS ライフを送るのだ！
+Enjoy a fun TTS life with Zundamon!

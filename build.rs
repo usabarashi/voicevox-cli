@@ -1,12 +1,9 @@
 use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 
 // Dependencies are managed by Nix with fixed hashes for reproducibility
 
 fn main() {
-    let _out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let current_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let src_dir = PathBuf::from(current_dir);
 
@@ -34,25 +31,6 @@ fn main() {
     let header_path = src_dir.join("voicevox_core/include/voicevox_core.h");
     println!("cargo:rerun-if-changed={}", header_path.display());
     println!("cargo:rerun-if-changed=build.rs");
-
-    // Only generate bindings if the feature is enabled
-    #[cfg(feature = "use_bindgen")]
-    {
-        use bindgen;
-
-        let bindings = bindgen::Builder::default()
-            .header(&header_path.to_string_lossy())
-            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-            .allowlist_function("voicevox_.*")
-            .allowlist_type("Voicevox.*")
-            .allowlist_var("VOICEVOX_.*")
-            .generate()
-            .expect("Unable to generate bindings");
-
-        bindings
-            .write_to_file(out_dir.join("bindings.rs"))
-            .expect("Couldn't write bindings!");
-    }
 }
 
 // Build script simplified - Nix handles dependency management

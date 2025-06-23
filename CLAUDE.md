@@ -190,8 +190,38 @@ pkill -f voicevox-daemon
 
 ### Model Management
 - **All Models Default**: Daemon loads all 19 VVM models on startup
+- **Automatic First-Run Setup**: Interactive voice model download on first usage
 - **Environment Independent**: Automatic path discovery for models and dictionaries
 - **Duplicate Prevention**: Multiple daemon startup protection
+
+#### Voice Model Setup Process
+
+**Automatic Setup (Recommended)**:
+```bash
+# First time usage triggers automatic setup
+voicevox-say "初回起動テスト"
+
+# User sees interactive prompt:
+# 🎭 VOICEVOX TTS - First Run Setup
+# Voice models are required for text-to-speech synthesis.
+# Would you like to download voice models now? [Y/n]: y
+```
+
+**Manual Setup**:
+```bash
+# Use dedicated setup command
+voicevox-setup-models
+
+# Or direct downloader
+voicevox-download --output ~/.local/share/voicevox/models
+```
+
+**Setup Features**:
+- **Official VOICEVOX Downloader**: Uses `voicevox-download` from VOICEVOX Core
+- **License Agreement**: Proper VOICEVOX license terms acceptance  
+- **XDG Compliance**: Models stored in `~/.local/share/voicevox/models/`
+- **Size Information**: ~1.1GB download (19 voice models)
+- **Automatic Detection**: Recursive VVM file discovery after download
 
 ### IPC Protocol
 - **Unix Sockets**: XDG-compliant socket paths with automatic directory creation
@@ -218,3 +248,6 @@ pkill -f voicevox-daemon
 - **Voice Discovery**: Use `--list-speakers` to see all available voices and IDs  
 - **Development**: Use `--foreground` flag on daemon for debugging output
 - **Performance**: Daemon startup takes ~3 seconds but subsequent synthesis is instant
+- **First-Run Setup**: Users can accept (Y) or decline (n) automatic voice model download
+- **License Compliance**: VOICEVOX license terms must be accepted during voice model setup
+- **Storage Management**: Voice models use ~1.1GB in `~/.local/share/voicevox/models/`

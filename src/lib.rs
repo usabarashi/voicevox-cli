@@ -462,7 +462,7 @@ impl VoicevoxCore {
     
 
     pub fn load_all_models(&self) -> Result<()> {
-        // Find the models directory
+        // Find the models directory - this may trigger first-run setup
         let models_dir = find_models_dir()?;
 
 
@@ -752,7 +752,132 @@ pub fn find_models_dir() -> Result<PathBuf> {
         }
     }
     
-    Err(anyhow!("VVM models directory not found. Please ensure models are installed in one of the standard locations or set VOICEVOX_MODELS_DIR environment variable."))
+    // If no models directory found, attempt first-run setup
+    attempt_first_run_setup()
+}
+
+// Attempt first-run setup for voice models
+pub fn attempt_first_run_setup() -> Result<PathBuf> {
+    use std::io::{self, Write};
+    
+    println!("🎭 VOICEVOX TTS - First Run Setup");
+    println!("");
+    println!("Voice models are required for text-to-speech synthesis.");
+    println!("These models need to be downloaded from VOICEVOX official sources.");
+    println!("");
+    
+    // Check if we have the downloader available
+    let downloader_path = if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
+            let downloader = pkg_root.join("bin/voicevox-download");
+            if downloader.exists() {
+                Some(downloader)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    if let Some(downloader) = downloader_path {
+        println!("✅ VOICEVOX downloader found: {}", downloader.display());
+        println!("");
+        
+        // Create target directory
+        let target_dir = std::env::var("HOME")
+            .ok()
+            .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
+            .unwrap_or_else(|| PathBuf::from("./models"));
+            
+        println!("📦 Models will be downloaded to: {}", target_dir.display());
+        println!("");
+        
+        print!("Would you like to download voice models now? [Y/n]: ");
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim().to_lowercase();
+        
+        if input.is_empty() || input == "y" || input == "yes" {
+            println!("");
+            println!("🔄 Starting voice model download...");
+            println!("Note: This will require accepting VOICEVOX license terms.");
+            println!("");
+            
+            // Create target directory
+            std::fs::create_dir_all(&target_dir)?;
+            
+            // Execute downloader
+            let status = std::process::Command::new(&downloader)
+                .arg("--output")
+                .arg(&target_dir)
+                .status();
+                
+            match status {
+                Ok(status) if status.success() => {
+                    println!("✅ Voice models downloaded successfully!");
+                    
+                    // Check if we now have a valid models directory
+                    let vvm_dir = target_dir.join("models/vvms");
+                    if vvm_dir.exists() && is_valid_models_directory(&vvm_dir) {
+                        return Ok(vvm_dir);
+                    } else if is_valid_models_directory(&target_dir) {
+                        return Ok(target_dir);
+                    } else {
+                        // Search subdirectories for VVM files
+                        if let Ok(entries) = std::fs::read_dir(&target_dir) {
+                            for entry in entries.filter_map(|e| e.ok()) {
+                                if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                                    let subdir = entry.path();
+                                    if is_valid_models_directory(&subdir) {
+                                        return Ok(subdir);
+                                    }
+                                    // Check nested subdirectories
+                                    if let Ok(nested_entries) = std::fs::read_dir(&subdir) {
+                                        for nested_entry in nested_entries.filter_map(|e| e.ok()) {
+                                            if nested_entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                                                let nested_dir = nested_entry.path();
+                                                if is_valid_models_directory(&nested_dir) {
+                                                    return Ok(nested_dir);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        return Err(anyhow!("Download completed but models not found in expected location"));
+                    }
+                },
+                Ok(_) => {
+                    println!("❌ Voice model download failed or was cancelled");
+                    println!("You can manually download models later using:");
+                    println!("  voicevox-setup-models");
+                    println!("Or set VOICEVOX_MODELS_DIR to an existing models directory");
+                },
+                Err(e) => {
+                    println!("❌ Failed to execute downloader: {}", e);
+                }
+            }
+        } else {
+            println!("");
+            println!("⏭️  Skipping voice model download");
+            println!("You can download models later using:");
+            println!("  voicevox-setup-models");
+            println!("Or set VOICEVOX_MODELS_DIR to an existing models directory");
+        }
+    } else {
+        println!("❌ VOICEVOX downloader not found");
+        println!("Please install voice models manually or use voicevox-setup-models");
+    }
+    
+    println!("");
+    Err(anyhow!("VVM models directory not found. Please run voice model setup."))
 }
 
 // Helper function to validate models directory

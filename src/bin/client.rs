@@ -84,11 +84,19 @@ async fn standalone_mode(
         println!("Loading minimal models for faster startup...");
         if let Err(e) = core.load_minimal_models() {
             println!("Warning: Failed to load some minimal models: {}", e);
+            println!("Try running without --minimal-models for full setup options");
         }
     } else {
         println!("Loading all available models...");
-        if let Err(e) = core.load_all_models() {
-            println!("Warning: Failed to load some models: {}", e);
+        match core.load_all_models() {
+            Ok(_) => {
+                println!("Successfully loaded voice models");
+            },
+            Err(e) => {
+                println!("Warning: Failed to load some models: {}", e);
+                println!("Voice synthesis may not work properly");
+                println!("To setup models, run: voicevox-setup-models");
+            }
         }
     }
     

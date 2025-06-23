@@ -587,7 +587,7 @@ fn find_models_dir() -> Result<PathBuf> {
                 .find(|a| a.join("voicevox_models").exists())
                 .map(|p| p.to_path_buf())
         })
-        .unwrap_or_else(|| PathBuf::from("/Users/gen/Documents/usabarashi/mynix"));
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp")));
 
     let models_dir = workspace_root.join("voicevox_models/models/vvms");
     if models_dir.exists() {
@@ -641,7 +641,7 @@ fn find_openjtalk_dict() -> Result<String> {
                 .find(|a| a.join("voicevox_models").exists())
                 .map(|p| p.to_path_buf())
         })
-        .unwrap_or_else(|| PathBuf::from("/Users/gen/Documents/usabarashi/mynix"));
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp")));
 
     let possible_dict_paths = vec![
         workspace_root

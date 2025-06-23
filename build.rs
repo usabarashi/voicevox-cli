@@ -2,7 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let _out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // Get the current source directory
     let current_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -15,9 +15,12 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", lib_path.display());
     println!("cargo:rustc-link-search=native={}", onnx_lib_path.display());
 
-    // Tell cargo to tell rustc to link the system bzip2 and z shared libraries.
-    println!("cargo:rustc-link-lib=dylib=voicevox_core");
-    println!("cargo:rustc-link-lib=dylib=voicevox_onnxruntime.1.17.3");
+    // Only link VOICEVOX libraries if the feature is enabled
+    #[cfg(feature = "link_voicevox")]
+    {
+        println!("cargo:rustc-link-lib=dylib=voicevox_core");
+        println!("cargo:rustc-link-lib=dylib=voicevox_onnxruntime.1.17.3");
+    }
 
     // Tell cargo to invalidate the built crate whenever the header changes
     let header_path = src_dir.join("voicevox_core/c_api/include/voicevox_core.h");

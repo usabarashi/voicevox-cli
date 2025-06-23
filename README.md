@@ -119,27 +119,12 @@ Issues and Pull Requests are welcome! See CLAUDE.md for development details.
 
 ## License
 
-### CLI Tool
+This project includes multiple components with different licenses. See [LICENSE](LICENSE) for complete details.
 
-MIT License OR Apache License 2.0
-
-### VOICEVOX Core
-
-MIT License
-Copyright (c) 2021 Hiroshiba Kazuyuki
-
-### ONNX Runtime
-
-Custom License Terms
-Commercial use allowed with attribution required
-See: `voicevox_core/onnxruntime/TERMS.txt`
-
-### Usage Notice
-
-**Attribution required when generating audio**:
-- "Generated using VOICEVOX" ("VOICEVOX を使用して生成")
-- Follow individual character license terms
-- Check individual licenses for commercial use
+**Quick Summary for Users:**
+- Commercial and non-commercial use of generated audio
+- **Required**: Credit "Generated using VOICEVOX" in your work  
+- No redistribution of VOICEVOX software without permission
 
 Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
 

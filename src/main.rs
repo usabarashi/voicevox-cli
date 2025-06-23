@@ -568,7 +568,11 @@ fn find_models_dir() -> Result<PathBuf> {
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
             let pkg_models_path = pkg_root.join("share/voicevox/models");
-            if pkg_models_path.exists() && pkg_models_path.read_dir().map_or(false, |mut entries| entries.next().is_some()) {
+            if pkg_models_path.exists()
+                && pkg_models_path
+                    .read_dir()
+                    .map_or(false, |mut entries| entries.next().is_some())
+            {
                 return Ok(pkg_models_path);
             }
         }

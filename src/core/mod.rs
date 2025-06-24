@@ -15,18 +15,14 @@ pub struct VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
-        // Initialize ONNX Runtime
         let onnxruntime = Onnxruntime::load_once().perform()
             .map_err(|e| anyhow!("Failed to load ONNX Runtime: {}", e))?;
         
-        // Find OpenJTalk dictionary
         let dict_path = find_openjtalk_dict()?;
         
-        // Initialize OpenJTalk
         let open_jtalk = OpenJtalk::new(dict_path)
             .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {}", e))?;
         
-        // Create synthesizer using builder pattern
         let synthesizer = Synthesizer::builder(&onnxruntime)
             .text_analyzer(open_jtalk)
             .acceleration_mode(AccelerationMode::Cpu)
@@ -50,7 +46,6 @@ impl VoicevoxCore {
         self.load_vvm_files_recursive(&models_dir)
     }
     
-    // Helper function to recursively load VVM files from a directory (flattened structure)
     fn load_vvm_files_recursive(&self, dir: &PathBuf) -> Result<()> {
         let entries = std::fs::read_dir(dir)?;
         let mut loaded_count = 0;
@@ -72,7 +67,6 @@ impl VoicevoxCore {
         Ok(())
     }
     
-    // Flattened VVM file loading logic
     fn try_load_vvm_file(&self, file_path: &PathBuf) -> u32 {
         let _file_name = match file_path.file_name().and_then(|f| f.to_str()) {
             Some(name) if name.ends_with(".vvm") => name,

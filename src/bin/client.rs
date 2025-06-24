@@ -9,7 +9,6 @@ use voicevox_tts::ipc::SynthesizeOptions;
 use voicevox_tts::paths::get_socket_path;
 use voicevox_tts::voice::{resolve_voice_dynamic, scan_available_models};
 
-// Try daemon mode with automatic retry logic (flattened from nested structure)
 async fn try_daemon_with_retry(
     text: &str,
     style_id: u32,
@@ -19,18 +18,12 @@ async fn try_daemon_with_retry(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    // First attempt
     if daemon_mode(text, style_id, voice_description, options.clone(), output_file, quiet, socket_path).await.is_ok() {
         return Ok(());
     }
     
-    // Daemon not available, try to start it automatically
     start_daemon_if_needed().await?;
-    
-    // Give daemon time to fully initialize (load all models)
     tokio::time::sleep(Duration::from_secs(5)).await;
-    
-    // Second attempt after daemon startup
     daemon_mode(text, style_id, voice_description, options, output_file, quiet, socket_path).await
 }
 
@@ -247,7 +240,6 @@ async fn main() -> Result<()> {
         std::env::set_var("VOICEVOX_DICT_DIR", dict_dir);
     }
     
-    // Handle special modes first
     if matches.get_flag("daemon-status") {
         let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
             PathBuf::from(custom_path)
@@ -257,14 +249,12 @@ async fn main() -> Result<()> {
         return check_daemon_status(&socket_path).await;
     }
     
-    // Handle voice list display
     if let Some(voice_name) = matches.get_one::<String>("voice") {
         if voice_name == "?" {
             resolve_voice_dynamic("?")?; // This exits internally
         }
     }
     
-    // Handle list models
     if matches.get_flag("list-models") {
         println!("Scanning for available VVM models...");
         match scan_available_models() {
@@ -292,7 +282,6 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     
-    // Handle update models only
     if matches.get_flag("update-models") {
         println!("🔄 Updating voice models only...");
         println!("Note: This feature requires VOICEVOX downloader with --models-only support");
@@ -300,7 +289,6 @@ async fn main() -> Result<()> {
         return ensure_models_available().await;
     }
     
-    // Handle update dictionary only
     if matches.get_flag("update-dict") {
         println!("🔄 Updating dictionary only...");
         println!("Note: This feature requires VOICEVOX downloader with --dict-only support");
@@ -308,7 +296,6 @@ async fn main() -> Result<()> {
         return ensure_models_available().await;
     }
     
-    // Handle update specific model
     if let Some(model_id) = matches.get_one::<u32>("update-model") {
         println!("🔄 Updating model {} only...", model_id);
         println!("Note: This feature requires VOICEVOX downloader with --model support");
@@ -316,7 +303,6 @@ async fn main() -> Result<()> {
         return ensure_models_available().await;
     }
     
-    // Handle check updates
     if matches.get_flag("check-updates") {
         println!("🔍 Checking for available updates...");
         
@@ -353,7 +339,6 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     
-    // Handle version info
     if matches.get_flag("version-info") {
         println!("📋 VOICEVOX TTS Version Information");
         println!("=====================================");
@@ -394,7 +379,6 @@ async fn main() -> Result<()> {
         return Ok(());
     }
     
-    // Handle list speakers
     if matches.get_flag("list-speakers") {
         let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
             PathBuf::from(custom_path)

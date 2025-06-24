@@ -26,18 +26,15 @@ clap = { version = "4.0", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rodio = { version = "0.17", features = ["wav"] }
-libc = "0.2"
 bincode = "1.3"
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 futures-util = { version = "0.3", features = ["sink"] }
-libloading = { version = "0.8", optional = true }
+voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", tag = "0.16.0", features = ["load-onnxruntime"] }
+libc = "0.2"
 
 [features]
-default = ["link_voicevox"]
-dynamic_voicevox = ["libloading"]
-link_voicevox = []
-use_bindgen = []
+default = []
 
 [profile.release]
 lto = true

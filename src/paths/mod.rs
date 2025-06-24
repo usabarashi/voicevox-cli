@@ -80,12 +80,22 @@ fn build_models_search_paths() -> Vec<PathBuf> {
         search_paths.push(PathBuf::from(env_path));
     }
 
-    // Priority 2: User home directory (primary for user-specific setup)
+    // Priority 2: XDG compliant user directory (VOICEVOX downloader standard)
     if let Ok(home_dir) = std::env::var("HOME") {
         search_paths.push(PathBuf::from(home_dir).join(".local/share/voicevox/models"));
     }
 
-    // Priority 3: System shared directories (fallback only)
+    // Priority 3: Local VOICEVOX core directory (downloaded by downloader)
+    search_paths.push(PathBuf::from("./voicevox_core/models"));
+
+    // Priority 4: Package installation path (when used as a Nix package)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
+            search_paths.push(pkg_root.join("share/voicevox/models"));
+        }
+    }
+
+    // Priority 5: System shared directories (fallback only)
     search_paths.extend([
         PathBuf::from("/usr/local/share/voicevox/models"),
         PathBuf::from("/usr/share/voicevox/models"),
@@ -93,23 +103,16 @@ fn build_models_search_paths() -> Vec<PathBuf> {
         PathBuf::from("/opt/homebrew/share/voicevox/models"), // macOS Homebrew
     ]);
 
-    // Priority 3: Package installation path (when used as a Nix package)
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
-            search_paths.push(pkg_root.join("share/voicevox/models"));
-        }
-    }
-
-    // Priority 4: macOS application bundle
+    // Priority 6: macOS application bundle
     search_paths.push(PathBuf::from(
         "/Applications/VOICEVOX.app/Contents/Resources/models",
     ));
 
     let additional_paths = vec![
-        // Priority 5: Current working directory (development)
+        // Priority 7: Current working directory (development)
         Some(PathBuf::from("./models")),
         Some(PathBuf::from("./voicevox_models/models/vvms")), // Nix development layout
-        // Priority 6: User-specific directories (fallback only)
+        // Priority 8: User-specific directories (fallback only)
         std::env::var("XDG_DATA_HOME")
             .ok()
             .map(|xdg| PathBuf::from(xdg).join("voicevox/models"))
@@ -152,22 +155,8 @@ fn has_dic_files(dict_path: &PathBuf) -> bool {
 pub fn find_openjtalk_dict() -> Result<String> {
     let mut search_paths = Vec::new();
 
-    // Priority 1: Package installation path (when used as a Nix package)
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
-            search_paths.push(pkg_root.join("share/voicevox/dict"));
-        }
-    }
-
     let additional_paths = vec![
-        // Priority 2: Local dictionary (current working dir)
-        Some(PathBuf::from("./dict")),
-        Some(PathBuf::from("./dict/open_jtalk_dic_utf_8-1.11")),
-        // Priority 3: Home directory dictionary
-        std::env::var("HOME")
-            .ok()
-            .map(|home| PathBuf::from(home).join(".voicevox/dict")),
-        // Priority 4: XDG data directory
+        // Priority 1: VOICEVOX downloader standard locations (XDG compliant)
         std::env::var("XDG_DATA_HOME")
             .ok()
             .map(|xdg| PathBuf::from(xdg).join("voicevox/dict"))
@@ -176,6 +165,22 @@ pub fn find_openjtalk_dict() -> Result<String> {
                     .ok()
                     .map(|home| PathBuf::from(home).join(".local/share/voicevox/dict"))
             }),
+        // Priority 2: Local VOICEVOX core directory (downloaded by downloader)
+        Some(PathBuf::from("./voicevox_core/dict")),
+        Some(PathBuf::from("./dict")),
+        // Priority 3: Package installation path (when used as a Nix package)
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe_path| {
+                exe_path.parent()
+                    .and_then(|p| p.parent())
+                    .map(|pkg_root| pkg_root.to_path_buf())
+            })
+            .map(|pkg_root| pkg_root.join("share/voicevox/dict")),
+        // Priority 4: Legacy home directory dictionary
+        std::env::var("HOME")
+            .ok()
+            .map(|home| PathBuf::from(home).join(".voicevox/dict")),
         // Priority 5: System OpenJTalk paths
         Some(PathBuf::from("/usr/local/share/open-jtalk/dic")),
         Some(PathBuf::from("/usr/share/open-jtalk/dic")),

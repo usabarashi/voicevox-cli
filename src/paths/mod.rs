@@ -11,29 +11,32 @@ pub fn get_socket_path() -> PathBuf {
         ("HOME", ".local/state/voicevox-daemon.sock"),
     ];
     
-    // Try environment variable based paths
-    for (env_var, suffix) in env_socket_paths {
-        if let Ok(env_value) = std::env::var(env_var) {
-            let socket_path = if suffix.is_empty() {
-                PathBuf::from(env_value)
-            } else {
-                PathBuf::from(env_value).join(suffix)
-            };
-            
-            // Create parent directory if needed (except for direct override)
-            if !suffix.is_empty() {
-                if let Some(parent) = socket_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
+    // Try environment variable based paths using functional approach
+    env_socket_paths
+        .iter()
+        .find_map(|(env_var, suffix)| {
+            std::env::var(env_var).ok().map(|env_value| {
+                let socket_path = if suffix.is_empty() {
+                    PathBuf::from(env_value)
+                } else {
+                    PathBuf::from(env_value).join(suffix)
+                };
+                
+                // Create parent directory if needed (except for direct override)
+                if !suffix.is_empty() {
+                    if let Some(parent) = socket_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
                 }
-            }
-            
-            return socket_path;
-        }
-    }
-    
-    // Fallback: User-specific temp socket with UID (not PID)
-    let user_id = unsafe { libc::getuid() };
-    PathBuf::from("/tmp").join(format!("voicevox-daemon-{}.sock", user_id))
+                
+                socket_path
+            })
+        })
+        .unwrap_or_else(|| {
+            // Fallback: User-specific temp socket with UID (not PID)
+            let user_id = unsafe { libc::getuid() };
+            PathBuf::from("/tmp").join(format!("voicevox-daemon-{}.sock", user_id))
+        })
 }
 
 // Helper function to find VVM models directory (daemon: with download attempt)
@@ -90,42 +93,46 @@ fn build_models_search_paths() -> Vec<PathBuf> {
         "/Applications/VOICEVOX.app/Contents/Resources/models",
     ];
     
-    let mut search_paths = Vec::new();
+    // Build paths using functional composition
+    let env_based_paths = env_paths
+        .iter()
+        .filter_map(|(env_var, suffix)| {
+            std::env::var(env_var).ok().map(|env_value| {
+                if suffix.is_empty() {
+                    PathBuf::from(env_value)
+                } else {
+                    PathBuf::from(env_value).join(suffix)
+                }
+            })
+        });
     
-    // Add environment variable based paths
-    for (env_var, suffix) in env_paths {
-        if let Ok(env_value) = std::env::var(env_var) {
-            let path = if suffix.is_empty() {
-                PathBuf::from(env_value)
-            } else {
-                PathBuf::from(env_value).join(suffix)
-            };
-            search_paths.push(path);
-        }
-    }
+    let static_based_paths = static_paths
+        .iter()
+        .map(|p| PathBuf::from(p));
     
-    // Add static paths
-    search_paths.extend(static_paths.iter().map(|p| PathBuf::from(p)));
+    let package_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe_path| {
+            exe_path.parent()
+                .and_then(|p| p.parent())
+                .map(|pkg_root| pkg_root.join("share/voicevox/models"))
+        });
     
-    // Add package installation path
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
-            search_paths.push(pkg_root.join("share/voicevox/models"));
-        }
-    }
+    let workspace_path = std::env::current_dir()
+        .ok()
+        .and_then(|current_dir| {
+            current_dir
+                .ancestors()
+                .find(|a| a.join("models").exists())
+                .map(|p| p.join("models"))
+        });
     
-    // Add development/workspace paths
-    if let Ok(current_dir) = std::env::current_dir() {
-        if let Some(workspace_models) = current_dir
-            .ancestors()
-            .find(|a| a.join("models").exists())
-            .map(|p| p.join("models"))
-        {
-            search_paths.push(workspace_models);
-        }
-    }
-    
-    search_paths
+    // Compose all paths using functional chain
+    env_based_paths
+        .chain(static_based_paths)
+        .chain(package_path)
+        .chain(workspace_path)
+        .collect()
 }
 
 // Helper function to check if a directory contains .dic files (including subdirectories)
@@ -193,56 +200,62 @@ pub fn find_openjtalk_dict() -> Result<String> {
         "/opt/local/share/open-jtalk/dic",
     ];
     
-    let mut additional_paths = Vec::new();
+    // Build paths using functional composition
+    let env_based_paths = env_paths
+        .iter()
+        .filter_map(|(env_var, suffix)| {
+            std::env::var(env_var).ok().map(|env_value| {
+                if suffix.is_empty() {
+                    PathBuf::from(env_value)
+                } else {
+                    PathBuf::from(env_value).join(suffix)
+                }
+            })
+        });
     
-    // Add environment variable based paths
-    for (env_var, suffix) in env_paths {
-        if let Ok(env_value) = std::env::var(env_var) {
-            let path = if suffix.is_empty() {
-                PathBuf::from(env_value)
+    let static_based_paths = static_paths
+        .iter()
+        .map(|p| PathBuf::from(p));
+    
+    let package_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe_path| {
+            exe_path.parent()
+                .and_then(|p| p.parent())
+                .map(|pkg_root| pkg_root.join("share/voicevox/dict"))
+        });
+    
+    let workspace_path = std::env::current_dir()
+        .ok()
+        .and_then(|current_dir| {
+            current_dir
+                .ancestors()
+                .find(|a| a.join("dict").exists())
+                .map(|p| p.join("dict"))
+        });
+    
+    // Compose all paths using functional chain
+    search_paths.extend(
+        env_based_paths
+            .chain(static_based_paths)
+            .chain(package_path)
+            .chain(workspace_path)
+    );
+
+    search_paths
+        .into_iter()
+        .filter(|path| path.exists())
+        .find_map(|path| {
+            // First check if dictionary files are directly in this directory
+            if has_direct_dic_files(&path) {
+                Some(path.to_string_lossy().to_string())
             } else {
-                PathBuf::from(env_value).join(suffix)
-            };
-            additional_paths.push(Some(path));
-        }
-    }
-    
-    // Add static paths
-    additional_paths.extend(static_paths.iter().map(|p| Some(PathBuf::from(p))));
-    
-    // Add package installation path
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
-            additional_paths.push(Some(pkg_root.join("share/voicevox/dict")));
-        }
-    }
-    
-    // Add development/workspace paths
-    if let Ok(current_dir) = std::env::current_dir() {
-        let workspace_dict = current_dir
-            .ancestors()
-            .find(|a| a.join("dict").exists())
-            .map(|p| p.join("dict"));
-        additional_paths.push(workspace_dict);
-    }
-
-    search_paths.extend(additional_paths.into_iter().flatten());
-
-    for path_option in search_paths.into_iter() {
-        if !path_option.exists() {
-            continue;
-        }
-        
-        // First check if dictionary files are directly in this directory
-        if has_direct_dic_files(&path_option) {
-            return Ok(path_option.to_string_lossy().to_string());
-        }
-        
-        // Then check subdirectories for dictionary files
-        if let Some(dict_subdir) = find_dic_subdir(&path_option) {
-            return Ok(dict_subdir.to_string_lossy().to_string());
-        }
-    }
-
-    Err(anyhow!("OpenJTalk dictionary not found. Please ensure the dictionary is installed in one of the standard locations or set VOICEVOX_DICT_DIR/OPENJTALK_DICT_DIR environment variable."))
+                // Then check subdirectories for dictionary files
+                find_dic_subdir(&path)
+                    .map(|dict_subdir| dict_subdir.to_string_lossy().to_string())
+            }
+        })
+        .ok_or_else(|| {
+            anyhow!("OpenJTalk dictionary not found. Please ensure the dictionary is installed in one of the standard locations or set VOICEVOX_DICT_DIR/OPENJTALK_DICT_DIR environment variable.")
+        })
 }

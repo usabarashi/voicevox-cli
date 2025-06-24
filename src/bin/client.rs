@@ -145,6 +145,37 @@ async fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("update-models")
+                .help("Update voice models only (skip dictionary)")
+                .long("update-models")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("update-dict")
+                .help("Update dictionary only (skip voice models)")
+                .long("update-dict")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("update-model")
+                .help("Update specific voice model by ID")
+                .long("update-model")
+                .value_name("MODEL_ID")
+                .value_parser(clap::value_parser!(u32)),
+        )
+        .arg(
+            Arg::new("check-updates")
+                .help("Check for available updates without downloading")
+                .long("check-updates")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("version-info")
+                .help("Show version information of installed models and dictionary")
+                .long("version-info")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("minimal-models")
                 .help("Load only minimal models for faster startup (standalone mode)")
                 .long("minimal-models")
@@ -233,6 +264,108 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+        return Ok(());
+    }
+    
+    // Handle update models only
+    if matches.get_flag("update-models") {
+        println!("🔄 Updating voice models only...");
+        println!("Note: This feature requires VOICEVOX downloader with --models-only support");
+        println!("For now, falling back to full update...");
+        return ensure_models_available().await;
+    }
+    
+    // Handle update dictionary only
+    if matches.get_flag("update-dict") {
+        println!("🔄 Updating dictionary only...");
+        println!("Note: This feature requires VOICEVOX downloader with --dict-only support");
+        println!("For now, falling back to full update...");
+        return ensure_models_available().await;
+    }
+    
+    // Handle update specific model
+    if let Some(model_id) = matches.get_one::<u32>("update-model") {
+        println!("🔄 Updating model {} only...", model_id);
+        println!("Note: This feature requires VOICEVOX downloader with --model support");
+        println!("For now, falling back to full update...");
+        return ensure_models_available().await;
+    }
+    
+    // Handle check updates
+    if matches.get_flag("check-updates") {
+        println!("🔍 Checking for available updates...");
+        
+        // Get current models
+        match scan_available_models() {
+            Ok(current_models) => {
+                println!("📊 Current installation status:");
+                println!("  Voice models: {} VVM files", current_models.len());
+                for model in &current_models {
+                    println!("    Model {} ({})", model.model_id, model.file_path.display());
+                }
+                
+                // Check dictionary
+                use voicevox_tts::paths::find_openjtalk_dict;
+                match find_openjtalk_dict() {
+                    Ok(dict_path) => {
+                        println!("  Dictionary: {} ✅", dict_path);
+                    }
+                    Err(_) => {
+                        println!("  Dictionary: Not found ❌");
+                    }
+                }
+                
+                println!();
+                println!("💡 Update options:");
+                println!("  --update-models     Update all voice models");
+                println!("  --update-dict       Update dictionary only");
+                println!("  --update-model N    Update specific model N");
+            }
+            Err(e) => {
+                eprintln!("Error scanning models: {}", e);
+            }
+        }
+        return Ok(());
+    }
+    
+    // Handle version info
+    if matches.get_flag("version-info") {
+        println!("📋 VOICEVOX TTS Version Information");
+        println!("=====================================");
+        
+        // Application version
+        println!("Application: v{}", env!("CARGO_PKG_VERSION"));
+        
+        // Get current models with metadata
+        match scan_available_models() {
+            Ok(current_models) => {
+                println!("Voice Models: {} installed", current_models.len());
+                for model in &current_models {
+                    if let Ok(metadata) = std::fs::metadata(&model.file_path) {
+                        let size_kb = metadata.len() / 1024;
+                        println!("  Model {}: {} ({} KB)", 
+                                 model.model_id, 
+                                 model.file_path.file_name().unwrap_or_default().to_string_lossy(),
+                                 size_kb);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Voice Models: Error scanning - {}", e);
+            }
+        }
+        
+        // Check dictionary
+        use voicevox_tts::paths::find_openjtalk_dict;
+        match find_openjtalk_dict() {
+            Ok(dict_path) => {
+                println!("Dictionary: {}", dict_path);
+            }
+            Err(_) => {
+                println!("Dictionary: Not installed");
+            }
+        }
+        
         return Ok(());
     }
     

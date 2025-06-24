@@ -10,6 +10,6 @@ pub mod daemon;
 // Re-export commonly used types and functions for backward compatibility
 pub use core::VoicevoxCore;
 pub use ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions};
-pub use voice::{Speaker, Style, get_model_for_voice_id, get_voice_mapping, resolve_voice_name};
+pub use voice::{Speaker, Style, get_model_for_voice_id, resolve_voice_dynamic, scan_available_models, AvailableModel};
 pub use paths::{get_socket_path, find_models_dir, find_models_dir_client, find_openjtalk_dict};
 pub use setup::{attempt_first_run_setup, is_valid_models_directory};

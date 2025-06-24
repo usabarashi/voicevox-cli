@@ -1,6 +1,6 @@
 {
   description = ''
-    VOICEVOX TTS CLI for Apple Silicon Macs - Dynamic voice detection system
+    VOICEVOX CLI for Apple Silicon Macs - Dynamic voice detection system
 
     Zero-configuration Japanese text-to-speech with automatic voice model discovery.
     Supports 26+ voice characters with dynamic detection and daemon-client architecture.
@@ -100,7 +100,7 @@
 
           # Centralized meta information
           packageMeta = with pkgs.lib; {
-            description = "VOICEVOX TTS CLI for Apple Silicon - Dynamic voice detection system";
+            description = "VOICEVOX CLI for Apple Silicon - Dynamic voice detection system";
             homepage = "https://github.com/usabarashi/voicevox-cli";
             license = with licenses; [ mit asl20 ];
             maintainers = [ "usabarashi" ];
@@ -160,11 +160,7 @@
 
             # Install binaries and setup runtime environment
             postInstall = ''
-              # Install both client and daemon binaries (voicevox-say and voicevox-daemon are already correct)
-              # Remove legacy voicevox-tts if it exists
-              if [ -f "$out/bin/voicevox-tts" ]; then
-                rm $out/bin/voicevox-tts
-              fi
+              # Install both client and daemon binaries (voicevox-say and voicevox-daemon)
               
               # voicevox-daemon should already be built, just make sure it exists
               if [ ! -f "$out/bin/voicevox-daemon" ]; then
@@ -205,7 +201,7 @@ mkdir -p "$MODEL_DIR"
 # Check if downloader is available
 if ! command -v "$DOWNLOADER" >/dev/null 2>&1; then
     echo "Error: voicevox-download not found in PATH"
-    echo "Please ensure VOICEVOX TTS is properly installed"
+    echo "Please ensure VOICEVOX CLI is properly installed"
     exit 1
 fi
 
@@ -261,7 +257,7 @@ EOF
                 fi
               fi
               
-              echo "VOICEVOX TTS package installation completed"
+              echo "VOICEVOX CLI package installation completed"
             '';
 
             # Apply centralized meta information
@@ -275,7 +271,7 @@ EOF
             
             MODELS_DIR="$1"
             
-            echo "🎭 VOICEVOX TTS - User Setup"
+            echo "🎭 VOICEVOX CLI - User Setup"
             echo "Installing voice models for current user..."
             echo ""
             echo "By using this Nix package, you agree to:"
@@ -351,7 +347,7 @@ EOF
             ];
 
             shellHook = ''
-              echo "VOICEVOX TTS Development Environment (Apple Silicon)"
+              echo "VOICEVOX CLI Development Environment (Apple Silicon)"
               echo "Available commands:"
               echo "  cargo build --bin voicevox-say     - Build client"
               echo "  cargo build --bin voicevox-daemon  - Build daemon" 
@@ -387,7 +383,7 @@ EOF
       # Extended meta information with VOICEVOX-specific details
       meta = {
         # Basic package information (same as packageMeta)
-        description = "VOICEVOX TTS CLI for Apple Silicon - Dynamic voice detection system";
+        description = "VOICEVOX CLI for Apple Silicon - Dynamic voice detection system";
         homepage = "https://github.com/usabarashi/voicevox-cli";
         maintainers = [ "usabarashi" ];
         platforms = [ "aarch64-darwin" ];

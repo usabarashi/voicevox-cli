@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is VOICEVOX TTS (`voicevox-tts`) - a production-ready command-line text-to-speech synthesis tool using VOICEVOX Core 0.16.0. It provides a macOS `say` command-compatible interface for Japanese TTS with various character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
+This is VOICEVOX CLI (`voicevox-cli`) - a production-ready command-line text-to-speech synthesis tool using VOICEVOX Core 0.16.0. It provides a macOS `say` command-compatible interface for Japanese TTS with various character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
 
 The tool uses a **daemon-client architecture** for optimal performance, with pre-loaded voice models in a background daemon process for instant synthesis. It's specifically optimized for macOS with CPU-only processing and maintains complete compatibility with macOS `say` command behavior (silent operation on success, errors to stderr only).
 
@@ -16,7 +16,6 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 
 - **`voicevox-daemon`**: Background process with pre-loaded VOICEVOX models
 - **`voicevox-say`**: Lightweight client that communicates with daemon via Unix sockets
-- **`voicevox-tts`**: Legacy standalone binary (kept for compatibility)
 
 ### Core Components
 
@@ -65,14 +64,13 @@ nix develop
 
 ### Cargo (Production Ready)
 ```bash
-# Build all binaries (daemon + client + legacy)
+# Build all binaries (daemon + client)
 export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
 cargo build --release
 
 # Build specific binaries
 cargo build --release --bin voicevox-daemon   # Background service
 cargo build --release --bin voicevox-say      # Primary CLI (client)
-cargo build --release --bin voicevox-tts      # Legacy standalone
 
 # Development build
 cargo build --bin voicevox-daemon --bin voicevox-say
@@ -228,7 +226,7 @@ voicevox-say "初回起動テスト"
 **Interactive License Acceptance**:
 ```bash
 # User sees complete license display with pager:
-🎭 VOICEVOX TTS - First Run Setup
+🎭 VOICEVOX CLI - First Run Setup
 Voice models are required for text-to-speech synthesis.
 
 Would you like to download voice models now? [Y/n]: y

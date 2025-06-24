@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 // Attempt first-run setup for voice models with automatic license acceptance
 pub fn attempt_first_run_setup() -> Result<PathBuf> {
-    println!("🎭 VOICEVOX TTS - User Setup");
+    println!("🎭 VOICEVOX CLI - User Setup");
     println!("Setting up voice models for current user...");
     println!("");
 

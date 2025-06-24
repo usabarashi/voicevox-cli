@@ -93,8 +93,7 @@ async fn main() -> Result<()> {
                 .help("Specify the voice to be used. Use '?' to list all available voices")
                 .long("voice")
                 .short('v')
-                .value_name("VOICE")
-                .default_value("zundamon"),
+                .value_name("VOICE"),
         )
         .arg(
             Arg::new("rate")
@@ -340,7 +339,7 @@ async fn main() -> Result<()> {
     }
     
     if matches.get_flag("version-info") {
-        println!("📋 VOICEVOX TTS Version Information");
+        println!("📋 VOICEVOX CLI Version Information");
         println!("=====================================");
         
         // Application version
@@ -438,9 +437,11 @@ async fn main() -> Result<()> {
         // For now, use the first style from the model (style_id = model_id * 10 as a heuristic)
         // In the future, this should load the model and get the actual first style ID
         (*model_id, format!("Model {} (Default Style)", model_id))
-    } else {
-        let voice_name = matches.get_one::<String>("voice").unwrap();
+    } else if let Some(voice_name) = matches.get_one::<String>("voice") {
         resolve_voice_dynamic(voice_name)?
+    } else {
+        // No voice specified - default to speaker ID 3 (ずんだもん ノーマル)
+        (3, "Default (ずんだもん ノーマル)".to_string())
     };
     
     // Get other options

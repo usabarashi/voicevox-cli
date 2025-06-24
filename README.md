@@ -1,4 +1,4 @@
-# VOICEVOX TTS
+# VOICEVOX CLI
 
 Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 
@@ -15,7 +15,7 @@ Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon
 
 ```bash
 # Install with Nix
-nix profile install github:usabarashi/voicevox-tts
+nix profile install github:usabarashi/voicevox-cli
 
 # First usage (interactive setup)
 voicevox-say "こんにちは、ずんだもんなのだ"
@@ -31,7 +31,7 @@ voicevox-say "その後の呼び出しは瞬時なのだ"
 
 ```bash
 # Install directly with Nix
-nix profile install github:usabarashi/voicevox-tts
+nix profile install github:usabarashi/voicevox-cli
 
 # First usage triggers interactive setup
 voicevox-say "こんにちは、ずんだもんなのだ"
@@ -41,8 +41,8 @@ voicevox-say "こんにちは、ずんだもんなのだ"
 
 ```bash
 # Clone and build
-git clone https://github.com/usabarashi/voicevox-tts
-cd voicevox-tts
+git clone https://github.com/usabarashi/voicevox-cli
+cd voicevox-cli
 
 # Nix development
 nix develop
@@ -56,10 +56,10 @@ nix run . -- "テストメッセージなのだ"
 
 ```bash
 # Install directly via Nix
-nix profile install github:usabarashi/voicevox-tts
+nix profile install github:usabarashi/voicevox-cli
 
 # Use in shell environment
-nix shell github:usabarashi/voicevox-tts
+nix shell github:usabarashi/voicevox-cli
 ```
 
 **Note**: Nix builds use fixed SHA256 hashes for reproducible dependency management:
@@ -74,14 +74,14 @@ Voice models are managed in user directories (`~/.local/share/voicevox/models/`)
 
 ### Interactive First-Run Setup (Current Implementation)
 
-On first use, VOICEVOX TTS will detect missing voice models and offer to download them with proper license acceptance:
+On first use, VOICEVOX CLI will detect missing voice models and offer to download them with proper license acceptance:
 
 ```bash
 # First time usage - interactive setup prompt will appear
 voicevox-say "こんにちは、ずんだもんなのだ"
 
 # You'll see:
-# 🎭 VOICEVOX TTS - First Run Setup
+# 🎭 VOICEVOX CLI - First Run Setup
 # Voice models are required for text-to-speech synthesis.
 #
 # Would you like to download voice models now? [Y/n]: y

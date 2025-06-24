@@ -86,26 +86,24 @@ impl VoicevoxCore {
 
     pub fn load_minimal_models(&self) -> Result<()> {
         // Load only essential models for faster startup (minimal mode)
-        // Priority: ずんだもん (3.vvm), 四国めたん (2.vvm), 春日部つむぎ (8.vvm)
-        let default_models = ["3.vvm", "2.vvm", "8.vvm"];
+        // Dynamically discover and load first few available models
         let models_dir = find_models_dir_client()?;
+        let vvm_files = self.find_vvm_files_limited(&models_dir, 3)?; // Limit to first 3 models
 
         let mut loaded_count = 0;
-        for model_name in &default_models {
-            if let Some(model_path) = self.find_model_file_recursive(&models_dir, model_name) {
-                match VoiceModelFile::open(&model_path) {
-                    Ok(model) => {
-                        match self.synthesizer.load_voice_model(&model) {
-                            Ok(_) => loaded_count += 1,
-                            Err(_) => {
-                                // Model already loaded or other non-critical error
-                                loaded_count += 1; // Count as success for minimal loading
-                            }
+        for model_path in vvm_files {
+            match VoiceModelFile::open(&model_path) {
+                Ok(model) => {
+                    match self.synthesizer.load_voice_model(&model) {
+                        Ok(_) => loaded_count += 1,
+                        Err(_) => {
+                            // Model already loaded or other non-critical error
+                            loaded_count += 1; // Count as success for minimal loading
                         }
                     }
-                    Err(_) => {
-                        // Failed to open model file, continue with others
-                    }
+                }
+                Err(_) => {
+                    // Failed to open model file, continue with others
                 }
             }
         }
@@ -117,28 +115,38 @@ impl VoicevoxCore {
         Ok(())
     }
     
-    // Helper function to find a specific model file recursively
-    fn find_model_file_recursive(&self, dir: &PathBuf, target_filename: &str) -> Option<PathBuf> {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let entry_path = entry.path();
-                
-                if entry_path.is_file() {
-                    if let Some(file_name) = entry.file_name().to_str() {
-                        if file_name == target_filename {
-                            return Some(entry_path);
-                        }
-                    }
-                } else if entry_path.is_dir() {
-                    // Recursively search subdirectories
-                    if let Some(found) = self.find_model_file_recursive(&entry_path, target_filename) {
-                        return Some(found);
+    // Helper function to find limited number of VVM files for minimal loading
+    fn find_vvm_files_limited(&self, dir: &PathBuf, limit: usize) -> Result<Vec<PathBuf>> {
+        let mut vvm_files = Vec::new();
+        
+        if !dir.exists() {
+            return Ok(vvm_files);
+        }
+        
+        let entries = std::fs::read_dir(dir)?;
+        
+        for entry in entries.filter_map(|e| e.ok()) {
+            if vvm_files.len() >= limit {
+                break;
+            }
+            
+            let path = entry.path();
+            
+            if path.is_file() {
+                if let Some(extension) = path.extension() {
+                    if extension == "vvm" {
+                        vvm_files.push(path);
                     }
                 }
+            } else if path.is_dir() {
+                let mut sub_files = self.find_vvm_files_limited(&path, limit - vvm_files.len())?;
+                vvm_files.append(&mut sub_files);
             }
         }
-        None
+        
+        Ok(vvm_files)
     }
+    
 
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
         let models_dir = find_models_dir_client()?;

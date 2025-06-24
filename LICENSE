@@ -2,7 +2,7 @@
 
 This project consists of multiple components with different licenses:
 
-## CLI Tool (voicevox-tts)
+## CLI Tool (voicevox-cli)
 
 MIT License OR Apache License 2.0
 
@@ -99,9 +99,9 @@ Each voice character has specific terms of use:
 - [VOICEVOX Core Repository](https://github.com/VOICEVOX/voicevox_core)
 - [Voice Library Specific Terms](https://voicevox.hiroshiba.jp/library)
 
-## Summary for Users
+## Summary for VOICEVOX CLI Users
 
-**When using this tool to generate audio:**
+**When using VOICEVOX CLI to generate audio:**
 
 1. **Allowed**: Commercial and non-commercial use of generated audio
 2. **Required**: Credit "Generated using VOICEVOX" in your work
@@ -111,7 +111,7 @@ Each voice character has specific terms of use:
 
 **Example Attribution:**
 ```
-Audio generated using VOICEVOX
+Audio generated using VOICEVOX CLI
 Voice: ずんだもん (Zundamon)
 https://voicevox.hiroshiba.jp/
 ```

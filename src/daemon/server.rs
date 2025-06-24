@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 
 use crate::core::VoicevoxCore;
 use crate::ipc::{DaemonRequest, DaemonResponse};
-use crate::voice::{get_voice_mapping, resolve_voice_name};
+use crate::voice::resolve_voice_dynamic;
 
 pub struct DaemonState {
     core: VoicevoxCore,
@@ -81,19 +81,21 @@ impl DaemonState {
             
             DaemonRequest::GetVoiceMapping => {
                 println!("Getting voice mapping");
-                let mapping = get_voice_mapping();
-                let mapping_strings: std::collections::HashMap<String, (u32, String)> = mapping
-                    .into_iter()
-                    .map(|(k, (id, desc))| (k.to_string(), (id, desc.to_string())))
-                    .collect();
+                // Return minimal basic voice mapping
+                let mut basic_mapping = std::collections::HashMap::new();
+                basic_mapping.insert("zundamon".to_string(), (3, "ずんだもん (ノーマル)".to_string()));
+                basic_mapping.insert("metan".to_string(), (2, "四国めたん (ノーマル)".to_string()));
+                basic_mapping.insert("tsumugi".to_string(), (8, "春日部つむぎ (ノーマル)".to_string()));
+                basic_mapping.insert("default".to_string(), (3, "ずんだもん (ノーマル)".to_string()));
+                
                 DaemonResponse::VoiceMapping {
-                    mapping: mapping_strings,
+                    mapping: basic_mapping,
                 }
             }
             
             DaemonRequest::ResolveVoiceName { voice_name } => {
                 println!("Resolving voice name: {}", voice_name);
-                match resolve_voice_name(&voice_name) {
+                match resolve_voice_dynamic(&voice_name) {
                     Ok((style_id, description)) => {
                         println!("Resolved to style ID {} ({})", style_id, description);
                         DaemonResponse::VoiceResolution {

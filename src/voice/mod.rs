@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Speaker {
@@ -20,178 +21,149 @@ pub struct Style {
     pub style_type: Option<String>,
 }
 
-// 音声IDから必要なVVMモデル番号を取得
-pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
-    match voice_id {
-        // ずんだもん (3.vvm)
-        1 | 3 | 7 | 5 | 22 | 38 => Some(3),
-        // 四国めたん (2.vvm)
-        2 | 0 | 6 | 4 | 36 | 37 => Some(2),
-        // 春日部つむぎ (8.vvm)
-        8 | 83 | 84 => Some(8),
-        // 雨晴はう (10.vvm)
-        10 | 85 => Some(10),
-        // 波音リツ (9.vvm)
-        9 | 65 => Some(9),
-        // 玄野武宏 (11.vvm)
-        11 | 39 | 40 | 41 => Some(11),
-        // 白上虎太郎 (12.vvm)
-        12 | 32 | 33 => Some(12),
-        // 青山龍星 (13.vvm)
-        13 | 86 | 87 | 88 | 89 | 90 => Some(13),
-        // 冥鳴ひまり (14.vvm)
-        14 => Some(14),
-        // 九州そら (16.vvm)
-        15 | 16 | 17 | 18 | 19 => Some(16),
-        // もち子さん (17.vvm)
-        20 => Some(17),
-        // 剣崎雌雄 (18.vvm)
-        21 => Some(18),
-        // デフォルトは不明
-        _ => None,
+#[derive(Debug, Clone)]
+pub struct AvailableModel {
+    pub model_id: u32,
+    pub file_path: PathBuf,
+    pub speakers: Vec<Speaker>,
+}
+
+// VVMファイルを自動検出する
+pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
+    use crate::paths::find_models_dir_client;
+    
+    let models_dir = find_models_dir_client()?;
+    let mut available_models = Vec::new();
+    
+    // VVMファイルを検索（再帰的）
+    let vvm_files = find_vvm_files(&models_dir)?;
+    
+    for vvm_file in vvm_files {
+        if let Some(model_id) = extract_model_id_from_path(&vvm_file) {
+            available_models.push(AvailableModel {
+                model_id,
+                file_path: vvm_file,
+                speakers: Vec::new(), // 実際のスピーカー情報は後で動的に取得
+            });
+        }
+    }
+    
+    // モデルIDでソート
+    available_models.sort_by_key(|m| m.model_id);
+    
+    Ok(available_models)
+}
+
+// VVMファイルを再帰的に検索
+fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
+    let mut vvm_files = Vec::new();
+    
+    if !dir.exists() {
+        return Ok(vvm_files);
+    }
+    
+    let entries = std::fs::read_dir(dir)?;
+    
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        
+        if path.is_file() {
+            if let Some(extension) = path.extension() {
+                if extension == "vvm" {
+                    vvm_files.push(path);
+                }
+            }
+        } else if path.is_dir() {
+            // 再帰的に検索
+            vvm_files.extend(find_vvm_files(&path)?);
+        }
+    }
+    
+    Ok(vvm_files)
+}
+
+// VVMファイルパスからモデルIDを抽出（例: "3.vvm" -> 3）
+fn extract_model_id_from_path(path: &PathBuf) -> Option<u32> {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .and_then(|stem| stem.parse::<u32>().ok())
+}
+
+// 動的音声解決システム
+pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
+    // 音声一覧表示の特別なケース
+    if voice_input == "?" {
+        println!("Available VOICEVOX voices:");
+        println!();
+        println!("  Basic voices:");
+        println!("    zundamon     (ID: 3)  - ずんだもん (ノーマル)");
+        println!("    metan        (ID: 2)  - 四国めたん (ノーマル)");
+        println!("    tsumugi      (ID: 8)  - 春日部つむぎ (ノーマル)");
+        println!();
+        println!("  For more voices, use:");
+        println!("    --list-models        - Show available VVM models");
+        println!("    --list-speakers      - Show all speaker details");
+        println!("    --speaker-id N       - Use specific style ID");
+        println!();
+        std::process::exit(0);
+    }
+    
+    // 直接的な数値指定をサポート
+    if let Ok(style_id) = voice_input.parse::<u32>() {
+        return Ok((style_id, format!("Style ID {}", style_id)));
+    }
+    
+    // 基本的な音声名マッピング（最小限）
+    let basic_voices = get_basic_voice_mapping();
+    
+    if let Some((style_id, description)) = basic_voices.get(voice_input) {
+        Ok((*style_id, description.to_string()))
+    } else {
+        // 利用可能なモデルから動的に検索
+        try_resolve_from_available_models(voice_input)
     }
 }
 
-// 音声名からスタイルIDへのマッピング
-pub fn get_voice_mapping() -> HashMap<&'static str, (u32, &'static str)> {
+// 基本的な音声名マッピング（最小限）
+fn get_basic_voice_mapping() -> HashMap<&'static str, (u32, &'static str)> {
     let mut voices = HashMap::new();
-
-    // ずんだもん（全モード）
+    
+    // 最も一般的な音声のみ
     voices.insert("zundamon", (3, "ずんだもん (ノーマル)"));
-    voices.insert("zundamon-normal", (3, "ずんだもん (ノーマル)"));
-    voices.insert("zundamon-amama", (1, "ずんだもん (あまあま)"));
-    voices.insert("zundamon-tsundere", (7, "ずんだもん (ツンツン)"));
-    voices.insert("zundamon-sexy", (5, "ずんだもん (セクシー)"));
-    voices.insert("zundamon-whisper", (22, "ずんだもん (ささやき)"));
-    voices.insert("zundamon-excited", (38, "ずんだもん (ヘロヘロ)"));
-
-    // 四国めたん（全モード）
     voices.insert("metan", (2, "四国めたん (ノーマル)"));
-    voices.insert("metan-normal", (2, "四国めたん (ノーマル)"));
-    voices.insert("metan-amama", (0, "四国めたん (あまあま)"));
-    voices.insert("metan-tsundere", (6, "四国めたん (ツンツン)"));
-    voices.insert("metan-sexy", (4, "四国めたん (セクシー)"));
-    voices.insert("metan-whisper", (36, "四国めたん (ささやき)"));
-    voices.insert("metan-excited", (37, "四国めたん (ヘロヘロ)"));
-
-    // 春日部つむぎ
     voices.insert("tsumugi", (8, "春日部つむぎ (ノーマル)"));
-    voices.insert("tsumugi-normal", (8, "春日部つむぎ (ノーマル)"));
-
-    // 雨晴はう
-    voices.insert("hau", (10, "雨晴はう (ノーマル)"));
-    voices.insert("hau-normal", (10, "雨晴はう (ノーマル)"));
-
-    // 波音リツ
-    voices.insert("ritsu", (9, "波音リツ (ノーマル)"));
-    voices.insert("ritsu-normal", (9, "波音リツ (ノーマル)"));
-
-    // 玄野武宏
-    voices.insert("takehiro", (11, "玄野武宏 (ノーマル)"));
-    voices.insert("takehiro-normal", (11, "玄野武宏 (ノーマル)"));
-    voices.insert("takehiro-excited", (39, "玄野武宏 (喜び)"));
-    voices.insert("takehiro-tsundere", (40, "玄野武宏 (ツンギレ)"));
-    voices.insert("takehiro-sad", (41, "玄野武宏 (悲しみ)"));
-
-    // 白上虎太郎
-    voices.insert("kohtaro", (12, "白上虎太郎 (ふつう)"));
-    voices.insert("kohtaro-normal", (12, "白上虎太郎 (ふつう)"));
-    voices.insert("kohtaro-excited", (32, "白上虎太郎 (わーい)"));
-    voices.insert("kohtaro-angry", (33, "白上虎太郎 (びくびく)"));
-
-    // 青山龍星
-    voices.insert("ryusei", (13, "青山龍星 (ノーマル)"));
-    voices.insert("ryusei-normal", (13, "青山龍星 (ノーマル)"));
-    voices.insert("ryusei-excited", (86, "青山龍星 (熱血)"));
-    voices.insert("ryusei-cool", (87, "青山龍星 (不機嫌)"));
-    voices.insert("ryusei-sad", (88, "青山龍星 (喜び)"));
-    voices.insert("ryusei-surprised", (89, "青山龍星 (しっとり)"));
-    voices.insert("ryusei-whisper", (90, "青山龍星 (かなしみ)"));
-
-    // 冥鳴ひまり
-    voices.insert("himari", (14, "冥鳴ひまり (ノーマル)"));
-    voices.insert("himari-normal", (14, "冥鳴ひまり (ノーマル)"));
-
-    // 九州そら
-    voices.insert("sora", (16, "九州そら (ノーマル)"));
-    voices.insert("sora-normal", (16, "九州そら (ノーマル)"));
-    voices.insert("sora-amama", (15, "九州そら (あまあま)"));
-    voices.insert("sora-tsundere", (18, "九州そら (ツンツン)"));
-    voices.insert("sora-sexy", (17, "九州そら (セクシー)"));
-    voices.insert("sora-whisper", (19, "九州そら (ささやき)"));
-
-    // もち子さん
-    voices.insert("mochiko", (20, "もち子さん (ノーマル)"));
-    voices.insert("mochiko-normal", (20, "もち子さん (ノーマル)"));
-
-    // 剣崎雌雄
-    voices.insert("menou", (21, "剣崎雌雄 (ノーマル)"));
-    voices.insert("menou-normal", (21, "剣崎雌雄 (ノーマル)"));
-
-    // デフォルトエイリアス
     voices.insert("default", (3, "ずんだもん (ノーマル)"));
-
+    
     voices
 }
 
-pub fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
-    let voices = get_voice_mapping();
+// 利用可能なモデルから動的に音声を検索
+fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
+    // 将来的にVOICEVOX Coreからスピーカー情報を動的に取得する予定
+    // 現時点では基本的なエラーメッセージを返す
+    Err(anyhow!(
+        "Voice '{}' not found. Use --speaker-id for direct ID specification, or --list-models to see available models.",
+        voice_input
+    ))
+}
 
-    // 音声一覧表示の特別なケース
-    if voice_name == "?" {
-        println!("Available VOICEVOX voices:");
-        println!();
+// モデルIDから利用可能なスタイルを取得（将来の実装用）
+#[allow(dead_code)]
+fn get_styles_for_model(_model_id: u32) -> Result<Vec<Style>> {
+    // この関数は将来、VOICEVOX Coreから動的にスタイル情報を取得するために使用される
+    // 現時点では空のベクターを返す
+    Ok(Vec::new())
+}
 
-        // キャラクター別にグループ化して表示
-        println!("  ずんだもん:");
-        println!("    zundamon, zundamon-normal    (ID: 3)  - ずんだもん (ノーマル)");
-        println!("    zundamon-amama              (ID: 1)  - ずんだもん (あまあま)");
-        println!("    zundamon-tsundere           (ID: 7)  - ずんだもん (ツンツン)");
-        println!("    zundamon-sexy               (ID: 5)  - ずんだもん (セクシー)");
-        println!("    zundamon-whisper            (ID: 22) - ずんだもん (ささやき)");
-        println!("    zundamon-excited            (ID: 38) - ずんだもん (ヘロヘロ)");
-        println!();
-
-        println!("  四国めたん:");
-        println!("    metan, metan-normal         (ID: 2)  - 四国めたん (ノーマル)");
-        println!("    metan-amama                 (ID: 0)  - 四国めたん (あまあま)");
-        println!("    metan-tsundere              (ID: 6)  - 四国めたん (ツンツン)");
-        println!("    metan-sexy                  (ID: 4)  - 四国めたん (セクシー)");
-        println!("    metan-whisper               (ID: 36) - 四国めたん (ささやき)");
-        println!("    metan-excited               (ID: 37) - 四国めたん (ヘロヘロ)");
-        println!();
-
-        println!("  その他のキャラクター:");
-        println!("    tsumugi                     (ID: 8)  - 春日部つむぎ (ノーマル)");
-        println!("    hau                         (ID: 10) - 雨晴はう (ノーマル)");
-        println!("    ritsu                       (ID: 9)  - 波音リツ (ノーマル)");
-        println!("    takehiro                    (ID: 11) - 玄野武宏 (ノーマル)");
-        println!("    kohtaro                     (ID: 12) - 白上虎太郎 (ふつう)");
-        println!("    ryusei                      (ID: 13) - 青山龍星 (ノーマル)");
-        println!("    sora                        (ID: 16) - 九州そら (ノーマル)");
-        println!();
-
-        println!("  Tips:");
-        println!("    - 数値IDを直接指定することも可能です: -v 3");
-        println!("    - キャラクター名のみでデフォルトモードを使用: -v zundamon");
-        println!("    - 特定のモードを指定: -v zundamon-amama");
-        println!();
-
-        std::process::exit(0);
-    }
-
-    // 直接的な数値指定をサポート
-    if let Ok(style_id) = voice_name.parse::<u32>() {
-        return Ok((style_id, format!("Style ID {}", style_id)));
-    }
-
-    // 音声名から検索
-    if let Some((style_id, description)) = voices.get(voice_name) {
-        Ok((*style_id, description.to_string()))
+// 音声IDから必要なVVMモデル番号を取得（簡素化版）
+pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
+    // 基本的なヒューリスティック：voice_id がモデル番号と一致することが多い
+    // より正確な情報は VOICEVOX Core から動的に取得する
+    if voice_id <= 30 {
+        Some(voice_id) // 簡単なマッピング
     } else {
-        Err(anyhow!(
-            "Unknown voice: '{}'. Use -v ? to list available voices.",
-            voice_name
-        ))
+        None // 不明な場合は動的検出に任せる
     }
 }
+
+

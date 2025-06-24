@@ -7,7 +7,7 @@ use voicevox_tts::client::*;
 use voicevox_tts::core::VoicevoxCore;
 use voicevox_tts::ipc::SynthesizeOptions;
 use voicevox_tts::paths::get_socket_path;
-use voicevox_tts::voice::resolve_voice_name;
+use voicevox_tts::voice::{resolve_voice_dynamic, scan_available_models};
 
 // Fallback to standalone mode when daemon is not available
 async fn standalone_mode(
@@ -127,7 +127,22 @@ async fn main() -> Result<()> {
                 .short('s')
                 .value_name("ID")
                 .value_parser(clap::value_parser!(u32))
-                .conflicts_with("voice"),
+                .conflicts_with_all(["voice", "model"]),
+        )
+        .arg(
+            Arg::new("model")
+                .help("Specify voice model by VVM file number (e.g., --model 3 for 3.vvm)")
+                .long("model")
+                .short('m')
+                .value_name("MODEL_ID")
+                .value_parser(clap::value_parser!(u32))
+                .conflicts_with_all(["voice", "speaker-id"]),
+        )
+        .arg(
+            Arg::new("list-models")
+                .help("List all available VVM models and exit")
+                .long("list-models")
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("minimal-models")
@@ -189,8 +204,36 @@ async fn main() -> Result<()> {
     // Handle voice list display
     if let Some(voice_name) = matches.get_one::<String>("voice") {
         if voice_name == "?" {
-            resolve_voice_name("?")?; // This exits internally
+            resolve_voice_dynamic("?")?; // This exits internally
         }
+    }
+    
+    // Handle list models
+    if matches.get_flag("list-models") {
+        println!("Scanning for available VVM models...");
+        match scan_available_models() {
+            Ok(models) => {
+                if models.is_empty() {
+                    println!("No VVM models found. Please download models first with voicevox-daemon.");
+                } else {
+                    println!("Available VVM models:");
+                    for model in &models {
+                        println!("  Model {} ({})", model.model_id, model.file_path.display());
+                        println!("    Usage: --model {} or --speaker-id <STYLE_ID>", model.model_id);
+                    }
+                    println!();
+                    println!("Tips:");
+                    println!("  - Use --model N to load model N.vvm");
+                    println!("  - Use --speaker-id for direct style ID specification");
+                    println!("  - Use --list-speakers for detailed speaker information");
+                }
+            }
+            Err(e) => {
+                eprintln!("Error scanning models: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
     }
     
     // Handle list speakers
@@ -249,9 +292,13 @@ async fn main() -> Result<()> {
     // Resolve voice settings
     let (style_id, voice_description) = if let Some(speaker_id) = matches.get_one::<u32>("speaker-id") {
         (*speaker_id, format!("Style ID {}", speaker_id))
+    } else if let Some(model_id) = matches.get_one::<u32>("model") {
+        // For now, use the first style from the model (style_id = model_id * 10 as a heuristic)
+        // In the future, this should load the model and get the actual first style ID
+        (*model_id, format!("Model {} (Default Style)", model_id))
     } else {
         let voice_name = matches.get_one::<String>("voice").unwrap();
-        resolve_voice_name(voice_name)?
+        resolve_voice_dynamic(voice_name)?
     };
     
     // Get other options

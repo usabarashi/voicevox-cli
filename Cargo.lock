@@ -2588,7 +2588,6 @@ dependencies = [
  "anyhow",
  "half",
  "js-sys",
- "libloading",
  "ndarray",
  "once_cell",
  "thiserror",

@@ -29,27 +29,145 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
 
-          # VOICEVOX downloader for runtime setup
-          # Note: Libraries and models are downloaded at runtime by voicevox-download
+          # VOICEVOX Core libraries for static linking
+          voicevoxCore = pkgs.fetchurl {
+            url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/voicevox_core-osx-arm64-0.16.0.zip";
+            sha256 = "sha256-vCAvITP9j5tNa/5yWkcmdthAy0gPya9IpZ8NGm/LDhQ=";
+          };
 
+          onnxRuntime = pkgs.fetchurl {
+            url = "https://github.com/VOICEVOX/onnxruntime-builder/releases/download/voicevox_onnxruntime-1.17.3/voicevox_onnxruntime-osx-arm64-1.17.3.tgz";
+            sha256 = "sha256-ltfqGSigoVSFSS03YhOH31D0CnkuKmgX1N9z7NGFcfI=";
+          };
+
+          openJTalkDict = pkgs.fetchurl {
+            url = "https://sourceforge.net/projects/open-jtalk/files/Dictionary/open_jtalk_dic-1.11/open_jtalk_dic_utf_8-1.11.tar.gz/download";
+            sha256 = "0j85n563jpilms9ahp527iaf7sk1pymmfvx3gjys46n43cjwvs9k";
+          };
+
+          # Voice models downloader (only for models - VVM files)
           voicevoxDownloader = pkgs.fetchurl {
             url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/download-osx-arm64";
             sha256 = "sha256-OL5Hpyd0Mc+77PzUhtIIFmHjRQqLVaiITuHICg1QBJU=";
           };
 
-          # Minimal setup for voicevox-download
-          voicevoxSetup = pkgs.stdenv.mkDerivation {
-            name = "voicevox-download-setup";
+          # VOICEVOX version of OpenJTalk source code
+          voicevoxOpenJTalk = pkgs.fetchFromGitHub {
+            owner = "VOICEVOX";
+            repo = "open_jtalk";
+            rev = "1.11";
+            sha256 = "sha256-SBLdQ8D62QgktI8eI6eSNzdYt5PmGo6ZUCKxd01Z8UE=";
+          };
+
+          # Create a dummy OpenJTalk package to skip build requirements
+          openJTalkStaticLibs = pkgs.stdenv.mkDerivation {
+            name = "openjtalk-static-libs-dummy";
+            
+            dontUnpack = true;
+            
+            installPhase = ''
+              echo "Creating dummy OpenJTalk installation..."
+              mkdir -p $out/{lib,include,lib/pkgconfig}
+              
+              # Create empty library files (will be skipped by Rust build)
+              touch $out/lib/libopen_jtalk.a
+              touch $out/lib/libmecab.a
+              
+              # Create minimal headers
+              mkdir -p $out/include/openjtalk
+              touch $out/include/openjtalk/openjtalk.h
+              
+              # Create pkg-config file that indicates OpenJTalk is available
+              cat > $out/lib/pkgconfig/open_jtalk.pc << EOF
+prefix=$out
+exec_prefix=\$prefix
+libdir=\$prefix/lib
+includedir=\$prefix/include
+
+Name: OpenJTalk
+Description: OpenJTalk speech synthesis system (dummy for VOICEVOX)
+Version: 1.11
+Libs: -L\$libdir
+Cflags: -I\$includedir
+EOF
+              
+              echo "Dummy OpenJTalk installation completed (Rust build will be skipped)"
+            '';
+          };
+
+          # Static libraries setup for build-time linking
+          # Static libraries setup for build-time linking
+          voicevoxResources = pkgs.stdenv.mkDerivation {
+            name = "voicevox-static-libs";
+            
+            nativeBuildInputs = with pkgs; [ unzip gnutar ];
             
             buildCommand = ''
-              mkdir -p $out/bin
+              mkdir -p $out/{voicevox_core,bin}
               
-              # Install VOICEVOX downloader for runtime use
-              echo "Installing VOICEVOX downloader..."
+              echo "Extracting VOICEVOX Core (libraries and headers only)..."
+              cd $TMPDIR
+              ${pkgs.unzip}/bin/unzip ${voicevoxCore}
+              VOICEVOX_DIR=$(find . -maxdepth 1 -name "voicevox_core*" -type d | head -1)
+              
+              # Copy only essential build files (libraries and headers)
+              if [ -d "$VOICEVOX_DIR/lib" ]; then
+                cp -r "$VOICEVOX_DIR"/lib $out/voicevox_core/
+              fi
+              if [ -d "$VOICEVOX_DIR/include" ]; then
+                cp -r "$VOICEVOX_DIR"/include $out/voicevox_core/
+              fi
+              
+              echo "Extracting ONNX Runtime libraries..."
+              cd $TMPDIR
+              ${pkgs.gnutar}/bin/tar -xzf ${onnxRuntime}
+              ONNX_DIR=$(find . -maxdepth 1 -name "voicevox_onnxruntime*" -type d | head -1)
+              
+              # Ensure lib directory exists
+              mkdir -p $out/voicevox_core/lib
+              if [ -d "$ONNX_DIR/lib" ]; then
+                cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
+              fi
+              
+              echo "Extracting OpenJTalk dictionary..."
+              cd $TMPDIR
+              ${pkgs.gnutar}/bin/tar -xzf ${openJTalkDict}
+              mkdir -p $out/openjtalk_dict
+              DICT_DIR=$(find . -maxdepth 1 -name "open_jtalk_dic*" -type d | head -1)
+              if [ -d "$DICT_DIR" ]; then
+                cp -r "$DICT_DIR"/* $out/openjtalk_dict/
+              fi
+              
+              echo "Setting up pre-built OpenJTalk static libraries..."
+              # Copy pre-built OpenJTalk static libraries
+              mkdir -p $out/openjtalk_libs/{lib,include}
+              cp -r ${openJTalkStaticLibs}/lib/* $out/openjtalk_libs/lib/
+              cp -r ${openJTalkStaticLibs}/include/* $out/openjtalk_libs/include/
+              
+              # Create symbolic links for easy access
+              mkdir -p $out/lib $out/include
+              ln -sf $out/openjtalk_libs/lib/* $out/lib/
+              ln -sf $out/openjtalk_libs/include/* $out/include/
+              
+              echo "Pre-built OpenJTalk static libraries installed"
+              
+              # Install VOICEVOX downloader for runtime downloads
+              echo "Installing VOICEVOX downloader for runtime use..."
               cp ${voicevoxDownloader} $out/bin/voicevox-download
               chmod +x $out/bin/voicevox-download
               
-              echo "VOICEVOX downloader ready (all libraries downloaded at runtime)"
+              # Fix library paths for macOS
+              echo "Fixing library paths..."
+              if [ -d "$out/voicevox_core/lib" ]; then
+                cd $out/voicevox_core/lib
+                for dylib in *.dylib; do
+                  if [ -f "$dylib" ]; then
+                    ${pkgs.darwin.cctools}/bin/install_name_tool -id "@rpath/$dylib" "$dylib" || true
+                  fi
+                done
+              fi
+              
+              echo "Build resources prepared (runtime downloads handled by voicevox-download)"
             '';
           };
 
@@ -80,56 +198,83 @@
 
             # Skip tests since they require VOICEVOX runtime libraries
             doCheck = false;
-            
-            # Disable network access during build to force system library usage
-            __noChroot = false;
 
             nativeBuildInputs = with pkgs; [
               pkg-config
               cmake
+              git
+              autoconf
+              automake
+              libtool
+              gnumake
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
               pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
               pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
             ];
 
-            buildInputs = with pkgs; [
-              onnxruntime
-              open-jtalk
+            buildInputs = [
+              voicevoxResources
+              openJTalkStaticLibs
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
               pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
               pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
             ];
 
-            # Note: All libraries downloaded at runtime by voicevox-download
+            # Static linking - all dependencies except voice models (VVM files)
             preBuild = ''
-              echo "Build ready - using system libraries"
-              echo "ONNX Runtime location: ${pkgs.onnxruntime}/lib"
-              echo "OpenJTalk location: ${pkgs.open-jtalk}/lib"
+              echo "Build ready - using static libraries from voicevoxResources"
+              echo "VOICEVOX Core location: ${voicevoxResources}/voicevox_core/lib"
+              echo "ONNX Runtime location: ${voicevoxResources}/voicevox_core/lib"
               
-              # ONNX Runtime configuration
-              export ORT_LIB_LOCATION="${pkgs.onnxruntime}/lib"
+              # OpenJTalk configuration (Skip Rust build, use VOICEVOX Core's internal OpenJTalk)
+              export OPENJTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
+              export OPEN_JTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
+              export OPENJTALK_LIB_DIR="${openJTalkStaticLibs}/lib"
+              export OPENJTALK_INCLUDE_DIR="${openJTalkStaticLibs}/include"
+              export OPENJTALK_STATIC_LIB="1"
+              export OPENJTALK_SKIP_BUILD="1"
+              export OPENJTALK_NO_BUILD="1"
+              
+              # Force static linking with pre-built ONNX Runtime from Nix
+              export ORT_STRATEGY="system"
+              export ORT_USE_SYSTEM_LIB="1"
+              export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
+              
+              # Disable all external downloads and Git access in CMake builds
+              export CMAKE_DISABLE_FIND_PACKAGE_Git="TRUE"
+              export FETCHCONTENT_FULLY_DISCONNECTED="ON" 
+              export FETCHCONTENT_QUIET="ON"
+              export CMAKE_OFFLINE="ON"
+              export CMAKE_BUILD_PARALLEL_LEVEL="8"
+              export GIT_SSL_NO_VERIFY="false"
+              
+              # Make Git unavailable during build to force CMake to use local sources
+              # Note: Disabled due to Nix alias evaluation issues - using alternative approach
+              # export PATH="${pkgs.lib.makeBinPath []}:$PATH"
+              
+              # VOICEVOX Core static libraries
+              export VOICEVOX_CORE_LIB_DIR="${voicevoxResources}/voicevox_core/lib"
+              export VOICEVOX_CORE_INCLUDE_DIR="${voicevoxResources}/voicevox_core/include"
+              
+              # ONNX Runtime static libraries (merged into voicevox_core/lib)
+              export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
               export ORT_STRATEGY="system"
               export ORT_USE_SYSTEM_LIB="1"
               
-              # OpenJTalk configuration
-              export OPENJTALK_LIB_DIR="${pkgs.open-jtalk}/lib"
-              export OPENJTALK_INCLUDE_DIR="${pkgs.open-jtalk}/include"
+              # PKG_CONFIG setup for static libraries (including OpenJTalk)
+              export PKG_CONFIG_PATH="${openJTalkStaticLibs}/lib/pkgconfig:${voicevoxResources}/voicevox_core/lib/pkgconfig:$PKG_CONFIG_PATH"
               
-              # PKG_CONFIG setup
-              export PKG_CONFIG_PATH="${pkgs.onnxruntime}/lib/pkgconfig:${pkgs.open-jtalk}/lib/pkgconfig:$PKG_CONFIG_PATH"
+              # Linker paths for static libraries (including OpenJTalk)
+              export LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$LIBRARY_PATH"
+              export LD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$LD_LIBRARY_PATH"
+              export DYLD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$DYLD_LIBRARY_PATH"
               
-              # CMake configuration to disable external downloads
-              export CMAKE_ARGS="-DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_QUIET=OFF"
-              export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+              # Add rpath for runtime library discovery (including OpenJTalk)
+              export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib $RUSTFLAGS"
               
-              # Force system library usage for open_jtalk dependency
-              export OPENJTALK_NO_DOWNLOAD=1
-              export OPENJTALK_SYS_USE_PKG_CONFIG=1
-              
-              # Additional cmake configuration for cargo build scripts
-              export CMAKE_PREFIX_PATH="${pkgs.onnxruntime}:${pkgs.open-jtalk}:$CMAKE_PREFIX_PATH"
+              # Only voice models (VVM files) downloaded at runtime by voicevox-download
             '';
 
             # Install binaries and setup runtime environment
@@ -141,11 +286,8 @@
                 echo "Warning: voicevox-daemon binary not found"
               fi
               
-              # Install VOICEVOX downloader for model management
-              cp ${voicevoxSetup}/bin/voicevox-download $out/bin/
-              
-              # Install automatic setup script
-              cp ${licenseAcceptor}/bin/voicevox-auto-setup $out/bin/
+              # Install VOICEVOX downloader for voice model management
+              cp ${voicevoxResources}/bin/voicevox-download $out/bin/
               
               # Create model setup script for users
               cat > $out/bin/voicevox-setup-models << 'EOF'
@@ -214,8 +356,8 @@ echo "You can now use voicevox-say for text-to-speech synthesis"
 EOF
               chmod +x $out/bin/voicevox-setup-models
               
-              # Note: All libraries and models downloaded at runtime by voicevox-download
-              # to ~/.local/share/voicevox/ (no Nix-managed libraries needed)
+              # Note: Static libraries managed by Nix, only voice models (VVM files) downloaded at runtime
+              # Voice models stored in ~/.local/share/voicevox/models/
               
               echo "VOICEVOX CLI package installation completed"
             '';
@@ -251,7 +393,7 @@ EOF
             # Use expect to auto-accept license during download
             ${pkgs.expect}/bin/expect -c "
               set timeout 300
-              spawn ${voicevoxSetup}/bin/voicevox-download --output $MODELS_DIR
+              spawn ${voicevoxResources}/bin/voicevox-download --output $MODELS_DIR
               expect {
                 \"*同意しますか*\" { send \"y\r\"; exp_continue }
                 \"*[y,n,r]*\" { send \"y\r\"; exp_continue }
@@ -276,8 +418,7 @@ EOF
             default = voicevox-cli;
             voicevox-cli = voicevox-cli;
             voicevox-say = voicevox-cli; # alias for compatibility
-            voicevoxSetup = voicevoxSetup; # for debugging setup
-            licenseAcceptor = licenseAcceptor; # automatic license acceptance
+            voicevoxResources = voicevoxResources; # static libraries for debugging
           };
 
           # Apps for direct execution

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 pub async fn launch_downloader_for_user() -> Result<()> {
     let target_dir = std::env::var("HOME")
         .ok()
-        .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
-        .unwrap_or_else(|| PathBuf::from("./models"));
+        .map(|home| PathBuf::from(home).join(".local/share/voicevox"))
+        .unwrap_or_else(|| PathBuf::from("./voicevox"));
     
     // Create target directory
     std::fs::create_dir_all(&target_dir)?;

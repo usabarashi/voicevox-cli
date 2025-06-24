@@ -9,6 +9,31 @@ use voicevox_tts::ipc::SynthesizeOptions;
 use voicevox_tts::paths::get_socket_path;
 use voicevox_tts::voice::{resolve_voice_dynamic, scan_available_models};
 
+// Try daemon mode with automatic retry logic (flattened from nested structure)
+async fn try_daemon_with_retry(
+    text: &str,
+    style_id: u32,
+    voice_description: &str,
+    options: SynthesizeOptions,
+    output_file: Option<&String>,
+    quiet: bool,
+    socket_path: &PathBuf,
+) -> Result<()> {
+    // First attempt
+    if daemon_mode(text, style_id, voice_description, options.clone(), output_file, quiet, socket_path).await.is_ok() {
+        return Ok(());
+    }
+    
+    // Daemon not available, try to start it automatically
+    start_daemon_if_needed().await?;
+    
+    // Give daemon time to fully initialize (load all models)
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    
+    // Second attempt after daemon startup
+    daemon_mode(text, style_id, voice_description, options, output_file, quiet, socket_path).await
+}
+
 // Fallback to standalone mode when daemon is not available
 async fn standalone_mode(
     text: &str,
@@ -467,51 +492,14 @@ async fn main() -> Result<()> {
             get_socket_path()
         };
         
-        match daemon_mode(
-            &text,
-            style_id,
-            &voice_description,
-            options.clone(),
-            output_file,
-            quiet,
-            &socket_path,
-        )
-        .await
-        {
-            Ok(_) => return Ok(()),
-            Err(_) => {
-                // Daemon not available, try to start it automatically
-                if let Ok(_) = start_daemon_if_needed().await {
-                    // Give daemon more time to fully initialize (load all models)
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    
-                    // Try daemon mode again
-                    match daemon_mode(
-                        &text,
-                        style_id,
-                        &voice_description,
-                        options,
-                        output_file,
-                        quiet,
-                        &socket_path,
-                    )
-                    .await
-                    {
-                        Ok(_) => return Ok(()),
-                        Err(_) => {
-                            // Still failed, fall back to standalone mode
-                            if !quiet {
-                                println!("🔄 Daemon unavailable, using standalone mode...");
-                            }
-                        }
-                    }
-                } else {
-                    // Failed to start daemon, fall back to standalone
-                    if !quiet {
-                        println!("🔄 Could not start daemon, using standalone mode...");
-                    }
-                }
-            }
+        // Try daemon mode with automatic retry
+        if let Ok(_) = try_daemon_with_retry(&text, style_id, &voice_description, options.clone(), output_file, quiet, &socket_path).await {
+            return Ok(());
+        }
+        
+        // Daemon failed, log message if not quiet
+        if !quiet {
+            println!("🔄 Daemon unavailable, using standalone mode...");
         }
     }
     

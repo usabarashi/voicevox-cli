@@ -124,22 +124,32 @@ pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
                 // Recursively clean subdirectories
                 cleanup_unnecessary_files(&path);
                 
-                // Remove empty directories (like c_api, onnxruntime if empty)
-                if let Ok(entries) = std::fs::read_dir(&path) {
-                    if entries.count() == 0 {
-                        if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                            if ["c_api", "onnxruntime"].contains(&dir_name) {
-                                if let Err(e) = std::fs::remove_dir(&path) {
-                                    eprintln!("Warning: Failed to remove empty directory {}: {}", dir_name, e);
-                                } else {
-                                    println!("   Removed empty directory: {}", dir_name);
-                                }
-                            }
-                        }
-                    }
-                }
+                // Remove empty directories (flattened logic)
+                try_remove_empty_directory(&path);
             }
         }
+    }
+}
+
+// Flattened empty directory removal logic
+fn try_remove_empty_directory(path: &std::path::PathBuf) {
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    
+    if entries.count() != 0 {
+        return;
+    }
+    
+    let dir_name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(name) if ["c_api", "onnxruntime"].contains(&name) => name,
+        _ => return,
+    };
+    
+    match std::fs::remove_dir(path) {
+        Ok(_) => println!("   Removed empty directory: {}", dir_name),
+        Err(e) => eprintln!("Warning: Failed to remove empty directory {}: {}", dir_name, e),
     }
 }
 

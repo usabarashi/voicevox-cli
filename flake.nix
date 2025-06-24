@@ -80,6 +80,9 @@
 
             # Skip tests since they require VOICEVOX runtime libraries
             doCheck = false;
+            
+            # Disable network access during build to force system library usage
+            __noChroot = false;
 
             nativeBuildInputs = with pkgs; [
               pkg-config
@@ -92,6 +95,7 @@
 
             buildInputs = with pkgs; [
               onnxruntime
+              open-jtalk
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
               pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
@@ -100,12 +104,32 @@
 
             # Note: All libraries downloaded at runtime by voicevox-download
             preBuild = ''
-              echo "Build ready - using system ONNX Runtime"
+              echo "Build ready - using system libraries"
               echo "ONNX Runtime location: ${pkgs.onnxruntime}/lib"
+              echo "OpenJTalk location: ${pkgs.open-jtalk}/lib"
+              
+              # ONNX Runtime configuration
               export ORT_LIB_LOCATION="${pkgs.onnxruntime}/lib"
               export ORT_STRATEGY="system"
               export ORT_USE_SYSTEM_LIB="1"
-              export PKG_CONFIG_PATH="${pkgs.onnxruntime}/lib/pkgconfig:$PKG_CONFIG_PATH"
+              
+              # OpenJTalk configuration
+              export OPENJTALK_LIB_DIR="${pkgs.open-jtalk}/lib"
+              export OPENJTALK_INCLUDE_DIR="${pkgs.open-jtalk}/include"
+              
+              # PKG_CONFIG setup
+              export PKG_CONFIG_PATH="${pkgs.onnxruntime}/lib/pkgconfig:${pkgs.open-jtalk}/lib/pkgconfig:$PKG_CONFIG_PATH"
+              
+              # CMake configuration to disable external downloads
+              export CMAKE_ARGS="-DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_QUIET=OFF"
+              export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+              
+              # Force system library usage for open_jtalk dependency
+              export OPENJTALK_NO_DOWNLOAD=1
+              export OPENJTALK_SYS_USE_PKG_CONFIG=1
+              
+              # Additional cmake configuration for cargo build scripts
+              export CMAKE_PREFIX_PATH="${pkgs.onnxruntime}:${pkgs.open-jtalk}:$CMAKE_PREFIX_PATH"
             '';
 
             # Install binaries and setup runtime environment

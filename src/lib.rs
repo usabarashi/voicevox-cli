@@ -1,5 +1,4 @@
 // Re-export all modules for backward compatibility
-pub mod bindings;
 pub mod core;
 pub mod ipc;
 pub mod voice;
@@ -14,12 +13,3 @@ pub use ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions};
 pub use voice::{Speaker, Style, get_model_for_voice_id, get_voice_mapping, resolve_voice_name};
 pub use paths::{get_socket_path, find_models_dir, find_models_dir_client, find_openjtalk_dict};
 pub use setup::{attempt_first_run_setup, is_valid_models_directory};
-
-// Re-export specific bindings types that are actually used
-pub use bindings::{
-    VoicevoxSynthesizer, OpenJtalkRc, VoicevoxStyleId, VoicevoxAccelerationMode,
-    VoicevoxTtsOptions, VoicevoxInitializeOptions,
-};
-
-#[cfg(feature = "dynamic_voicevox")]
-pub use bindings::DynamicVoicevoxCore;

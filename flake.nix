@@ -38,72 +38,61 @@
             sha256 = "sha256-ltfqGSigoVSFSS03YhOH31D0CnkuKmgX1N9z7NGFcfI=";
           };
 
-          openJTalkDict = pkgs.fetchurl {
-            url = "https://sourceforge.net/projects/open-jtalk/files/Dictionary/open_jtalk_dic-1.11/open_jtalk_dic_utf_8-1.11.tar.gz/download";
-            sha256 = "sha256-M+nNJRvEGqK9fKNvV6u/YerjVDyiXKiSrjReOUyxBUk=";
-          };
-
           voicevoxDownloader = pkgs.fetchurl {
             url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/download-osx-arm64";
             sha256 = "sha256-OL5Hpyd0Mc+77PzUhtIIFmHjRQqLVaiITuHICg1QBJU=";
           };
 
-          # Prepare VOICEVOX resources with fixed hashes and download voice models using VOICEVOX Core tools
+          # Prepare minimal VOICEVOX resources for build (runtime resources downloaded separately)
           voicevoxResources = pkgs.stdenv.mkDerivation {
-            name = "voicevox-resources";
+            name = "voicevox-build-resources";
             
-            nativeBuildInputs = with pkgs; [ unzip gnutar curl ];
+            nativeBuildInputs = with pkgs; [ unzip gnutar ];
             
             buildCommand = ''
-              mkdir -p $out/{voicevox_core,models,dict}
+              mkdir -p $out/{voicevox_core,bin}
               
-              echo "Extracting VOICEVOX Core..."
+              echo "Extracting VOICEVOX Core (libraries and headers only)..."
               cd $TMPDIR
               ${pkgs.unzip}/bin/unzip ${voicevoxCore}
               VOICEVOX_DIR=$(find . -maxdepth 1 -name "voicevox_core*" -type d | head -1)
-              cp -r "$VOICEVOX_DIR"/* $out/voicevox_core/
               
-              echo "Extracting ONNX Runtime..."
+              # Copy only essential build files (libraries and headers)
+              if [ -d "$VOICEVOX_DIR/lib" ]; then
+                cp -r "$VOICEVOX_DIR"/lib $out/voicevox_core/
+              fi
+              if [ -d "$VOICEVOX_DIR/include" ]; then
+                cp -r "$VOICEVOX_DIR"/include $out/voicevox_core/
+              fi
+              
+              echo "Extracting ONNX Runtime libraries..."
               cd $TMPDIR
               ${pkgs.gnutar}/bin/tar -xzf ${onnxRuntime}
               ONNX_DIR=$(find . -maxdepth 1 -name "voicevox_onnxruntime*" -type d | head -1)
-              cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
               
-              echo "Downloading voice models using VOICEVOX Core downloader..."
-              cd $TMPDIR
+              # Ensure lib directory exists
+              mkdir -p $out/voicevox_core/lib
+              if [ -d "$ONNX_DIR/lib" ]; then
+                cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
+              fi
               
-              # Copy and setup VOICEVOX downloader
-              cp ${voicevoxDownloader} ./download
-              chmod +x ./download
-              
-              echo "Using VOICEVOX Core official downloader..."
-              ./download --help || true
-              
-              # Install downloader for runtime use
-              echo "Installing VOICEVOX downloader for runtime model downloads..."
-              mkdir -p $out/bin
-              cp ./download $out/bin/voicevox-download
+              # Install VOICEVOX downloader for runtime downloads
+              echo "Installing VOICEVOX downloader for runtime use..."
+              cp ${voicevoxDownloader} $out/bin/voicevox-download
               chmod +x $out/bin/voicevox-download
               
-              # Create empty models directory (actual models will be in user directories)
-              mkdir -p $out/models
-              echo "Voice models will be downloaded to user directories at runtime"
-              
-              echo "Extracting OpenJTalk dictionary..."
-              cd $TMPDIR
-              ${pkgs.gnutar}/bin/tar -xzf ${openJTalkDict}
-              DICT_DIR=$(find . -maxdepth 1 -name "open_jtalk_dic*" -type d | head -1)
-              cp -r "$DICT_DIR"/* $out/dict/
-              
+              # Fix library paths for macOS
               echo "Fixing library paths..."
-              cd $out/voicevox_core/lib
-              for dylib in *.dylib; do
-                if [ -f "$dylib" ]; then
-                  ${pkgs.darwin.cctools}/bin/install_name_tool -id "@rpath/$dylib" "$dylib" || true
-                fi
-              done
+              if [ -d "$out/voicevox_core/lib" ]; then
+                cd $out/voicevox_core/lib
+                for dylib in *.dylib; do
+                  if [ -f "$dylib" ]; then
+                    ${pkgs.darwin.cctools}/bin/install_name_tool -id "@rpath/$dylib" "$dylib" || true
+                  fi
+                done
+              fi
               
-              echo "VOICEVOX resources prepared successfully"
+              echo "Build resources prepared (runtime downloads handled by voicevox-download)"
             '';
           };
 
@@ -125,6 +114,11 @@
 
             cargoLock = {
               lockFile = ./Cargo.lock;
+              outputHashes = {
+                "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
+                "voicevox_core-0.0.0" = "sha256-Ud/D3k8J8wOJiNiQ1bWi2RTS+Ix+ImqNEiyMHcCud78=";
+                "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
+              };
             };
 
             # Skip tests since they require VOICEVOX runtime libraries
@@ -132,6 +126,7 @@
 
             nativeBuildInputs = with pkgs; [
               pkg-config
+              cmake
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.darwin.apple_sdk.frameworks.AudioUnit
               pkgs.darwin.apple_sdk.frameworks.CoreAudio
@@ -148,17 +143,15 @@
             preBuild = ''
               echo "Setting up VOICEVOX resources from Nix store..."
               
-              # Copy VOICEVOX Core
+              # Copy VOICEVOX Core build resources (libraries and headers only)
               cp -r ${voicevoxResources}/voicevox_core ./
               chmod -R u+w voicevox_core
               
-              # Copy voice models
-              cp -r ${voicevoxResources}/models ./
-              chmod -R u+w models
+              # Set up ONNX Runtime environment for ort-sys
+              export ORT_LIB_LOCATION=${voicevoxResources}/voicevox_core/lib
+              export ORT_INCLUDE_LOCATION=${voicevoxResources}/voicevox_core/include
               
-              # Copy OpenJTalk dictionary
-              cp -r ${voicevoxResources}/dict ./
-              chmod -R u+w dict
+              # Note: Models and dictionary will be downloaded at runtime by voicevox-download
               
               echo "VOICEVOX resources ready for build"
             '';
@@ -259,16 +252,9 @@ EOF
               mkdir -p $out/lib
               cp -r ${voicevoxResources}/voicevox_core/lib/* $out/lib/
 
-              # Create directories for VOICEVOX data and copy resources
-              mkdir -p $out/share/voicevox/{dict,models}
-              cp -r ${voicevoxResources}/dict/* $out/share/voicevox/dict/
-              
-              # Copy models if they exist
-              if [ "$(ls -A ${voicevoxResources}/models/ 2>/dev/null)" ]; then
-                cp -r ${voicevoxResources}/models/* $out/share/voicevox/models/
-              else
-                echo "No pre-downloaded models - models will be downloaded at runtime"
-              fi
+              # Create empty directories for runtime downloads
+              mkdir -p $out/share/voicevox
+              echo "Runtime resources (models, dict) will be downloaded by voicevox-download"
 
               # Fix runtime library paths on macOS
               if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -312,7 +298,7 @@ EOF
             # Use expect to auto-accept license during download
             ${pkgs.expect}/bin/expect -c "
               set timeout 300
-              spawn ${voicevoxResources}/bin/voicevox-download --output $MODELS_DIR --only models
+              spawn ${voicevoxResources}/bin/voicevox-download --output $MODELS_DIR
               expect {
                 \"*同意しますか*\" { send \"y\r\"; exp_continue }
                 \"*[y,n,r]*\" { send \"y\r\"; exp_continue }
@@ -365,6 +351,7 @@ EOF
               clippy
               rust-analyzer
               pkg-config
+              cmake
             ];
 
             shellHook = ''

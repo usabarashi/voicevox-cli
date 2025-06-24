@@ -195,7 +195,7 @@ voicevox-say --model 3 "モデル番号指定"
 
 When models are downloaded, you typically get 26+ characters including:
 - **ずんだもん (Zundamon)** - Multiple emotional variations
-- **四国めたん (Shikoku Metan)** - Multiple emotional variations  
+- **四国めたん (Shikoku Metan)** - Multiple emotional variations
 - **春日部つむぎ (Kasukabe Tsumugi)**, **雨晴はう (Amehare Hau)**, **波音リツ (Namine Ritsu)**, **九州そら (Kyushu Sora)**, **もち子さん (Mochiko-san)**, and many more
 
 **Note**: Exact voice IDs and available characters depend on your downloaded models. Use `--list-speakers` for definitive information.

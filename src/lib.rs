@@ -513,43 +513,9 @@ impl VoicevoxCore {
         // Find the models directory - this may trigger first-run setup
         let models_dir = find_models_dir()?;
 
-        // Load all VVM files
+        // Load all VVM files recursively
         let mut loaded_count = 0;
-        if let Ok(entries) = std::fs::read_dir(&models_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                if let Some(file_name) = entry.file_name().to_str() {
-                    if file_name.ends_with(".vvm") {
-                        let model_path = entry.path();
-                        if let Some(path_str) = model_path.to_str() {
-                            if let Ok(path_cstr) = CString::new(path_str) {
-                                unsafe {
-                                    let mut model: *mut VoicevoxVoiceModelFile = ptr::null_mut();
-                                    let result = voicevox_voice_model_file_open(
-                                        path_cstr.as_ptr(),
-                                        &mut model,
-                                    );
-                                    if result == VOICEVOX_RESULT_OK {
-                                        let load_result = voicevox_synthesizer_load_voice_model(
-                                            self.synthesizer,
-                                            model,
-                                        );
-                                        if load_result == VOICEVOX_RESULT_OK {
-                                            loaded_count += 1;
-                                        } else if load_result == 18 {
-                                            // MODEL_ALREADY_LOADED_ERROR - not an error
-                                            loaded_count += 1;
-                                        }
-                                        voicevox_voice_model_file_delete(model);
-                                    } else {
-                                        // Silent - ignore model open failures
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        self.load_vvm_files_recursive(&models_dir, &mut loaded_count)?;
 
         if loaded_count == 0 {
             return Err(anyhow!("Failed to load any models"));
@@ -563,48 +529,58 @@ impl VoicevoxCore {
         // Find the models directory - no download attempt for client side
         let models_dir = find_models_dir_client()?;
 
-        // Load all VVM files
+        // Load all VVM files recursively
         let mut loaded_count = 0;
-        if let Ok(entries) = std::fs::read_dir(&models_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                if let Some(file_name) = entry.file_name().to_str() {
-                    if file_name.ends_with(".vvm") {
-                        let model_path = entry.path();
-                        if let Some(path_str) = model_path.to_str() {
-                            if let Ok(path_cstr) = CString::new(path_str) {
-                                unsafe {
-                                    let mut model: *mut VoicevoxVoiceModelFile = ptr::null_mut();
-                                    let result = voicevox_voice_model_file_open(
-                                        path_cstr.as_ptr(),
-                                        &mut model,
-                                    );
-                                    if result == VOICEVOX_RESULT_OK {
-                                        let load_result = voicevox_synthesizer_load_voice_model(
-                                            self.synthesizer,
-                                            model,
-                                        );
-                                        if load_result == VOICEVOX_RESULT_OK {
-                                            loaded_count += 1;
-                                        } else if load_result == 18 {
-                                            // MODEL_ALREADY_LOADED_ERROR - not an error
-                                            loaded_count += 1;
-                                        }
-                                        voicevox_voice_model_file_delete(model);
-                                    } else {
-                                        // Silent - ignore model open failures
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        self.load_vvm_files_recursive(&models_dir, &mut loaded_count)?;
 
         if loaded_count == 0 {
             return Err(anyhow!("Failed to load any models"));
         }
 
+        Ok(())
+    }
+    
+    // Helper function to recursively load VVM files from a directory
+    fn load_vvm_files_recursive(&self, dir: &PathBuf, loaded_count: &mut i32) -> Result<()> {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let entry_path = entry.path();
+                
+                if entry_path.is_file() {
+                    if let Some(file_name) = entry.file_name().to_str() {
+                        if file_name.ends_with(".vvm") {
+                            if let Some(path_str) = entry_path.to_str() {
+                                if let Ok(path_cstr) = CString::new(path_str) {
+                                    unsafe {
+                                        let mut model: *mut VoicevoxVoiceModelFile = ptr::null_mut();
+                                        let result = voicevox_voice_model_file_open(
+                                            path_cstr.as_ptr(),
+                                            &mut model,
+                                        );
+                                        if result == VOICEVOX_RESULT_OK {
+                                            let load_result = voicevox_synthesizer_load_voice_model(
+                                                self.synthesizer,
+                                                model,
+                                            );
+                                            if load_result == VOICEVOX_RESULT_OK {
+                                                *loaded_count += 1;
+                                            } else if load_result == 18 {
+                                                // MODEL_ALREADY_LOADED_ERROR - not an error
+                                                *loaded_count += 1;
+                                            }
+                                            voicevox_voice_model_file_delete(model);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if entry_path.is_dir() {
+                    // Recursively search subdirectories
+                    self.load_vvm_files_recursive(&entry_path, loaded_count)?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -615,12 +591,10 @@ impl VoicevoxCore {
 
         let models_dir = find_models_dir_client()?;
 
-        // Silent minimal model loading
-        
+        // Silent minimal model loading with recursive search
         let mut loaded_count = 0;
         for model_name in &default_models {
-            let model_path = models_dir.join(model_name);
-            if model_path.exists() {
+            if let Some(model_path) = self.find_model_file_recursive(&models_dir, model_name) {
                 if let Some(path_str) = model_path.to_str() {
                     if let Ok(path_cstr) = CString::new(path_str) {
                         unsafe {
@@ -649,6 +623,29 @@ impl VoicevoxCore {
         }
 
         Ok(())
+    }
+    
+    // Helper function to find a specific model file recursively
+    fn find_model_file_recursive(&self, dir: &PathBuf, target_filename: &str) -> Option<PathBuf> {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let entry_path = entry.path();
+                
+                if entry_path.is_file() {
+                    if let Some(file_name) = entry.file_name().to_str() {
+                        if file_name == target_filename {
+                            return Some(entry_path);
+                        }
+                    }
+                } else if entry_path.is_dir() {
+                    // Recursively search subdirectories
+                    if let Some(found) = self.find_model_file_recursive(&entry_path, target_filename) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
@@ -987,19 +984,32 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
     ))
 }
 
-// Helper function to validate models directory
+// Helper function to validate models directory (recursive search for .vvm files)
 fn is_valid_models_directory(path: &PathBuf) -> bool {
-    if let Ok(entries) = std::fs::read_dir(path) {
-        entries.filter_map(|e| e.ok()).any(|e| {
-            if let Some(file_name) = e.file_name().to_str() {
-                file_name.ends_with(".vvm")
-            } else {
-                false
+    fn find_vvm_files_recursive(dir: &PathBuf) -> bool {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let entry_path = entry.path();
+                
+                // Check if it's a .vvm file
+                if let Some(file_name) = entry.file_name().to_str() {
+                    if file_name.ends_with(".vvm") {
+                        return true;
+                    }
+                }
+                
+                // If it's a directory, search recursively
+                if entry_path.is_dir() {
+                    if find_vvm_files_recursive(&entry_path) {
+                        return true;
+                    }
+                }
             }
-        })
-    } else {
+        }
         false
     }
+    
+    find_vvm_files_recursive(path)
 }
 
 // Helper function to check if a directory contains .dic files

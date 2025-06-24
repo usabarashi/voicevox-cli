@@ -341,15 +341,96 @@ async fn launch_downloader_for_user() -> Result<()> {
         .status()?;
     
     if status.success() {
-        // Verify models were downloaded
-        if find_models_dir_client().is_ok() {
+        // Verify models were downloaded by checking target directory directly
+        let vvm_files = std::fs::read_dir(&target_dir)
+            .map_err(|e| anyhow!("Failed to read target directory: {}", e))?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry.path().is_file() && 
+                entry.file_name().to_str().map_or(false, |name| name.ends_with(".vvm")) ||
+                entry.path().is_dir()  // Also check subdirectories
+            })
+            .collect::<Vec<_>>();
+            
+        // Count VVM files recursively
+        let vvm_count = count_vvm_files_recursive(&target_dir);
+        
+        if vvm_count > 0 {
             println!("✅ Models successfully downloaded to: {}", target_dir.display());
+            println!("   Found {} VVM model files", vvm_count);
+            
+            // Clean up unnecessary files (zip, tgz, tar.gz) in target directory
+            cleanup_unnecessary_files(&target_dir);
+            
             Ok(())
         } else {
-            Err(anyhow!("Download completed but models not found"))
+            Err(anyhow!("Download completed but no VVM models found in target directory"))
         }
     } else {
         Err(anyhow!("Download process failed or was cancelled"))
+    }
+}
+
+// Helper function to count VVM files recursively
+fn count_vvm_files_recursive(dir: &std::path::PathBuf) -> usize {
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.ends_with(".vvm") {
+                        count += 1;
+                    }
+                }
+            } else if path.is_dir() {
+                count += count_vvm_files_recursive(&path);
+            }
+        }
+    }
+    count
+}
+
+// Clean up unnecessary downloaded files to save space
+fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
+    let unnecessary_extensions = [
+        ".zip", ".tgz", ".tar.gz", ".tar", ".gz", // Archive files
+        ".exe", ".dll", ".so",                    // Executable files not needed after extraction
+    ];
+    
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if unnecessary_extensions.iter().any(|&ext| name.ends_with(ext)) {
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            eprintln!("Warning: Failed to remove {}: {}", name, e);
+                        } else {
+                            println!("   Cleaned up: {}", name);
+                        }
+                    }
+                }
+            } else if path.is_dir() {
+                // Recursively clean subdirectories
+                cleanup_unnecessary_files(&path);
+                
+                // Remove empty directories (like c_api, onnxruntime if empty)
+                if let Ok(entries) = std::fs::read_dir(&path) {
+                    if entries.count() == 0 {
+                        if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                            if ["c_api", "onnxruntime"].contains(&dir_name) {
+                                if let Err(e) = std::fs::remove_dir(&path) {
+                                    eprintln!("Warning: Failed to remove empty directory {}: {}", dir_name, e);
+                                } else {
+                                    println!("   Removed empty directory: {}", dir_name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -714,8 +795,8 @@ async fn main() -> Result<()> {
             Err(_) => {
                 // Daemon not available, try to start it automatically
                 if let Ok(_) = start_daemon_if_needed().await {
-                    // Give daemon more time to fully initialize
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    // Give daemon more time to fully initialize (load all models)
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                     
                     // Try daemon mode again
                     match daemon_mode(

@@ -25,17 +25,19 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 - **`src/bin/client.rs`**: Lightweight CLI client (primary interface)
 - **`src/main.rs`**: Legacy standalone implementation
 - **`voicevox_core/`**: VOICEVOX Core runtime libraries (`libvoicevox_core.dylib`) and headers
-- **`models/*.vvm`**: VOICEVOX voice model files (19 models supported)
+- **`models/*.vvm`**: VOICEVOX voice model files (26+ models supported)
 - **`dict/`**: OpenJTalk dictionary for Japanese text processing
 
 ### Key Architecture Patterns
 
 1. **Daemon-Client IPC**: Unix socket communication with tokio async runtime
-2. **Pre-loaded Models**: Daemon loads all 19 VVM models on startup for instant synthesis  
+2. **Pre-loaded Models**: Daemon loads all available VVM models on startup for instant synthesis  
 3. **CPU-Only Processing**: Hardcoded CPU mode on macOS (no GPU dependencies)
 4. **Silent Operation**: macOS `say` compatible - no output on success, errors to stderr
 5. **Automatic Fallback**: Client → Daemon → Standalone → Error progression
 6. **Process Management**: Duplicate daemon prevention and graceful shutdown
+7. **Responsibility Separation**: Client-side setup, daemon-side synthesis
+8. **User Isolation**: UID-based daemon identification for multi-user support
 
 ### FFI Integration
 
@@ -189,22 +191,49 @@ pkill -f voicevox-daemon
 - **Error Handling**: All errors go to stderr, never stdout
 
 ### Model Management
-- **All Models Default**: Daemon loads all 19 VVM models on startup
-- **Automatic First-Run Setup**: Interactive voice model download on first usage
+
+**Responsibility Separation Architecture**:
+- **Daemon**: Model loading and speech synthesis only (no download capability)  
+- **Client**: User interaction, first-run setup, and model downloads
+- **All Models Default**: Daemon loads all available VVM models on startup
 - **Environment Independent**: Automatic path discovery for models and dictionaries
-- **Duplicate Prevention**: Multiple daemon startup protection
+- **Duplicate Prevention**: Multiple daemon startup protection via UID-based isolation
 
 #### Voice Model Setup Process
 
-**Automatic Setup (Recommended)**:
+**Client-Side First-Run Setup (Current Implementation)**:
 ```bash
-# First time usage triggers automatic setup
+# First time usage triggers client-side interactive setup
 voicevox-say "初回起動テスト"
 
-# User sees interactive prompt:
-# 🎭 VOICEVOX TTS - First Run Setup
-# Voice models are required for text-to-speech synthesis.
-# Would you like to download voice models now? [Y/n]: y
+# Client-side workflow:
+# 1. Checks for existing models with find_models_dir_client()
+# 2. If not found, prompts user for download consent
+# 3. Launches VOICEVOX downloader with direct user interaction
+# 4. User manually accepts license terms for 26+ voice characters
+# 5. Models downloaded to ~/.local/share/voicevox/models/
+```
+
+**Interactive License Acceptance**:
+```bash
+# User sees complete license display with pager:
+🎭 VOICEVOX TTS - First Run Setup
+Voice models are required for text-to-speech synthesis.
+
+Would you like to download voice models now? [Y/n]: y
+🔄 Starting voice model download...
+Note: This will require accepting VOICEVOX license terms.
+
+📦 Target directory: ~/.local/share/voicevox/models
+🔄 Launching VOICEVOX downloader...
+   Please follow the on-screen instructions to accept license terms.
+   Press Enter when ready to continue...
+
+# Complete license terms displayed for:
+# - VOICEVOX Audio Model License  
+# - Individual voice library terms (26+ characters)
+# - VOICEVOX ONNX Runtime License
+# User presses 'q' to exit pager, then 'y' to accept
 ```
 
 **Manual Setup**:
@@ -212,16 +241,19 @@ voicevox-say "初回起動テスト"
 # Use dedicated setup command
 voicevox-setup-models
 
-# Or direct downloader
+# Or direct downloader  
 voicevox-download --output ~/.local/share/voicevox/models
 ```
 
 **Setup Features**:
-- **Official VOICEVOX Downloader**: Uses `voicevox-download` from VOICEVOX Core
-- **License Agreement**: Proper VOICEVOX license terms acceptance  
+- **Client-Side Responsibility**: Model downloads handled by voicevox-say client
+- **Official VOICEVOX Downloader**: Direct integration with `voicevox-download` from VOICEVOX Core
+- **Complete License Display**: Interactive pager shows all 26+ character license terms
+- **Manual User Confirmation**: No automated acceptance - user must manually review and accept
 - **XDG Compliance**: Models stored in `~/.local/share/voicevox/models/`
-- **Size Information**: ~1.1GB download (19 voice models)
+- **Size Information**: ~1.1GB download (26+ voice models)
 - **Automatic Detection**: Recursive VVM file discovery after download
+- **Graceful Fallback**: If download fails/declined, falls back to standalone mode
 
 ### IPC Protocol
 - **Unix Sockets**: XDG-compliant socket paths with automatic directory creation
@@ -231,15 +263,16 @@ voicevox-download --output ~/.local/share/voicevox/models
 
 ### Socket Path Priority (XDG Base Directory Specification)
 1. `$VOICEVOX_SOCKET_PATH` (environment override)
-2. `$XDG_RUNTIME_DIR/voicevox/daemon.sock` (runtime files)
-3. `$XDG_STATE_HOME/voicevox/daemon.sock` (persistent state)
-4. `~/.local/state/voicevox/daemon.sock` (XDG fallback)
-5. `$TMPDIR/voicevox-daemon-{pid}.sock` (temporary)
+2. `$XDG_RUNTIME_DIR/voicevox-daemon.sock` (runtime files)
+3. `$XDG_STATE_HOME/voicevox-daemon.sock` (persistent state)
+4. `~/.local/state/voicevox-daemon.sock` (XDG fallback)
+5. `/tmp/voicevox-daemon-{uid}.sock` (temporary, user-specific by UID)
 
 ### Voice System
-- **99 Voice Styles**: 26 characters with multiple emotional variants
+- **99+ Voice Styles**: 26+ characters with multiple emotional variants
 - **Style ID Mapping**: Direct speaker ID specification or name resolution
 - **Character Variety**: From cute (Zundamon) to mature (No.7) to dramatic (后鬼)
+- **Complete License Coverage**: Individual terms for all voice characters displayed during setup
 
 ## Tips
 
@@ -248,6 +281,9 @@ voicevox-download --output ~/.local/share/voicevox/models
 - **Voice Discovery**: Use `--list-speakers` to see all available voices and IDs  
 - **Development**: Use `--foreground` flag on daemon for debugging output
 - **Performance**: Daemon startup takes ~3 seconds but subsequent synthesis is instant
-- **First-Run Setup**: Users can accept (Y) or decline (n) automatic voice model download
-- **License Compliance**: VOICEVOX license terms must be accepted during voice model setup
+- **First-Run Setup**: Client handles initial setup - users can accept (Y) or decline (n) model download
+- **License Compliance**: Complete VOICEVOX license terms displayed interactively during setup
+- **Manual License Review**: No automated acceptance - users must manually review all terms
 - **Storage Management**: Voice models use ~1.1GB in `~/.local/share/voicevox/models/`
+- **User Isolation**: Daemon processes isolated by UID for multi-user systems
+- **Responsibility Separation**: Daemon = synthesis only, Client = user interaction + downloads

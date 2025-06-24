@@ -108,30 +108,72 @@ mod manual_bindings {
         pub fn voicevox_synthesizer_delete(synthesizer: *mut VoicevoxSynthesizer);
         pub fn voicevox_open_jtalk_rc_delete(open_jtalk_rc: *mut OpenJtalkRc);
     }
-    
 }
 
 #[cfg(not(feature = "use_bindgen"))]
 pub use manual_bindings::*;
+
+// Re-export utility functions for clients (functions already defined as pub below)
 
 // Dynamic loading implementation for VOICEVOX Core
 #[cfg(feature = "dynamic_voicevox")]
 pub struct DynamicVoicevoxCore {
     _voicevox_lib: Library,
     _onnxruntime_lib: Library,
-    
+
     // Function pointers
-    pub voicevox_make_default_load_onnxruntime_options: Symbol<'static, unsafe extern "C" fn() -> *const VoicevoxLoadOnnxruntimeOptions>,
-    pub voicevox_onnxruntime_load_once: Symbol<'static, unsafe extern "C" fn(*const VoicevoxLoadOnnxruntimeOptions, *mut *const VoicevoxOnnxruntime) -> libc::c_int>,
-    pub voicevox_open_jtalk_rc_new: Symbol<'static, unsafe extern "C" fn(*const libc::c_char, *mut *mut OpenJtalkRc) -> libc::c_int>,
-    pub voicevox_synthesizer_new: Symbol<'static, unsafe extern "C" fn(*const VoicevoxOnnxruntime, *mut OpenJtalkRc, VoicevoxInitializeOptions, *mut *mut VoicevoxSynthesizer) -> libc::c_int>,
-    pub voicevox_make_default_tts_options: Symbol<'static, unsafe extern "C" fn() -> *const VoicevoxTtsOptions>,
-    pub voicevox_synthesizer_tts: Symbol<'static, unsafe extern "C" fn(*mut VoicevoxSynthesizer, *const libc::c_char, VoicevoxStyleId, *const VoicevoxTtsOptions, *mut usize, *mut *mut libc::c_uchar) -> libc::c_int>,
-    pub voicevox_synthesizer_create_metas_json: Symbol<'static, unsafe extern "C" fn(*mut VoicevoxSynthesizer) -> *mut libc::c_char>,
-    pub voicevox_synthesizer_load_voice_model: Symbol<'static, unsafe extern "C" fn(*const VoicevoxSynthesizer, *const VoicevoxVoiceModelFile) -> libc::c_int>,
-    pub voicevox_voice_model_file_open: Symbol<'static, unsafe extern "C" fn(*const libc::c_char, *mut *mut VoicevoxVoiceModelFile) -> libc::c_int>,
-    pub voicevox_voice_model_file_delete: Symbol<'static, unsafe extern "C" fn(*mut VoicevoxVoiceModelFile)>,
-    pub voicevox_synthesizer_delete: Symbol<'static, unsafe extern "C" fn(*mut VoicevoxSynthesizer)>,
+    pub voicevox_make_default_load_onnxruntime_options:
+        Symbol<'static, unsafe extern "C" fn() -> *const VoicevoxLoadOnnxruntimeOptions>,
+    pub voicevox_onnxruntime_load_once: Symbol<
+        'static,
+        unsafe extern "C" fn(
+            *const VoicevoxLoadOnnxruntimeOptions,
+            *mut *const VoicevoxOnnxruntime,
+        ) -> libc::c_int,
+    >,
+    pub voicevox_open_jtalk_rc_new: Symbol<
+        'static,
+        unsafe extern "C" fn(*const libc::c_char, *mut *mut OpenJtalkRc) -> libc::c_int,
+    >,
+    pub voicevox_synthesizer_new: Symbol<
+        'static,
+        unsafe extern "C" fn(
+            *const VoicevoxOnnxruntime,
+            *mut OpenJtalkRc,
+            VoicevoxInitializeOptions,
+            *mut *mut VoicevoxSynthesizer,
+        ) -> libc::c_int,
+    >,
+    pub voicevox_make_default_tts_options:
+        Symbol<'static, unsafe extern "C" fn() -> *const VoicevoxTtsOptions>,
+    pub voicevox_synthesizer_tts: Symbol<
+        'static,
+        unsafe extern "C" fn(
+            *mut VoicevoxSynthesizer,
+            *const libc::c_char,
+            VoicevoxStyleId,
+            *const VoicevoxTtsOptions,
+            *mut usize,
+            *mut *mut libc::c_uchar,
+        ) -> libc::c_int,
+    >,
+    pub voicevox_synthesizer_create_metas_json:
+        Symbol<'static, unsafe extern "C" fn(*mut VoicevoxSynthesizer) -> *mut libc::c_char>,
+    pub voicevox_synthesizer_load_voice_model: Symbol<
+        'static,
+        unsafe extern "C" fn(
+            *const VoicevoxSynthesizer,
+            *const VoicevoxVoiceModelFile,
+        ) -> libc::c_int,
+    >,
+    pub voicevox_voice_model_file_open: Symbol<
+        'static,
+        unsafe extern "C" fn(*const libc::c_char, *mut *mut VoicevoxVoiceModelFile) -> libc::c_int,
+    >,
+    pub voicevox_voice_model_file_delete:
+        Symbol<'static, unsafe extern "C" fn(*mut VoicevoxVoiceModelFile)>,
+    pub voicevox_synthesizer_delete:
+        Symbol<'static, unsafe extern "C" fn(*mut VoicevoxSynthesizer)>,
     pub voicevox_open_jtalk_rc_delete: Symbol<'static, unsafe extern "C" fn(*mut OpenJtalkRc)>,
     pub voicevox_wav_free: Symbol<'static, unsafe extern "C" fn(*mut libc::c_uchar)>,
     pub voicevox_json_free: Symbol<'static, unsafe extern "C" fn(*mut libc::c_char)>,
@@ -145,16 +187,15 @@ impl DynamicVoicevoxCore {
             .parent()
             .ok_or_else(|| anyhow!("Failed to get executable directory"))?
             .to_path_buf();
-        
-        let current_dir = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."));
-        
+
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
         // Check for Nix store environment
         let is_nix_store = exe_dir.starts_with("/nix/store");
-        
+
         let mut voicevox_lib_paths = Vec::new();
         let mut onnxruntime_lib_paths = Vec::new();
-        
+
         // Priority 1: Nix store paths (when running from /nix/store)
         if is_nix_store {
             // Look for VOICEVOX Core in Nix store structure
@@ -163,7 +204,7 @@ impl DynamicVoicevoxCore {
                 onnxruntime_lib_paths.push(nix_path.join("lib/libvoicevox_onnxruntime.dylib"));
             }
         }
-        
+
         // Priority 2: Current directory relative paths
         voicevox_lib_paths.extend([
             current_dir.join("voicevox_core/c_api/lib/libvoicevox_core.dylib"),
@@ -173,7 +214,7 @@ impl DynamicVoicevoxCore {
             current_dir.join("voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.dylib"),
             PathBuf::from("./voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.dylib"),
         ]);
-        
+
         // Priority 3: Executable directory relative paths
         voicevox_lib_paths.extend([
             exe_dir.join("../voicevox_core/c_api/lib/libvoicevox_core.dylib"),
@@ -181,11 +222,11 @@ impl DynamicVoicevoxCore {
             exe_dir.join("lib/libvoicevox_core.dylib"),
         ]);
         onnxruntime_lib_paths.extend([
-            exe_dir.join("../voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.dylib"), 
+            exe_dir.join("../voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.dylib"),
             exe_dir.join("voicevox_core/onnxruntime/lib/libvoicevox_onnxruntime.dylib"),
             exe_dir.join("lib/libvoicevox_onnxruntime.dylib"),
         ]);
-        
+
         // Priority 4: System paths
         voicevox_lib_paths.extend([
             PathBuf::from("/usr/local/lib/libvoicevox_core.dylib"),
@@ -195,7 +236,7 @@ impl DynamicVoicevoxCore {
             PathBuf::from("/usr/local/lib/libvoicevox_onnxruntime.dylib"),
             PathBuf::from("/opt/homebrew/lib/libvoicevox_onnxruntime.dylib"),
         ]);
-        
+
         // Load VOICEVOX Core library
         let voicevox_lib = voicevox_lib_paths
             .iter()
@@ -204,9 +245,9 @@ impl DynamicVoicevoxCore {
                 unsafe { Library::new(path).ok() }
             })
             .ok_or_else(|| anyhow!("Failed to load VOICEVOX Core library from any path"))?;
-        
+
         println!("VOICEVOX Core library loaded successfully");
-        
+
         // Load ONNX Runtime library
         let onnxruntime_lib = onnxruntime_lib_paths
             .iter()
@@ -215,31 +256,39 @@ impl DynamicVoicevoxCore {
                 unsafe { Library::new(path).ok() }
             })
             .ok_or_else(|| anyhow!("Failed to load ONNX Runtime library from any path"))?;
-        
+
         println!("ONNX Runtime library loaded successfully");
-        
+
         // Load function symbols
         let core = unsafe {
             DynamicVoicevoxCore {
-                voicevox_make_default_load_onnxruntime_options: voicevox_lib.get(b"voicevox_make_default_load_onnxruntime_options\0")?,
-                voicevox_onnxruntime_load_once: onnxruntime_lib.get(b"voicevox_onnxruntime_load_once\0")?,
+                voicevox_make_default_load_onnxruntime_options: voicevox_lib
+                    .get(b"voicevox_make_default_load_onnxruntime_options\0")?,
+                voicevox_onnxruntime_load_once: onnxruntime_lib
+                    .get(b"voicevox_onnxruntime_load_once\0")?,
                 voicevox_open_jtalk_rc_new: voicevox_lib.get(b"voicevox_open_jtalk_rc_new\0")?,
                 voicevox_synthesizer_new: voicevox_lib.get(b"voicevox_synthesizer_new\0")?,
-                voicevox_make_default_tts_options: voicevox_lib.get(b"voicevox_make_default_tts_options\0")?,
+                voicevox_make_default_tts_options: voicevox_lib
+                    .get(b"voicevox_make_default_tts_options\0")?,
                 voicevox_synthesizer_tts: voicevox_lib.get(b"voicevox_synthesizer_tts\0")?,
-                voicevox_synthesizer_create_metas_json: voicevox_lib.get(b"voicevox_synthesizer_create_metas_json\0")?,
-                voicevox_synthesizer_load_voice_model: voicevox_lib.get(b"voicevox_synthesizer_load_voice_model\0")?,
-                voicevox_voice_model_file_open: voicevox_lib.get(b"voicevox_voice_model_file_open\0")?,
-                voicevox_voice_model_file_delete: voicevox_lib.get(b"voicevox_voice_model_file_delete\0")?,
+                voicevox_synthesizer_create_metas_json: voicevox_lib
+                    .get(b"voicevox_synthesizer_create_metas_json\0")?,
+                voicevox_synthesizer_load_voice_model: voicevox_lib
+                    .get(b"voicevox_synthesizer_load_voice_model\0")?,
+                voicevox_voice_model_file_open: voicevox_lib
+                    .get(b"voicevox_voice_model_file_open\0")?,
+                voicevox_voice_model_file_delete: voicevox_lib
+                    .get(b"voicevox_voice_model_file_delete\0")?,
                 voicevox_synthesizer_delete: voicevox_lib.get(b"voicevox_synthesizer_delete\0")?,
-                voicevox_open_jtalk_rc_delete: voicevox_lib.get(b"voicevox_open_jtalk_rc_delete\0")?,
+                voicevox_open_jtalk_rc_delete: voicevox_lib
+                    .get(b"voicevox_open_jtalk_rc_delete\0")?,
                 voicevox_wav_free: voicevox_lib.get(b"voicevox_wav_free\0")?,
                 voicevox_json_free: voicevox_lib.get(b"voicevox_json_free\0")?,
                 _voicevox_lib: voicevox_lib,
                 _onnxruntime_lib: onnxruntime_lib,
             }
         };
-        
+
         println!("All VOICEVOX Core functions loaded successfully");
         Ok(core)
     }
@@ -342,7 +391,7 @@ impl VoicevoxCore {
             Self::new_with_linked()
         }
     }
-    
+
     #[cfg(feature = "dynamic_voicevox")]
     fn new_with_dynamic_core(dynamic_core: DynamicVoicevoxCore) -> Result<Self> {
         unsafe {
@@ -350,7 +399,8 @@ impl VoicevoxCore {
             let load_options = (dynamic_core.voicevox_make_default_load_onnxruntime_options)();
             let mut onnxruntime: *const VoicevoxOnnxruntime = ptr::null();
 
-            let result = (dynamic_core.voicevox_onnxruntime_load_once)(load_options, &mut onnxruntime);
+            let result =
+                (dynamic_core.voicevox_onnxruntime_load_once)(load_options, &mut onnxruntime);
             if result != VOICEVOX_RESULT_OK {
                 return Err(anyhow!(
                     "ONNX Runtime initialization failed: code {}",
@@ -363,7 +413,8 @@ impl VoicevoxCore {
             let dict_cstr = CString::new(dict_path)?;
             let mut open_jtalk_rc: *mut OpenJtalkRc = ptr::null_mut();
 
-            let result = (dynamic_core.voicevox_open_jtalk_rc_new)(dict_cstr.as_ptr(), &mut open_jtalk_rc);
+            let result =
+                (dynamic_core.voicevox_open_jtalk_rc_new)(dict_cstr.as_ptr(), &mut open_jtalk_rc);
             if result != VOICEVOX_RESULT_OK {
                 return Err(anyhow!(
                     "OpenJTalk RC initialization failed: code {}",
@@ -392,7 +443,6 @@ impl VoicevoxCore {
                 return Err(anyhow!("Synthesizer creation failed: code {}", result));
             }
 
-
             Ok(VoicevoxCore {
                 synthesizer,
                 _open_jtalk_rc: open_jtalk_rc,
@@ -400,7 +450,7 @@ impl VoicevoxCore {
             })
         }
     }
-    
+
     #[cfg(feature = "link_voicevox")]
     fn new_with_linked() -> Result<Self> {
         unsafe {
@@ -450,7 +500,6 @@ impl VoicevoxCore {
                 return Err(anyhow!("Synthesizer creation failed: code {}", result));
             }
 
-
             Ok(VoicevoxCore {
                 synthesizer,
                 _open_jtalk_rc: open_jtalk_rc,
@@ -459,12 +508,10 @@ impl VoicevoxCore {
             })
         }
     }
-    
 
     pub fn load_all_models(&self) -> Result<()> {
         // Find the models directory - this may trigger first-run setup
         let models_dir = find_models_dir()?;
-
 
         // Load all VVM files
         let mut loaded_count = 0;
@@ -491,12 +538,10 @@ impl VoicevoxCore {
                                         } else if load_result == 18 {
                                             // MODEL_ALREADY_LOADED_ERROR - not an error
                                             loaded_count += 1;
-                                        } else {
-                                            eprintln!("Warning: Failed to load model {}: code {}", file_name, load_result);
                                         }
                                         voicevox_voice_model_file_delete(model);
                                     } else {
-                                        eprintln!("Warning: Failed to open model {}: code {}", file_name, result);
+                                        // Silent - ignore model open failures
                                     }
                                 }
                             }
@@ -507,7 +552,56 @@ impl VoicevoxCore {
         }
 
         if loaded_count == 0 {
-            eprintln!("Warning: No VVM models were loaded");
+            return Err(anyhow!("Failed to load any models"));
+        }
+
+        Ok(())
+    }
+
+    // Client-side model loading (no download attempt)
+    pub fn load_all_models_no_download(&self) -> Result<()> {
+        // Find the models directory - no download attempt for client side
+        let models_dir = find_models_dir_client()?;
+
+        // Load all VVM files
+        let mut loaded_count = 0;
+        if let Ok(entries) = std::fs::read_dir(&models_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                if let Some(file_name) = entry.file_name().to_str() {
+                    if file_name.ends_with(".vvm") {
+                        let model_path = entry.path();
+                        if let Some(path_str) = model_path.to_str() {
+                            if let Ok(path_cstr) = CString::new(path_str) {
+                                unsafe {
+                                    let mut model: *mut VoicevoxVoiceModelFile = ptr::null_mut();
+                                    let result = voicevox_voice_model_file_open(
+                                        path_cstr.as_ptr(),
+                                        &mut model,
+                                    );
+                                    if result == VOICEVOX_RESULT_OK {
+                                        let load_result = voicevox_synthesizer_load_voice_model(
+                                            self.synthesizer,
+                                            model,
+                                        );
+                                        if load_result == VOICEVOX_RESULT_OK {
+                                            loaded_count += 1;
+                                        } else if load_result == 18 {
+                                            // MODEL_ALREADY_LOADED_ERROR - not an error
+                                            loaded_count += 1;
+                                        }
+                                        voicevox_voice_model_file_delete(model);
+                                    } else {
+                                        // Silent - ignore model open failures
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if loaded_count == 0 {
             return Err(anyhow!("Failed to load any models"));
         }
 
@@ -519,10 +613,10 @@ impl VoicevoxCore {
         // Priority: ずんだもん (3.vvm), 四国めたん (2.vvm), 春日部つむぎ (8.vvm)
         let default_models = ["3.vvm", "2.vvm", "8.vvm"];
 
-        let models_dir = find_models_dir()?;
+        let models_dir = find_models_dir_client()?;
 
-        println!("Loading minimal VVM models for faster startup...");
-
+        // Silent minimal model loading
+        
         let mut loaded_count = 0;
         for model_name in &default_models {
             let model_path = models_dir.join(model_name);
@@ -538,40 +632,27 @@ impl VoicevoxCore {
                                     voicevox_synthesizer_load_voice_model(self.synthesizer, model);
                                 if load_result == VOICEVOX_RESULT_OK {
                                     loaded_count += 1;
-                                    println!("  Loaded: {}", model_name);
                                 } else if load_result == 18 {
                                     // MODEL_ALREADY_LOADED_ERROR
-                                    println!("  ℹ️  Model {} already loaded", model_name);
                                     loaded_count += 1;
-                                } else {
-                                    println!(
-                                        "  Failed to load: {} (code: {})",
-                                        model_name, load_result
-                                    );
                                 }
                                 voicevox_voice_model_file_delete(model);
-                            } else {
-                                println!("  Failed to open: {} (code: {})", model_name, result);
                             }
                         }
                     }
                 }
-            } else {
-                println!("  Model not found: {}", model_name);
             }
         }
 
-        if loaded_count > 0 {
-            println!("Successfully loaded {} minimal VVM models", loaded_count);
-        } else {
-            println!("No minimal VVM models were loaded");
+        if loaded_count == 0 {
+            return Err(anyhow!("No minimal VVM models were loaded"));
         }
 
         Ok(())
     }
 
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
-        let models_dir = find_models_dir()?;
+        let models_dir = find_models_dir_client()?;
         let model_path = models_dir.join(format!("{}.vvm", model_name));
 
         if !model_path.exists() {
@@ -618,7 +699,7 @@ impl VoicevoxCore {
     pub fn synthesize(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
         self.synthesize_real(text, style_id)
     }
-    
+
     fn synthesize_real(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
         unsafe {
             let text_cstr = CString::new(text)?;
@@ -648,12 +729,11 @@ impl VoicevoxCore {
             Ok(wav_vec)
         }
     }
-    
 
     pub fn get_speakers(&self) -> Result<Vec<Speaker>> {
         self.get_speakers_real()
     }
-    
+
     fn get_speakers_real(&self) -> Result<Vec<Speaker>> {
         unsafe {
             let metas_json = voicevox_synthesizer_create_metas_json(self.synthesizer);
@@ -669,7 +749,6 @@ impl VoicevoxCore {
             Ok(speakers)
         }
     }
-    
 }
 
 impl Drop for VoicevoxCore {
@@ -687,28 +766,45 @@ impl Drop for VoicevoxCore {
 
 // Utility functions
 
-// Helper function to find VVM models directory
+// Helper function to find VVM models directory (daemon: with download attempt)
 pub fn find_models_dir() -> Result<PathBuf> {
     let mut search_paths = Vec::new();
-    
-    // Priority 1: Package installation path (when used as a Nix package)
+
+    // Priority 1: Environment variable override (admin/CI systems)
+    if let Some(env_path) = std::env::var("VOICEVOX_MODELS_DIR").ok() {
+        search_paths.push(PathBuf::from(env_path));
+    }
+
+    // Priority 2: User home directory (primary for user-specific setup)
+    if let Ok(home_dir) = std::env::var("HOME") {
+        search_paths.push(PathBuf::from(home_dir).join(".local/share/voicevox/models"));
+    }
+
+    // Priority 3: System shared directories (fallback only)
+    search_paths.extend([
+        PathBuf::from("/usr/local/share/voicevox/models"),
+        PathBuf::from("/usr/share/voicevox/models"),
+        PathBuf::from("/opt/voicevox/models"),
+        PathBuf::from("/opt/homebrew/share/voicevox/models"), // macOS Homebrew
+    ]);
+
+    // Priority 3: Package installation path (when used as a Nix package)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
             search_paths.push(pkg_root.join("share/voicevox/models"));
         }
     }
-    
+
+    // Priority 4: macOS application bundle
+    search_paths.push(PathBuf::from(
+        "/Applications/VOICEVOX.app/Contents/Resources/models",
+    ));
+
     let additional_paths = vec![
-        
-        // Priority 2: Local models directory (current working dir)
+        // Priority 5: Current working directory (development)
         Some(PathBuf::from("./models")),
-        
-        // Priority 3: Home directory models
-        std::env::var("HOME")
-            .ok()
-            .map(|home| PathBuf::from(home).join(".voicevox/models")),
-        
-        // Priority 4: XDG data directory
+        Some(PathBuf::from("./voicevox_models/models/vvms")), // Nix development layout
+        // Priority 6: User-specific directories (fallback only)
         std::env::var("XDG_DATA_HOME")
             .ok()
             .map(|xdg| PathBuf::from(xdg).join("voicevox/models"))
@@ -717,117 +813,140 @@ pub fn find_models_dir() -> Result<PathBuf> {
                     .ok()
                     .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
             }),
-        
-        // Priority 5: System directories
-        Some(PathBuf::from("/usr/local/share/voicevox/models")),
-        Some(PathBuf::from("/usr/share/voicevox/models")),
-        Some(PathBuf::from("/opt/voicevox/models")),
-        
-        // Priority 6: macOS specific paths
-        Some(PathBuf::from("/Applications/VOICEVOX.app/Contents/Resources/models")),
-        Some(PathBuf::from("/opt/homebrew/share/voicevox/models")),
-        
+        std::env::var("HOME")
+            .ok()
+            .map(|home| PathBuf::from(home).join(".voicevox/models")),
         // Priority 7: Development/workspace paths (generic search)
-        std::env::current_dir()
-            .ok()
-            .and_then(|current_dir| {
-                current_dir
-                    .ancestors()
-                    .find(|a| a.join("models").exists())
-                    .map(|p| p.join("models"))
-            }),
-        
+        std::env::current_dir().ok().and_then(|current_dir| {
+            current_dir
+                .ancestors()
+                .find(|a| a.join("models").exists())
+                .map(|p| p.join("models"))
+        }),
         // Priority 8: Environment variable (explicit override)
-        std::env::var("VOICEVOX_MODELS_DIR")
-            .ok()
-            .map(PathBuf::from),
+        // REMOVED: std::env::var("VOICEVOX_MODELS_DIR").ok().map(PathBuf::from),
     ];
-    
+
     search_paths.extend(additional_paths.into_iter().flatten());
 
     for path_option in search_paths.into_iter() {
         if path_option.exists() && is_valid_models_directory(&path_option) {
-            println!("Found models directory: {}", path_option.display());
+            // Silent operation - no output for successful directory discovery
             return Ok(path_option);
         }
     }
-    
+
     // If no models directory found, attempt first-run setup
     attempt_first_run_setup()
 }
 
-// Attempt first-run setup for voice models
-pub fn attempt_first_run_setup() -> Result<PathBuf> {
-    use std::io::{self, Write};
-    
-    println!("🎭 VOICEVOX TTS - First Run Setup");
-    println!("");
-    println!("Voice models are required for text-to-speech synthesis.");
-    println!("These models need to be downloaded from VOICEVOX official sources.");
-    println!("");
-    
-    // Check if we have the downloader available
-    let downloader_path = if let Ok(exe_path) = std::env::current_exe() {
+// Helper function to find VVM models directory (client: no download attempt)
+pub fn find_models_dir_client() -> Result<PathBuf> {
+    let mut search_paths = Vec::new();
+
+    // Priority 1: Environment variable override (admin/CI systems)
+    if let Some(env_path) = std::env::var("VOICEVOX_MODELS_DIR").ok() {
+        search_paths.push(PathBuf::from(env_path));
+    }
+
+    // Priority 2: User home directory (primary for user-specific setup)
+    if let Ok(home_dir) = std::env::var("HOME") {
+        search_paths.push(PathBuf::from(home_dir).join(".local/share/voicevox/models"));
+    }
+
+    // Priority 3: System shared directories (fallback only)
+    search_paths.extend([
+        PathBuf::from("/usr/local/share/voicevox/models"),
+        PathBuf::from("/usr/share/voicevox/models"),
+        PathBuf::from("/opt/voicevox/models"),
+        PathBuf::from("/opt/homebrew/share/voicevox/models"), // macOS Homebrew
+    ]);
+
+    // Priority 3: Package installation path (when used as a Nix package)
+    if let Ok(exe_path) = std::env::current_exe() {
         if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
-            let downloader = pkg_root.join("bin/voicevox-download");
-            if downloader.exists() {
-                Some(downloader)
-            } else {
-                None
-            }
-        } else {
-            None
+            search_paths.push(pkg_root.join("share/voicevox/models"));
         }
-    } else {
-        None
-    };
-    
-    if let Some(downloader) = downloader_path {
-        println!("✅ VOICEVOX downloader found: {}", downloader.display());
-        println!("");
-        
-        // Create target directory
-        let target_dir = std::env::var("HOME")
+    }
+
+    // Priority 4: macOS application bundle
+    search_paths.push(PathBuf::from(
+        "/Applications/VOICEVOX.app/Contents/Resources/models",
+    ));
+
+    let additional_paths = vec![
+        // Priority 5: Current working directory (development)
+        Some(PathBuf::from("./models")),
+        Some(PathBuf::from("./voicevox_models/models/vvms")), // Nix development layout
+        // Priority 6: User-specific directories (fallback only)
+        std::env::var("XDG_DATA_HOME")
             .ok()
-            .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
-            .unwrap_or_else(|| PathBuf::from("./models"));
-            
-        println!("📦 Models will be downloaded to: {}", target_dir.display());
-        println!("");
-        
-        print!("Would you like to download voice models now? [Y/n]: ");
-        io::stdout().flush().unwrap();
-        
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim().to_lowercase();
-        
-        if input.is_empty() || input == "y" || input == "yes" {
-            println!("");
-            println!("🔄 Starting voice model download...");
-            println!("Note: This will require accepting VOICEVOX license terms.");
-            println!("");
-            
-            // Create target directory
-            std::fs::create_dir_all(&target_dir)?;
-            
-            // Execute downloader
-            let status = std::process::Command::new(&downloader)
-                .arg("--output")
-                .arg(&target_dir)
-                .status();
+            .map(|xdg| PathBuf::from(xdg).join("voicevox/models"))
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
+            }),
+        std::env::var("HOME")
+            .ok()
+            .map(|home| PathBuf::from(home).join(".voicevox/models")),
+        // Priority 7: Development/workspace paths (generic search)
+        std::env::current_dir().ok().and_then(|current_dir| {
+            current_dir
+                .ancestors()
+                .find(|a| a.join("models").exists())
+                .map(|p| p.join("models"))
+        }),
+    ];
+
+    search_paths.extend(additional_paths.into_iter().flatten());
+
+    for path_option in search_paths.into_iter() {
+        if path_option.exists() && is_valid_models_directory(&path_option) {
+            // Silent operation - no output for successful directory discovery
+            return Ok(path_option);
+        }
+    }
+
+    // No download attempt - just return error
+    Err(anyhow!(
+        "Voice models not found. Please start voicevox-daemon to download models automatically."
+    ))
+}
+
+// Attempt first-run setup for voice models with automatic license acceptance
+pub fn attempt_first_run_setup() -> Result<PathBuf> {
+    println!("🎭 VOICEVOX TTS - User Setup");
+    println!("Setting up voice models for current user...");
+    println!("");
+
+    // Primary target: user directory for user-specific setup
+    let target_dir = std::env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
+        .unwrap_or_else(|| PathBuf::from("./models"));
+
+    println!("📦 Installing models to: {} (user-specific)", target_dir.display());
+    println!("   No sudo privileges required");
+
+    // Try automatic setup with voicevox-auto-setup
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
+            let auto_setup = pkg_root.join("bin/voicevox-auto-setup");
+            if auto_setup.exists() {
+                println!("🔄 Running automatic setup...");
                 
-            match status {
-                Ok(status) if status.success() => {
-                    println!("✅ Voice models downloaded successfully!");
-                    
-                    // Check if we now have a valid models directory
-                    let vvm_dir = target_dir.join("models/vvms");
-                    if vvm_dir.exists() && is_valid_models_directory(&vvm_dir) {
-                        return Ok(vvm_dir);
-                    } else if is_valid_models_directory(&target_dir) {
-                        return Ok(target_dir);
-                    } else {
+                let status = std::process::Command::new(&auto_setup)
+                    .arg(&target_dir)
+                    .status();
+
+                match status {
+                    Ok(status) if status.success() => {
+                        // Check if we now have valid models
+                        if is_valid_models_directory(&target_dir) {
+                            return Ok(target_dir);
+                        }
+                        
                         // Search subdirectories for VVM files
                         if let Ok(entries) = std::fs::read_dir(&target_dir) {
                             for entry in entries.filter_map(|e| e.ok()) {
@@ -836,48 +955,36 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
                                     if is_valid_models_directory(&subdir) {
                                         return Ok(subdir);
                                     }
-                                    // Check nested subdirectories
-                                    if let Ok(nested_entries) = std::fs::read_dir(&subdir) {
-                                        for nested_entry in nested_entries.filter_map(|e| e.ok()) {
-                                            if nested_entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                                let nested_dir = nested_entry.path();
-                                                if is_valid_models_directory(&nested_dir) {
-                                                    return Ok(nested_dir);
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
-                        
-                        return Err(anyhow!("Download completed but models not found in expected location"));
                     }
-                },
-                Ok(_) => {
-                    println!("❌ Voice model download failed or was cancelled");
-                    println!("You can manually download models later using:");
-                    println!("  voicevox-setup-models");
-                    println!("Or set VOICEVOX_MODELS_DIR to an existing models directory");
-                },
-                Err(e) => {
-                    println!("❌ Failed to execute downloader: {}", e);
+                    Ok(_) => {
+                        println!("⚠️  Automatic setup failed");
+                    }
+                    Err(e) => {
+                        println!("⚠️  Could not run automatic setup: {}", e);
+                    }
                 }
             }
-        } else {
-            println!("");
-            println!("⏭️  Skipping voice model download");
-            println!("You can download models later using:");
-            println!("  voicevox-setup-models");
-            println!("Or set VOICEVOX_MODELS_DIR to an existing models directory");
         }
-    } else {
-        println!("❌ VOICEVOX downloader not found");
-        println!("Please install voice models manually or use voicevox-setup-models");
     }
-    
+
+    // Fallback to manual instructions
     println!("");
-    Err(anyhow!("VVM models directory not found. Please run voice model setup."))
+    println!("📋 Manual Setup Required:");
+    println!("1. Run: voicevox-download --output {}", target_dir.display());
+    println!("2. Accept the VOICEVOX license terms");
+    println!("3. Try running voicevox-say again");
+    println!("");
+    println!("License Summary:");
+    println!("- VOICEVOX voice models are free for commercial/non-commercial use");
+    println!("- Credit required: 'VOICEVOX:[Character Name]' in generated audio");
+    println!("- Full terms: https://voicevox.hiroshiba.jp/");
+
+    Err(anyhow!(
+        "Voice models not available. Please run setup manually."
+    ))
 }
 
 // Helper function to validate models directory
@@ -912,25 +1019,22 @@ fn has_dic_files(dict_path: &PathBuf) -> bool {
 
 pub fn find_openjtalk_dict() -> Result<String> {
     let mut search_paths = Vec::new();
-    
+
     // Priority 1: Package installation path (when used as a Nix package)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(pkg_root) = exe_path.parent().and_then(|p| p.parent()) {
             search_paths.push(pkg_root.join("share/voicevox/dict"));
         }
     }
-    
+
     let additional_paths = vec![
-        
         // Priority 2: Local dictionary (current working dir)
         Some(PathBuf::from("./dict")),
         Some(PathBuf::from("./dict/open_jtalk_dic_utf_8-1.11")),
-        
         // Priority 3: Home directory dictionary
         std::env::var("HOME")
             .ok()
             .map(|home| PathBuf::from(home).join(".voicevox/dict")),
-        
         // Priority 4: XDG data directory
         std::env::var("XDG_DATA_HOME")
             .ok()
@@ -940,52 +1044,43 @@ pub fn find_openjtalk_dict() -> Result<String> {
                     .ok()
                     .map(|home| PathBuf::from(home).join(".local/share/voicevox/dict"))
             }),
-        
         // Priority 5: System OpenJTalk paths
         Some(PathBuf::from("/usr/local/share/open-jtalk/dic")),
         Some(PathBuf::from("/usr/share/open-jtalk/dic")),
         Some(PathBuf::from("/opt/open-jtalk/dic")),
-        
         // Priority 6: System VOICEVOX paths
         Some(PathBuf::from("/usr/local/share/voicevox/dict")),
         Some(PathBuf::from("/usr/share/voicevox/dict")),
         Some(PathBuf::from("/opt/voicevox/dict")),
-        
         // Priority 7: macOS specific paths
-        Some(PathBuf::from("/Applications/VOICEVOX.app/Contents/Resources/dict")),
+        Some(PathBuf::from(
+            "/Applications/VOICEVOX.app/Contents/Resources/dict",
+        )),
         Some(PathBuf::from("/opt/homebrew/share/open-jtalk/dic")),
         Some(PathBuf::from("/opt/homebrew/share/voicevox/dict")),
         Some(PathBuf::from("/opt/local/share/open-jtalk/dic")),
-        
         // Priority 8: Development/workspace paths (generic search)
-        std::env::current_dir()
-            .ok()
-            .and_then(|current_dir| {
-                current_dir
-                    .ancestors()
-                    .find(|a| a.join("dict").exists())
-                    .map(|p| p.join("dict"))
-            }),
-        
+        std::env::current_dir().ok().and_then(|current_dir| {
+            current_dir
+                .ancestors()
+                .find(|a| a.join("dict").exists())
+                .map(|p| p.join("dict"))
+        }),
         // Priority 9: Environment variable (explicit override)
-        std::env::var("VOICEVOX_DICT_DIR")
-            .ok()
-            .map(PathBuf::from),
-        std::env::var("OPENJTALK_DICT_DIR")
-            .ok()
-            .map(PathBuf::from),
+        std::env::var("VOICEVOX_DICT_DIR").ok().map(PathBuf::from),
+        std::env::var("OPENJTALK_DICT_DIR").ok().map(PathBuf::from),
     ];
-    
+
     search_paths.extend(additional_paths.into_iter().flatten());
 
     for path_option in search_paths.into_iter() {
         if path_option.exists() && has_dic_files(&path_option) {
             let path_str = path_option.to_string_lossy().to_string();
-            println!("Found OpenJTalk dictionary: {}", path_str);
+            // Silent operation - no output for successful dictionary discovery
             return Ok(path_str);
         }
     }
-    
+
     Err(anyhow!("OpenJTalk dictionary not found. Please ensure the dictionary is installed in one of the standard locations or set VOICEVOX_DICT_DIR/OPENJTALK_DICT_DIR environment variable."))
 }
 
@@ -1165,54 +1260,41 @@ pub fn resolve_voice_name(voice_name: &str) -> Result<(u32, String)> {
     }
 }
 
-// Socket path for IPC
+// Socket path for IPC - user-specific for daemon isolation
 pub fn get_socket_path() -> PathBuf {
     // Priority 1: Environment variable override
     if let Ok(custom_path) = std::env::var("VOICEVOX_SOCKET_PATH") {
         return PathBuf::from(custom_path);
     }
-    
-    // Priority 2: XDG_RUNTIME_DIR (ideal for runtime files like sockets)
+
+    // Priority 2: XDG_RUNTIME_DIR (user-specific)
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        let socket_path = PathBuf::from(runtime_dir).join("voicevox/daemon.sock");
+        let socket_path = PathBuf::from(runtime_dir).join("voicevox-daemon.sock");
         if let Some(parent) = socket_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         return socket_path;
     }
-    
-    // Priority 3: XDG_STATE_HOME (for persistent state files)
+
+    // Priority 3: XDG_STATE_HOME (user-specific persistent)
     if let Ok(state_dir) = std::env::var("XDG_STATE_HOME") {
-        let socket_path = PathBuf::from(state_dir).join("voicevox/daemon.sock");
+        let socket_path = PathBuf::from(state_dir).join("voicevox-daemon.sock");
         if let Some(parent) = socket_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         return socket_path;
     }
-    
-    // Priority 4: XDG fallback - ~/.local/state/voicevox/
+
+    // Priority 4: User home directory fallback
     if let Ok(home_dir) = std::env::var("HOME") {
-        let socket_path = PathBuf::from(home_dir).join(".local/state/voicevox/daemon.sock");
+        let socket_path = PathBuf::from(home_dir).join(".local/state/voicevox-daemon.sock");
         if let Some(parent) = socket_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         return socket_path;
     }
-    
-    // Priority 5: System temp directory with user-specific name
-    if let Ok(temp_dir) = std::env::var("TMPDIR") {
-        let user_id = std::process::id();
-        return PathBuf::from(temp_dir).join(format!("voicevox-daemon-{}.sock", user_id));
-    }
-    
-    // Priority 6: Platform-specific fallback
-    let user_id = std::process::id();
-    #[cfg(target_os = "macos")]
-    {
-        PathBuf::from("/tmp").join(format!("voicevox-daemon-{}.sock", user_id))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        PathBuf::from("/tmp/voicevox-daemon.sock")
-    }
+
+    // Priority 5: User-specific temp socket with UID (not PID)
+    let user_id = unsafe { libc::getuid() };
+    PathBuf::from("/tmp").join(format!("voicevox-daemon-{}.sock", user_id))
 }

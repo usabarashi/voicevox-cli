@@ -1,11 +1,11 @@
 # VOICEVOX TTS
 
-Zero-configuration Japanese text-to-speech using VOICEVOX Core
+Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 
 ## Features
 
 - **🚀 Zero Configuration**: `nix profile install` → instant TTS
-- **🎭 99+ Voice Styles**: 26+ characters including ずんだもん, 四国めたん, 春日部つむぎ and more
+- **🎭 Dynamic Voice Detection**: 26+ characters automatically discovered from VVM models
 - **⚡ Instant Response**: Shared background daemon for immediate synthesis
 - **🔇 Silent Operation**: macOS `say` compatible (no output unless error)
 - **📦 Nix Pure**: Reproducible builds with fixed SHA256 dependencies
@@ -129,9 +129,9 @@ voicevox-download --output ~/.local/share/voicevox/models
 # Voice synthesis with automatic daemon startup
 voicevox-say "こんにちは、ずんだもんなのだ"
 
-# Voice selection
-voicevox-say -v zundamon-amama "あまあまモードなのだ♪"
-voicevox-say -v metan-tsundere "ツンツンめたんです"
+# Voice selection by model or speaker ID
+voicevox-say --model 3 "モデル3の音声なのだ"
+voicevox-say --speaker-id 1 "スピーカーID1の音声なのだ"
 
 # File output
 voicevox-say -o output.wav "保存するテキスト"
@@ -143,17 +143,21 @@ echo "パイプからの入力" | voicevox-say
 voicevox-say --daemon-status
 ```
 
-### Voice Discovery
+### Voice Discovery (Dynamic Detection)
 
 ```bash
-# List available voices
-voicevox-say -v "?"
+# List available VVM models
+voicevox-say --list-models
 
-# Detailed speaker information
+# Detailed speaker information from loaded models
 voicevox-say --list-speakers
 
-# Direct speaker ID specification
-voicevox-say --speaker-id 3 "ずんだもん（ノーマル）"
+# Check system status and available updates
+voicevox-say --check-updates
+
+# Use specific model or speaker ID
+voicevox-say --model 3 "モデル3の音声"
+voicevox-say --speaker-id 3 "スピーカーID3の音声"
 ```
 
 ### Advanced Options
@@ -163,34 +167,49 @@ voicevox-say --speaker-id 3 "ずんだもん（ノーマル）"
 voicevox-say --standalone "独立実行モード"
 ```
 
-## Voice Characters
+## Voice Characters (Dynamic Detection)
 
-### Main Characters
+### Dynamic Voice Management
 
-**ずんだもん (Zundamon) - 8 Variations**
-- `zundamon` / `--speaker-id 3` - ノーマル (Normal)
-- `zundamon-amama` / `--speaker-id 1` - あまあま (Sweet)
-- `zundamon-tsundere` / `--speaker-id 7` - ツンツン (Tsundere)
-- `zundamon-sexy` / `--speaker-id 5` - セクシー (Sexy)
-- `zundamon-whisper` / `--speaker-id 22` - ささやき (Whisper)
-- Plus 3 additional emotional expressions
+This system uses **dynamic voice detection** - no hardcoded voice names. Voice characters are automatically discovered from available VVM model files.
 
-**四国めたん (Shikoku Metan) - 6 Variations**
-- `metan` / `--speaker-id 2` - ノーマル (Normal)
-- `metan-amama` / `--speaker-id 0` - あまあま (Sweet)
-- `metan-tsundere` / `--speaker-id 6` - ツンツン (Tsundere)
-- Plus 3 additional emotional expressions
+**Discovery Commands:**
+```bash
+# See all available models
+voicevox-say --list-models
 
-**Other 16+ Characters**
-- 春日部つむぎ (Kasukabe Tsumugi), 雨晴はう (Amehare Hau), 波音リツ (Namine Ritsu), 玄野武宏 (Kurono Takehiro), 白上虎太郎 (Shiragami Kotaro), 青山龍星 (Aoyama Ryusei), 九州そら (Kyushu Sora), もち子さん (Mochiko-san), 冥鳴ひまり (Meimei Himari), 後鬼 (Goki), No.7, ちび式じい (Chibishiki Jii), and more...
+# Get detailed speaker information
+voicevox-say --list-speakers
+```
+
+**Usage Methods:**
+```bash
+# Method 1: Direct speaker ID (most reliable)
+voicevox-say --speaker-id 3 "スピーカーID指定"
+
+# Method 2: Model selection (uses first available style)
+voicevox-say --model 3 "モデル番号指定"
+```
+
+### Character Examples (Typical Installation)
+
+When models are downloaded, you typically get 26+ characters including:
+- **ずんだもん (Zundamon)** - Multiple emotional variations
+- **四国めたん (Shikoku Metan)** - Multiple emotional variations  
+- **春日部つむぎ (Kasukabe Tsumugi)**, **雨晴はう (Amehare Hau)**, **波音リツ (Namine Ritsu)**, **九州そら (Kyushu Sora)**, **もち子さん (Mochiko-san)**, and many more
+
+**Note**: Exact voice IDs and available characters depend on your downloaded models. Use `--list-speakers` for definitive information.
 
 ## System Requirements
 
-- **Platform**: macOS (Apple Silicon or Intel)
+- **Platform**: macOS Apple Silicon (aarch64) only
+- **Architecture**: arm64/aarch64 optimized binaries
 - **Audio Format**: WAV output with rodio/afplay playback
 - **Performance**: Near-instant voice synthesis after initial setup
 - **Storage**: ~1.1GB for all voice models in `~/.local/share/voicevox/models/`
 - **Network**: Required for initial model download and license acceptance
+
+**Note**: This build is specifically optimized for Apple Silicon Macs (M1, M2, M3, etc.). Intel Mac support is not included in this distribution.
 
 ## Troubleshooting
 

@@ -165,22 +165,44 @@
 
             # Install binaries and setup runtime environment
             postInstall = ''
-              # Install both client and daemon binaries
-              mv $out/bin/voicevox-cli $out/bin/voicevox-say
+              # Install both client and daemon binaries (voicevox-say and voicevox-daemon are already correct)
+              # Remove legacy voicevox-cli if it exists
+              if [ -f "$out/bin/voicevox-cli" ]; then
+                rm $out/bin/voicevox-cli
+              fi
+              
+              # voicevox-daemon should already be built, just make sure it exists
+              if [ ! -f "$out/bin/voicevox-daemon" ]; then
+                echo "Warning: voicevox-daemon binary not found"
+              fi
               
               # Install VOICEVOX downloader for model management
               cp ${voicevoxResources}/bin/voicevox-download $out/bin/
+              
+              # Install automatic setup script
+              cp ${licenseAcceptor}/bin/voicevox-auto-setup $out/bin/
               
               # Create model setup script for users
               cat > $out/bin/voicevox-setup-models << 'EOF'
 #!/bin/bash
 set -euo pipefail
 
-MODEL_DIR="$HOME/.local/share/voicevox/models"
 DOWNLOADER="voicevox-download"
 
+# Determine target directory - prefer system-wide if writable
+if [ -d "/usr/local/share/voicevox" ] && [ -w "/usr/local/share/voicevox" ]; then
+    MODEL_DIR="/usr/local/share/voicevox/models"
+    INSTALL_TYPE="system-wide"
+elif [ -d "/opt/voicevox" ] && [ -w "/opt/voicevox" ]; then
+    MODEL_DIR="/opt/voicevox/models"
+    INSTALL_TYPE="system-wide"
+else
+    MODEL_DIR="$HOME/.local/share/voicevox/models"
+    INSTALL_TYPE="user-specific"
+fi
+
 echo "Setting up VOICEVOX voice models..."
-echo "Models will be downloaded to: $MODEL_DIR"
+echo "Models will be downloaded to: $MODEL_DIR ($INSTALL_TYPE)"
 
 # Create models directory
 mkdir -p "$MODEL_DIR"
@@ -252,7 +274,9 @@ EOF
               if [[ "$OSTYPE" == "darwin"* ]]; then
                 # Add rpath for runtime library discovery
                 ${pkgs.darwin.cctools}/bin/install_name_tool -add_rpath "$out/lib" $out/bin/voicevox-say
-                ${pkgs.darwin.cctools}/bin/install_name_tool -add_rpath "$out/lib" $out/bin/voicevox-daemon
+                if [ -f "$out/bin/voicevox-daemon" ]; then
+                  ${pkgs.darwin.cctools}/bin/install_name_tool -add_rpath "$out/lib" $out/bin/voicevox-daemon
+                fi
               fi
               
               echo "VOICEVOX TTS package installation completed"
@@ -261,6 +285,50 @@ EOF
             # Apply centralized meta information
             meta = packageMeta;
           };
+
+          # Auto-license acceptance script for user-specific setup
+          licenseAcceptor = pkgs.writeScriptBin "voicevox-auto-setup" ''
+            #!${pkgs.bash}/bin/bash
+            set -euo pipefail
+            
+            MODELS_DIR="$1"
+            
+            echo "🎭 VOICEVOX TTS - User Setup"
+            echo "Installing voice models for current user..."
+            echo ""
+            echo "By using this Nix package, you agree to:"
+            echo "- VOICEVOX Audio Model License (commercial/non-commercial use allowed)"
+            echo "- Individual voice library terms (credit required: 'VOICEVOX:[Character]')"
+            echo "- See: https://voicevox.hiroshiba.jp/ for details"
+            echo ""
+            echo "Target: $MODELS_DIR (user-specific)"
+            echo "No sudo privileges required"
+            echo ""
+            
+            # Create user models directory
+            mkdir -p "$(dirname "$MODELS_DIR")"
+            mkdir -p "$MODELS_DIR"
+            
+            # Use expect to auto-accept license during download
+            ${pkgs.expect}/bin/expect -c "
+              set timeout 300
+              spawn ${voicevoxResources}/bin/voicevox-download --output $MODELS_DIR --only models
+              expect {
+                \"*同意しますか*\" { send \"y\r\"; exp_continue }
+                \"*[y,n,r]*\" { send \"y\r\"; exp_continue }
+                \"*Press*\" { send \"q\r\"; exp_continue }
+                \"*を押して*\" { send \"q\r\"; exp_continue }
+                eof
+              }
+            " || {
+              echo "⚠️  Automatic download failed. You can manually run:"
+              echo "  voicevox-download --output $MODELS_DIR"
+              exit 1
+            }
+            
+            echo "✅ VOICEVOX models setup completed!"
+            echo "   Voice models are available for current user"
+          '';
         in
         {
           # Packages for installation
@@ -269,6 +337,7 @@ EOF
             voicevox-cli = voicevox-cli;
             voicevox-say = voicevox-cli; # alias for compatibility
             voicevoxResources = voicevoxResources; # for debugging hash values
+            licenseAcceptor = licenseAcceptor; # automatic license acceptance
           };
 
           # Apps for direct execution
@@ -280,6 +349,10 @@ EOF
             voicevox-say = {
               type = "app";
               program = "${voicevox-cli}/bin/voicevox-say";
+            };
+            voicevox-daemon = {
+              type = "app";
+              program = "${voicevox-cli}/bin/voicevox-daemon";
             };
           };
 

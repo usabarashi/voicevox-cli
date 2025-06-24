@@ -14,7 +14,7 @@ use futures_util::{SinkExt, StreamExt};
 
 use voicevox_tts::{
     get_socket_path, resolve_voice_name, DaemonRequest, DaemonResponse, SynthesizeOptions,
-    VoicevoxCore,
+    VoicevoxCore, find_models_dir_client, attempt_first_run_setup,
 };
 
 // Direct audio playback from memory (like macOS say command)
@@ -75,48 +75,39 @@ async fn standalone_mode(
     _streaming: bool,
     minimal_models: bool,
 ) -> Result<()> {
-    println!("Initializing VOICEVOX Core...");
+    // Silent operation like macOS say - no output unless error
     
     let core = VoicevoxCore::new()?;
     
-    // Load models
+    // Load models silently - no download attempt in client
     if minimal_models {
-        println!("Loading minimal models for faster startup...");
         if let Err(e) = core.load_minimal_models() {
-            println!("Warning: Failed to load some minimal models: {}", e);
-            println!("Try running without --minimal-models for full setup options");
+            eprintln!("Error: Failed to load minimal models: {}", e);
+            eprintln!("Please start voicevox-daemon to download models automatically");
+            return Err(e);
         }
     } else {
-        println!("Loading all available models...");
-        match core.load_all_models() {
-            Ok(_) => {
-                println!("Successfully loaded voice models");
-            },
-            Err(e) => {
-                println!("Warning: Failed to load some models: {}", e);
-                println!("Voice synthesis may not work properly");
-                println!("To setup models, run: voicevox-setup-models");
-            }
+        if let Err(e) = core.load_all_models_no_download() {
+            eprintln!("Error: Failed to load models: {}", e);
+            eprintln!("Please start voicevox-daemon to download models automatically");
+            return Err(e);
         }
     }
     
-    println!("VOICEVOX Core initialized successfully");
-    
-    // Synthesize speech
-    println!("Synthesizing speech...");
+    // Synthesize speech silently
     let wav_data = core.synthesize(text, style_id)?;
-    println!("Speech synthesis completed ({} bytes)", wav_data.len());
     
     // Handle output
     if let Some(output_file) = output_file {
         fs::write(output_file, &wav_data)?;
-        println!("Audio saved to: {}", output_file);
+        // Silent for file output (like macOS say -o)
     }
     
     // Play audio if not quiet and no output file (like macOS say command)
     if !quiet && output_file.is_none() {
         if let Err(e) = play_audio_from_memory(&wav_data) {
-            eprintln!("Warning: Audio playback failed: {}", e);
+            eprintln!("Error: Audio playback failed: {}", e);
+            return Err(e);
         }
     }
     
@@ -136,14 +127,8 @@ async fn daemon_mode(
     // Connect to daemon with timeout
     let stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
         .await
-        .map_err(|_| {
-            println!("Daemon connection timeout after 5 seconds");
-            anyhow!("Daemon connection timeout")
-        })?
-        .map_err(|e| {
-            println!("Daemon connection failed: {}", e);
-            anyhow!("Failed to connect to daemon: {}", e)
-        })?;
+        .map_err(|_| anyhow!("Daemon connection timeout"))?
+        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
     
     let (reader, writer) = stream.into_split();
     let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
@@ -157,40 +142,22 @@ async fn daemon_mode(
     };
     
     let request_data = bincode::serialize(&request)
-        .map_err(|e| {
-            println!("Failed to serialize request: {}", e);
-            anyhow!("Failed to serialize request: {}", e)
-        })?;
+        .map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
     
     framed_writer
         .send(request_data.into())
         .await
-        .map_err(|e| {
-            println!("Failed to send request: {}", e);
-            anyhow!("Failed to send request: {}", e)
-        })?;
+        .map_err(|e| anyhow!("Failed to send request: {}", e))?;
     
     // Receive response
     let response_frame = timeout(Duration::from_secs(30), framed_reader.next())
         .await
-        .map_err(|_| {
-            println!("Daemon response timeout after 30 seconds");
-            anyhow!("Daemon response timeout")
-        })?
-        .ok_or_else(|| {
-            println!("Connection closed by daemon");
-            anyhow!("Connection closed by daemon")
-        })?
-        .map_err(|e| {
-            println!("Failed to receive response: {}", e);
-            anyhow!("Failed to receive response: {}", e)
-        })?;
+        .map_err(|_| anyhow!("Daemon response timeout"))?
+        .ok_or_else(|| anyhow!("Connection closed by daemon"))?
+        .map_err(|e| anyhow!("Failed to receive response: {}", e))?;
     
     let response: DaemonResponse = bincode::deserialize(&response_frame)
-        .map_err(|e| {
-            println!("Failed to deserialize response: {}", e);
-            anyhow!("Failed to deserialize response: {}", e)
-        })?;
+        .map_err(|e| anyhow!("Failed to deserialize response: {}", e))?;
     
     match response {
         DaemonResponse::SynthesizeResult { wav_data } => {
@@ -203,7 +170,8 @@ async fn daemon_mode(
             // Play audio if not quiet and no output file (like macOS say command)
             if !quiet && output_file.is_none() {
                 if let Err(e) = play_audio_from_memory(&wav_data) {
-                    println!("Audio playback failed: {}", e);
+                    eprintln!("Error: Audio playback failed: {}", e);
+                    return Err(e);
                 }
             }
             
@@ -324,8 +292,124 @@ fn get_input_text(matches: &clap::ArgMatches) -> Result<String> {
     Ok(buffer.trim().to_string())
 }
 
-// Start daemon process if not already running
+// Launch VOICEVOX downloader for direct user interaction
+async fn launch_downloader_for_user() -> Result<()> {
+    let target_dir = std::env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
+        .unwrap_or_else(|| PathBuf::from("./models"));
+    
+    // Create target directory
+    std::fs::create_dir_all(&target_dir)?;
+    
+    // Find downloader binary
+    let downloader_path = if let Ok(current_exe) = std::env::current_exe() {
+        let mut downloader = current_exe.clone();
+        downloader.set_file_name("voicevox-download");
+        if downloader.exists() {
+            downloader
+        } else {
+            // Try package installation path
+            if let Some(pkg_root) = current_exe.parent().and_then(|p| p.parent()) {
+                let pkg_downloader = pkg_root.join("bin/voicevox-download");
+                if pkg_downloader.exists() {
+                    pkg_downloader
+                } else {
+                    return Err(anyhow!("voicevox-download not found"));
+                }
+            } else {
+                return Err(anyhow!("voicevox-download not found"));
+            }
+        }
+    } else {
+        return Err(anyhow!("Could not find voicevox-download"));
+    };
+    
+    println!("📦 Target directory: {}", target_dir.display());
+    println!("🔄 Launching VOICEVOX downloader...");
+    println!("   Please follow the on-screen instructions to accept license terms.");
+    println!("   Press Enter when ready to continue...");
+    
+    // Wait for user confirmation
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    
+    // Launch downloader with direct user interaction
+    let status = std::process::Command::new(&downloader_path)
+        .arg("--output")
+        .arg(&target_dir)
+        .status()?;
+    
+    if status.success() {
+        // Verify models were downloaded
+        if find_models_dir_client().is_ok() {
+            println!("✅ Models successfully downloaded to: {}", target_dir.display());
+            Ok(())
+        } else {
+            Err(anyhow!("Download completed but models not found"))
+        }
+    } else {
+        Err(anyhow!("Download process failed or was cancelled"))
+    }
+}
+
+// Check for models and download if needed (client-side first-run setup)
+async fn ensure_models_available() -> Result<()> {
+    // Check if models are already available
+    if find_models_dir_client().is_ok() {
+        return Ok(()); // Models already available
+    }
+    
+    println!("🎭 VOICEVOX TTS - First Run Setup");
+    println!("Voice models are required for text-to-speech synthesis.");
+    println!("");
+    
+    // Interactive license acceptance
+    print!("Would you like to download voice models now? [Y/n]: ");
+    std::io::Write::flush(&mut std::io::stdout())?;
+    
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let response = input.trim().to_lowercase();
+    
+    if response.is_empty() || response == "y" || response == "yes" {
+        println!("🔄 Starting voice model download...");
+        println!("Note: This will require accepting VOICEVOX license terms.");
+        println!("");
+        
+        // Launch downloader directly for user interaction (no expect script)
+        match launch_downloader_for_user().await {
+            Ok(_) => {
+                println!("✅ Voice models setup completed!");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("❌ Model download failed: {}", e);
+                eprintln!("You can manually run: voicevox-download --output ~/.local/share/voicevox/models");
+                Err(e)
+            }
+        }
+    } else {
+        println!("Skipping model download. You can run 'voicevox-setup-models' later.");
+        Err(anyhow!("Voice models are required for operation"))
+    }
+}
+
+// Start daemon process if not already running  
 async fn start_daemon_if_needed() -> Result<()> {
+    let socket_path = get_socket_path();
+    
+    // Check if daemon is already running
+    match UnixStream::connect(&socket_path).await {
+        Ok(_) => {
+            // Daemon is already running
+            return Ok(());
+        }
+        Err(_) => {
+            // Daemon not running, try to start it
+        }
+    }
+    
     // Find daemon binary
     let daemon_path = if let Ok(current_exe) = std::env::current_exe() {
         let mut daemon_path = current_exe.clone();
@@ -333,35 +417,56 @@ async fn start_daemon_if_needed() -> Result<()> {
         if daemon_path.exists() {
             daemon_path
         } else {
-            PathBuf::from("./target/debug/voicevox-daemon")
+            // Try fallback paths
+            let fallbacks = vec![
+                PathBuf::from("./target/debug/voicevox-daemon"),
+                PathBuf::from("./target/release/voicevox-daemon"),
+                PathBuf::from("voicevox-daemon"), // In PATH
+            ];
+            
+            fallbacks.into_iter()
+                .find(|p| p.exists() || p.file_name().map(|f| f == "voicevox-daemon").unwrap_or(false))
+                .unwrap_or_else(|| PathBuf::from("voicevox-daemon"))
         }
     } else {
         PathBuf::from("voicevox-daemon")
     };
     
-    // Start daemon process
-    let mut cmd = ProcessCommand::new(&daemon_path);
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    println!("🔄 Starting VOICEVOX daemon automatically...");
     
-    // Set environment variables for dynamic linking
-    if let Ok(current_dir) = std::env::current_dir() {
-        let lib_path = format!(
-            "{}:{}",
-            current_dir.join("voicevox_core/c_api/lib").display(),
-            current_dir.join("voicevox_core/onnxruntime/lib").display()
-        );
-        cmd.env("DYLD_LIBRARY_PATH", &lib_path);
-    }
+    // Start daemon with --detach for background operation
+    let output = ProcessCommand::new(&daemon_path)
+        .arg("--detach")
+        .output();
     
-    match cmd.spawn() {
-        Ok(_) => {
-            Ok(())
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                // Give daemon time to start
+                tokio::time::sleep(Duration::from_millis(2000)).await;
+                
+                // Verify daemon is running
+                match UnixStream::connect(&socket_path).await {
+                    Ok(_) => {
+                        println!("✅ VOICEVOX daemon started successfully");
+                        Ok(())
+                    }
+                    Err(_) => {
+                        eprintln!("❌ Daemon started but not responding on socket");
+                        Err(anyhow!("Daemon not responding after startup"))
+                    }
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.is_empty() {
+                    eprintln!("Daemon startup error: {}", stderr);
+                }
+                Err(anyhow!("Daemon failed to start"))
+            }
         }
         Err(e) => {
-            println!("Failed to start daemon: {}", e);
-            Err(anyhow!("Failed to start daemon: {}", e))
+            eprintln!("❌ Failed to execute daemon: {}", e);
+            Err(anyhow!("Failed to execute daemon: {}", e))
         }
     }
 }
@@ -521,10 +626,12 @@ async fn main() -> Result<()> {
         if matches.get_flag("minimal-models") {
             if let Err(e) = core.load_minimal_models() {
                 println!("Warning: Failed to load some minimal models: {}", e);
+                println!("Please start voicevox-daemon to download models automatically");
             }
         } else {
-            if let Err(e) = core.load_all_models() {
+            if let Err(e) = core.load_all_models_no_download() {
                 println!("Warning: Failed to load some models: {}", e);
+                println!("Please start voicevox-daemon to download models automatically");
             }
         }
         
@@ -574,6 +681,15 @@ async fn main() -> Result<()> {
     
     let options = SynthesizeOptions { rate, streaming };
     
+    // Check for models and download if needed (client-side first-run setup)
+    if !force_standalone {
+        if let Err(_) = ensure_models_available().await {
+            // User declined download or download failed, fall back to standalone
+            if !quiet {
+                println!("Falling back to standalone mode...");
+            }
+        }
+    }
     
     // Try daemon mode first (unless forced standalone)
     if !force_standalone {
@@ -596,12 +712,13 @@ async fn main() -> Result<()> {
         {
             Ok(_) => return Ok(()),
             Err(_) => {
-                // Try to start daemon automatically
-                        if start_daemon_if_needed().await.is_ok() {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                // Daemon not available, try to start it automatically
+                if let Ok(_) = start_daemon_if_needed().await {
+                    // Give daemon more time to fully initialize
+                    tokio::time::sleep(Duration::from_secs(3)).await;
                     
                     // Try daemon mode again
-                    if let Ok(_) = daemon_mode(
+                    match daemon_mode(
                         &text,
                         style_id,
                         &voice_description,
@@ -612,7 +729,18 @@ async fn main() -> Result<()> {
                     )
                     .await
                     {
-                        return Ok(());
+                        Ok(_) => return Ok(()),
+                        Err(_) => {
+                            // Still failed, fall back to standalone mode
+                            if !quiet {
+                                println!("🔄 Daemon unavailable, using standalone mode...");
+                            }
+                        }
+                    }
+                } else {
+                    // Failed to start daemon, fall back to standalone
+                    if !quiet {
+                        println!("🔄 Could not start daemon, using standalone mode...");
                     }
                 }
             }

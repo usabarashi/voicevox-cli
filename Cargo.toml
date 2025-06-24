@@ -15,9 +15,6 @@ path = "src/bin/client.rs"
 name = "voicevox-daemon"
 path = "src/bin/daemon.rs"
 
-[[bin]]
-name = "voicevox-cli"
-path = "src/main.rs"
 
 [lib]
 name = "voicevox_tts"
@@ -40,6 +37,7 @@ libloading = { version = "0.8", optional = true }
 default = ["link_voicevox"]
 dynamic_voicevox = ["libloading"]
 link_voicevox = []
+use_bindgen = []
 
 [profile.release]
 lto = true

@@ -51,7 +51,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     
     if status.success() {
         // Verify models were downloaded by checking target directory directly
-        let vvm_files = std::fs::read_dir(&target_dir)
+        let _vvm_files = std::fs::read_dir(&target_dir)
             .map_err(|e| anyhow!("Failed to read target directory: {}", e))?
             .filter_map(|entry| entry.ok())
             .filter(|entry| {

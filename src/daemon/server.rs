@@ -7,9 +7,33 @@ use tokio::sync::Mutex;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use futures_util::{SinkExt, StreamExt};
 
+// 動的音声マッピング生成
+fn get_dynamic_voice_mapping() -> std::collections::HashMap<String, (u32, String)> {
+    let mut mapping = std::collections::HashMap::new();
+    
+    if let Ok(available_models) = scan_available_models() {
+        for (index, model) in available_models.iter().enumerate() {
+            // モデル番号ベースの基本的なマッピング
+            let model_name = format!("model{}", model.model_id);
+            let description = format!("Model {} (Default Style)", model.model_id);
+            mapping.insert(model_name, (model.model_id, description));
+            
+            // 数値文字列でのアクセスも可能に
+            mapping.insert(model.model_id.to_string(), (model.model_id, format!("Model {}", model.model_id)));
+            
+            // 最初のモデルをデフォルトとして設定
+            if index == 0 {
+                mapping.insert("default".to_string(), (model.model_id, format!("Default Model {}", model.model_id)));
+            }
+        }
+    }
+    
+    mapping
+}
+
 use crate::core::VoicevoxCore;
 use crate::ipc::{DaemonRequest, DaemonResponse};
-use crate::voice::resolve_voice_dynamic;
+use crate::voice::{resolve_voice_dynamic, scan_available_models};
 
 pub struct DaemonState {
     core: VoicevoxCore,
@@ -81,15 +105,11 @@ impl DaemonState {
             
             DaemonRequest::GetVoiceMapping => {
                 println!("Getting voice mapping");
-                // Return minimal basic voice mapping
-                let mut basic_mapping = std::collections::HashMap::new();
-                basic_mapping.insert("zundamon".to_string(), (3, "ずんだもん (ノーマル)".to_string()));
-                basic_mapping.insert("metan".to_string(), (2, "四国めたん (ノーマル)".to_string()));
-                basic_mapping.insert("tsumugi".to_string(), (8, "春日部つむぎ (ノーマル)".to_string()));
-                basic_mapping.insert("default".to_string(), (3, "ずんだもん (ノーマル)".to_string()));
+                // Return dynamic voice mapping from available models
+                let dynamic_mapping = get_dynamic_voice_mapping();
                 
                 DaemonResponse::VoiceMapping {
-                    mapping: basic_mapping,
+                    mapping: dynamic_mapping,
                 }
             }
             

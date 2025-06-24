@@ -96,8 +96,8 @@ export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/l
 # Custom socket path
 voicevox-daemon --socket-path /custom/path/daemon.sock
 
-# Stop daemon
-pkill -f voicevox-daemon
+# Stop daemon (user-specific)
+pkill -f -u $(id -u) voicevox-daemon
 ```
 
 ### Client Usage (macOS say Compatible)
@@ -167,7 +167,7 @@ export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/l
 ./target/debug/voicevox-daemon --foreground &
 sleep 3
 ./target/debug/voicevox-say "動作テストなのだ"
-pkill -f voicevox-daemon
+pkill -f -u $(id -u) voicevox-daemon
 
 # Test various voices
 ./target/debug/voicevox-say --speaker-id 3 "ずんだもんノーマル"
@@ -195,9 +195,10 @@ pkill -f voicevox-daemon
 **Responsibility Separation Architecture**:
 - **Daemon**: Model loading and speech synthesis only (no download capability)  
 - **Client**: User interaction, first-run setup, and model downloads
-- **All Models Default**: Daemon loads all available VVM models on startup
+- **All Models Default**: Daemon loads all available VVM models on startup (~26+ characters)
 - **Environment Independent**: Automatic path discovery for models and dictionaries
 - **Duplicate Prevention**: Multiple daemon startup protection via UID-based isolation
+- **Recursive VVM Search**: Deep directory scanning for VVM files in nested structures
 
 #### Voice Model Setup Process
 
@@ -285,5 +286,7 @@ voicevox-download --output ~/.local/share/voicevox/models
 - **License Compliance**: Complete VOICEVOX license terms displayed interactively during setup
 - **Manual License Review**: No automated acceptance - users must manually review all terms
 - **Storage Management**: Voice models use ~1.1GB in `~/.local/share/voicevox/models/`
-- **User Isolation**: Daemon processes isolated by UID for multi-user systems
+- **User Isolation**: Daemon processes isolated by UID for multi-user systems (improved duplicate checking)
 - **Responsibility Separation**: Daemon = synthesis only, Client = user interaction + downloads
+- **Recursive Model Search**: VVM files discovered in nested directory structures automatically
+- **Cleanup Automation**: Unnecessary files (zip, tgz, tar.gz) removed after download

@@ -382,8 +382,8 @@ async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
         match tokio::net::UnixStream::connect(socket_path).await {
             Ok(_) => {
                 return Err(anyhow!(
-                    "VOICEVOX daemon is already running at {}. Use 'pkill -f voicevox-daemon' to stop it.",
-                    socket_path.display()
+                    "VOICEVOX daemon is already running at {}. Use 'pkill -f -u {} voicevox-daemon' to stop it.",
+                    socket_path.display(), unsafe { libc::getuid() }
                 ));
             }
             Err(_) => {
@@ -396,9 +396,11 @@ async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
         }
     }
     
-    // Check for running daemon processes
+    // Check for running daemon processes (user-specific)
     match process::Command::new("pgrep")
         .arg("-f")
+        .arg("-u")
+        .arg(&format!("{}", unsafe { libc::getuid() }))
         .arg("voicevox-daemon")
         .output()
     {
@@ -414,8 +416,8 @@ async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
                 
                 if !other_pids.is_empty() {
                     return Err(anyhow!(
-                        "VOICEVOX daemon process(es) already running (PIDs: {}). Stop them first with 'pkill -f voicevox-daemon'",
-                        other_pids.join(", ")
+                        "VOICEVOX daemon process(es) already running for this user (PIDs: {}). Stop them first with 'pkill -f -u {} voicevox-daemon'",
+                        other_pids.join(", "), unsafe { libc::getuid() }
                     ));
                 }
             }

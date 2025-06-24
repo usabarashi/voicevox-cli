@@ -9,6 +9,25 @@ use voicevox_cli::ipc::SynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
 
+// Functional voice resolution using monadic composition
+fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
+    matches
+        .get_one::<u32>("speaker-id")
+        .map(|&id| (id, format!("Style ID {}", id)))
+        .or_else(|| {
+            matches
+                .get_one::<u32>("model")
+                .map(|&id| (id, format!("Model {} (Default Style)", id)))
+        })
+        .map(Ok)
+        .or_else(|| {
+            matches
+                .get_one::<String>("voice")
+                .map(|voice_name| resolve_voice_dynamic(voice_name))
+        })
+        .unwrap_or_else(|| Ok((3, "Default (ずんだもん ノーマル)".to_string())))
+}
+
 async fn try_daemon_with_retry(
     text: &str,
     style_id: u32,
@@ -427,16 +446,8 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let (style_id, voice_description) =
-        if let Some(speaker_id) = matches.get_one::<u32>("speaker-id") {
-            (*speaker_id, format!("Style ID {}", speaker_id))
-        } else if let Some(model_id) = matches.get_one::<u32>("model") {
-            (*model_id, format!("Model {} (Default Style)", model_id))
-        } else if let Some(voice_name) = matches.get_one::<String>("voice") {
-            resolve_voice_dynamic(voice_name)?
-        } else {
-            (3, "Default (ずんだもん ノーマル)".to_string())
-        };
+    // Functional voice resolution with monadic composition
+    let (style_id, voice_description) = resolve_voice_from_args(&matches)?;
 
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
     let streaming = matches.get_flag("streaming");

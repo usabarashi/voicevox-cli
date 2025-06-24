@@ -82,74 +82,85 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     }
 }
 
-// Helper function to count VVM files recursively
+// Helper function to count VVM files recursively using functional composition
 pub fn count_vvm_files_recursive(dir: &std::path::PathBuf) -> usize {
-    let mut count = 0;
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.ends_with(".vvm") {
-                        count += 1;
-                    }
-                }
-            } else if path.is_dir() {
-                count += count_vvm_files_recursive(&path);
-            }
-        }
-    }
-    count
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .map(|path| match path {
+                    p if p.is_file() => count_vvm_file(&p),
+                    p if p.is_dir() => count_vvm_files_recursive(&p),
+                    _ => 0,
+                })
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
-// Clean up unnecessary downloaded files to save space
+// Helper function to count single VVM file
+fn count_vvm_file(path: &std::path::PathBuf) -> usize {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| name.ends_with(".vvm"))
+        .map(|_| 1)
+        .unwrap_or(0)
+}
+
+// Clean up unnecessary downloaded files to save space using functional composition
 pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
     let unnecessary_extensions = [
         ".zip", ".tgz", ".tar.gz", ".tar", ".gz", // Archive files
         ".exe", ".dll", ".so",                    // Executable files not needed after extraction
     ];
     
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if unnecessary_extensions.iter().any(|&ext| name.ends_with(ext)) {
-                        if let Err(e) = std::fs::remove_file(&path) {
-                            eprintln!("Warning: Failed to remove {}: {}", name, e);
-                        } else {
-                            println!("   Cleaned up: {}", name);
-                        }
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .for_each(|path| {
+                    if path.is_file() {
+                        process_cleanup_file(&path, &unnecessary_extensions);
+                    } else if path.is_dir() {
+                        cleanup_unnecessary_files(&path);
+                        try_remove_empty_directory(&path);
                     }
-                }
-            } else if path.is_dir() {
-                // Recursively clean subdirectories
-                cleanup_unnecessary_files(&path);
-                
-                try_remove_empty_directory(&path);
-            }
-        }
-    }
+                });
+        })
+        .unwrap_or(());
 }
 
+// Helper function to process file cleanup
+fn process_cleanup_file(path: &std::path::PathBuf, unnecessary_extensions: &[&str]) {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| unnecessary_extensions.iter().any(|&ext| name.ends_with(ext)))
+        .map(|name| {
+            std::fs::remove_file(path)
+                .map(|_| println!("   Cleaned up: {}", name))
+                .unwrap_or_else(|e| eprintln!("Warning: Failed to remove {}: {}", name, e))
+        });
+}
+
+// Functional approach to removing empty directories
 fn try_remove_empty_directory(path: &std::path::PathBuf) {
-    let entries = match std::fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(_) => return,
-    };
+    let is_empty = std::fs::read_dir(path)
+        .map(|entries| entries.count() == 0)
+        .unwrap_or(false);
     
-    if entries.count() != 0 {
-        return;
-    }
-    
-    let dir_name = match path.file_name().and_then(|n| n.to_str()) {
-        Some(name) if ["c_api", "onnxruntime"].contains(&name) => name,
-        _ => return,
-    };
-    
-    match std::fs::remove_dir(path) {
-        Ok(_) => println!("   Removed empty directory: {}", dir_name),
-        Err(e) => eprintln!("Warning: Failed to remove empty directory {}: {}", dir_name, e),
+    if is_empty {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .filter(|&name| ["c_api", "onnxruntime"].contains(&name))
+            .map(|dir_name| {
+                std::fs::remove_dir(path)
+                    .map(|_| println!("   Removed empty directory: {}", dir_name))
+                    .unwrap_or_else(|e| {
+                        eprintln!("Warning: Failed to remove empty directory {}: {}", dir_name, e)
+                    })
+            });
     }
 }
 

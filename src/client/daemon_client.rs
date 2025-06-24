@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
-use std::process::{Command as ProcessCommand, Stdio};
+use std::process::Command as ProcessCommand;
 use std::time::Duration;
 use tokio::net::UnixStream;
 use tokio::time::timeout;

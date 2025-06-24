@@ -29,72 +29,27 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
 
-          # Fixed-output derivations for VOICEVOX dependencies with SHA256 hashes
-          voicevoxCore = pkgs.fetchurl {
-            url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/voicevox_core-osx-arm64-0.16.0.zip";
-            sha256 = "sha256-vCAvITP9j5tNa/5yWkcmdthAy0gPya9IpZ8NGm/LDhQ=";
-          };
-
-          onnxRuntime = pkgs.fetchurl {
-            url = "https://github.com/VOICEVOX/onnxruntime-builder/releases/download/voicevox_onnxruntime-1.17.3/voicevox_onnxruntime-osx-arm64-1.17.3.tgz";
-            sha256 = "sha256-ltfqGSigoVSFSS03YhOH31D0CnkuKmgX1N9z7NGFcfI=";
-          };
+          # VOICEVOX downloader for runtime setup
+          # Note: Libraries and models are downloaded at runtime by voicevox-download
 
           voicevoxDownloader = pkgs.fetchurl {
             url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/download-osx-arm64";
             sha256 = "sha256-OL5Hpyd0Mc+77PzUhtIIFmHjRQqLVaiITuHICg1QBJU=";
           };
 
-          # Prepare minimal VOICEVOX resources for build (runtime resources downloaded separately)
-          voicevoxResources = pkgs.stdenv.mkDerivation {
-            name = "voicevox-build-resources";
-            
-            nativeBuildInputs = with pkgs; [ unzip gnutar ];
+          # Minimal setup for voicevox-download
+          voicevoxSetup = pkgs.stdenv.mkDerivation {
+            name = "voicevox-download-setup";
             
             buildCommand = ''
-              mkdir -p $out/{voicevox_core,bin}
+              mkdir -p $out/bin
               
-              echo "Extracting VOICEVOX Core (libraries and headers only)..."
-              cd $TMPDIR
-              ${pkgs.unzip}/bin/unzip ${voicevoxCore}
-              VOICEVOX_DIR=$(find . -maxdepth 1 -name "voicevox_core*" -type d | head -1)
-              
-              # Copy only essential build files (libraries and headers)
-              if [ -d "$VOICEVOX_DIR/lib" ]; then
-                cp -r "$VOICEVOX_DIR"/lib $out/voicevox_core/
-              fi
-              if [ -d "$VOICEVOX_DIR/include" ]; then
-                cp -r "$VOICEVOX_DIR"/include $out/voicevox_core/
-              fi
-              
-              echo "Extracting ONNX Runtime libraries..."
-              cd $TMPDIR
-              ${pkgs.gnutar}/bin/tar -xzf ${onnxRuntime}
-              ONNX_DIR=$(find . -maxdepth 1 -name "voicevox_onnxruntime*" -type d | head -1)
-              
-              # Ensure lib directory exists
-              mkdir -p $out/voicevox_core/lib
-              if [ -d "$ONNX_DIR/lib" ]; then
-                cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
-              fi
-              
-              # Install VOICEVOX downloader for runtime downloads
-              echo "Installing VOICEVOX downloader for runtime use..."
+              # Install VOICEVOX downloader for runtime use
+              echo "Installing VOICEVOX downloader..."
               cp ${voicevoxDownloader} $out/bin/voicevox-download
               chmod +x $out/bin/voicevox-download
               
-              # Fix library paths for macOS
-              echo "Fixing library paths..."
-              if [ -d "$out/voicevox_core/lib" ]; then
-                cd $out/voicevox_core/lib
-                for dylib in *.dylib; do
-                  if [ -f "$dylib" ]; then
-                    ${pkgs.darwin.cctools}/bin/install_name_tool -id "@rpath/$dylib" "$dylib" || true
-                  fi
-                done
-              fi
-              
-              echo "Build resources prepared (runtime downloads handled by voicevox-download)"
+              echo "VOICEVOX downloader ready (all libraries downloaded at runtime)"
             '';
           };
 
@@ -141,21 +96,9 @@
               pkgs.darwin.apple_sdk.frameworks.CoreServices
             ];
 
-            # Setup VOICEVOX resources before build
+            # Note: All libraries downloaded at runtime by voicevox-download
             preBuild = ''
-              echo "Setting up VOICEVOX resources from Nix store..."
-              
-              # Copy VOICEVOX Core build resources (libraries and headers only)
-              cp -r ${voicevoxResources}/voicevox_core ./
-              chmod -R u+w voicevox_core
-              
-              # Set up ONNX Runtime environment for ort-sys
-              export ORT_LIB_LOCATION=${voicevoxResources}/voicevox_core/lib
-              export ORT_INCLUDE_LOCATION=${voicevoxResources}/voicevox_core/include
-              
-              # Note: Models downloaded at runtime to ~/.local/share/voicevox/models/
-              
-              echo "VOICEVOX resources ready for build"
+              echo "Build ready - using dynamic library loading"
             '';
 
             # Install binaries and setup runtime environment
@@ -168,7 +111,7 @@
               fi
               
               # Install VOICEVOX downloader for model management
-              cp ${voicevoxResources}/bin/voicevox-download $out/bin/
+              cp ${voicevoxSetup}/bin/voicevox-download $out/bin/
               
               # Install automatic setup script
               cp ${licenseAcceptor}/bin/voicevox-auto-setup $out/bin/
@@ -240,22 +183,8 @@ echo "You can now use voicevox-say for text-to-speech synthesis"
 EOF
               chmod +x $out/bin/voicevox-setup-models
               
-              # Copy VOICEVOX libraries to output
-              mkdir -p $out/lib
-              cp -r ${voicevoxResources}/voicevox_core/lib/* $out/lib/
-
-              # Note: Runtime voice models discovered dynamically from ~/.local/share/voicevox/
-              mkdir -p $out/share/voicevox
-              echo "Voice models downloaded at runtime to user directory"
-
-              # Fix runtime library paths on macOS
-              if [[ "$OSTYPE" == "darwin"* ]]; then
-                # Add rpath for runtime library discovery
-                ${pkgs.darwin.cctools}/bin/install_name_tool -add_rpath "$out/lib" $out/bin/voicevox-say
-                if [ -f "$out/bin/voicevox-daemon" ]; then
-                  ${pkgs.darwin.cctools}/bin/install_name_tool -add_rpath "$out/lib" $out/bin/voicevox-daemon
-                fi
-              fi
+              # Note: All libraries and models downloaded at runtime by voicevox-download
+              # to ~/.local/share/voicevox/ (no Nix-managed libraries needed)
               
               echo "VOICEVOX CLI package installation completed"
             '';
@@ -271,12 +200,13 @@ EOF
             
             MODELS_DIR="$1"
             
-            echo "🎭 VOICEVOX CLI - User Setup"
-            echo "Installing voice models for current user..."
+            echo "🎭 VOICEVOX CLI - System Setup"
+            echo "Installing VOICEVOX Core system for current user..."
+            echo "Includes: VOICEVOX Core libraries, ONNX Runtime, 26+ voice models, and dictionary"
             echo ""
             echo "By using this Nix package, you agree to:"
-            echo "- VOICEVOX Audio Model License (commercial/non-commercial use allowed)"
-            echo "- Individual voice library terms (credit required: 'VOICEVOX:[Character]')"
+            echo "- VOICEVOX Core Library License (commercial/non-commercial use allowed)"
+            echo "- Individual voice library terms for 26+ characters (credit required: 'VOICEVOX:[Character]')"
             echo "- See: https://voicevox.hiroshiba.jp/ for details"
             echo ""
             echo "Target: $MODELS_DIR (user-specific)"
@@ -290,7 +220,7 @@ EOF
             # Use expect to auto-accept license during download
             ${pkgs.expect}/bin/expect -c "
               set timeout 300
-              spawn ${voicevoxResources}/bin/voicevox-download --output $MODELS_DIR
+              spawn ${voicevoxSetup}/bin/voicevox-download --output $MODELS_DIR
               expect {
                 \"*同意しますか*\" { send \"y\r\"; exp_continue }
                 \"*[y,n,r]*\" { send \"y\r\"; exp_continue }
@@ -304,8 +234,9 @@ EOF
               exit 1
             }
             
-            echo "✅ VOICEVOX models setup completed!"
-            echo "   Voice models are available for current user"
+            echo "✅ VOICEVOX Core system setup completed!"
+            echo "   VOICEVOX Core libraries, ONNX Runtime, voice models, and dictionary are available"
+            echo "   26+ voice characters ready for text-to-speech synthesis"
           '';
         in
         {
@@ -314,7 +245,7 @@ EOF
             default = voicevox-cli;
             voicevox-cli = voicevox-cli;
             voicevox-say = voicevox-cli; # alias for compatibility
-            voicevoxResources = voicevoxResources; # for debugging hash values
+            voicevoxSetup = voicevoxSetup; # for debugging setup
             licenseAcceptor = licenseAcceptor; # automatic license acceptance
           };
 

@@ -55,22 +55,13 @@ async fn standalone_mode(
     quiet: bool,
     _rate: f32,
     _streaming: bool,
-    minimal_models: bool,
 ) -> Result<()> {
     let core = VoicevoxCore::new()?;
 
-    if minimal_models {
-        if let Err(e) = core.load_minimal_models() {
-            eprintln!("Error: Failed to load minimal models: {}", e);
-            eprintln!("Please start voicevox-daemon to download models automatically");
-            return Err(e);
-        }
-    } else {
-        if let Err(e) = core.load_all_models_no_download() {
-            eprintln!("Error: Failed to load models: {}", e);
-            eprintln!("Please start voicevox-daemon to download models automatically");
-            return Err(e);
-        }
+    if let Err(e) = core.load_all_models_no_download() {
+        eprintln!("Error: Failed to load models: {}", e);
+        eprintln!("Please start voicevox-daemon to download VOICEVOX Core system automatically");
+        return Err(e);
     }
 
     let wav_data = core.synthesize(text, style_id)?;
@@ -205,12 +196,6 @@ async fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("minimal-models")
-                .help("Load only minimal models for faster startup (standalone mode)")
-                .long("minimal-models")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("standalone")
                 .help("Force standalone mode (don't use daemon)")
                 .long("standalone")
@@ -271,7 +256,7 @@ async fn main() -> Result<()> {
             Ok(models) => {
                 if models.is_empty() {
                     println!(
-                        "No VVM models found. Please download models first with voicevox-daemon."
+                        "No VVM models found. Please download VOICEVOX Core system first with voicevox-daemon."
                     );
                 } else {
                     println!("Available VVM models:");
@@ -299,21 +284,21 @@ async fn main() -> Result<()> {
 
     if matches.get_flag("update-models") {
         println!("🔄 Updating voice models only...");
-        println!("Note: This feature requires VOICEVOX downloader with --models-only support");
+        println!("Note: This feature requires VOICEVOX downloader with --only models support");
         println!("For now, falling back to full update...");
         return ensure_models_available().await;
     }
 
     if matches.get_flag("update-dict") {
         println!("🔄 Updating dictionary only...");
-        println!("Note: This feature requires VOICEVOX downloader with --dict-only support");
+        println!("Note: This feature requires VOICEVOX downloader with --only dict support");
         println!("For now, falling back to full update...");
         return ensure_models_available().await;
     }
 
     if let Some(model_id) = matches.get_one::<u32>("update-model") {
         println!("🔄 Updating model {} only...", model_id);
-        println!("Note: This feature requires VOICEVOX downloader with --model support");
+        println!("Note: This feature requires VOICEVOX downloader with --only models support");
         println!("For now, falling back to full update...");
         return ensure_models_available().await;
     }
@@ -415,16 +400,9 @@ async fn main() -> Result<()> {
         println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
 
-        if matches.get_flag("minimal-models") {
-            if let Err(e) = core.load_minimal_models() {
-                println!("Warning: Failed to load some minimal models: {}", e);
-                println!("Please start voicevox-daemon to download models automatically");
-            }
-        } else {
-            if let Err(e) = core.load_all_models_no_download() {
-                println!("Warning: Failed to load some models: {}", e);
-                println!("Please start voicevox-daemon to download models automatically");
-            }
+        if let Err(e) = core.load_all_models_no_download() {
+            println!("Warning: Failed to load some models: {}", e);
+            println!("Please start voicevox-daemon to download VOICEVOX Core system automatically");
         }
 
         println!("All available speakers and styles from loaded models:");
@@ -464,7 +442,6 @@ async fn main() -> Result<()> {
     let streaming = matches.get_flag("streaming");
     let quiet = matches.get_flag("quiet");
     let output_file = matches.get_one::<String>("output-file");
-    let minimal_models = matches.get_flag("minimal-models");
     let force_standalone = matches.get_flag("standalone");
 
     if rate < 0.5 || rate > 2.0 {
@@ -515,7 +492,6 @@ async fn main() -> Result<()> {
         quiet,
         rate,
         streaming,
-        minimal_models,
     )
     .await
 }

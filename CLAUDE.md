@@ -112,13 +112,13 @@ pkill -f -u $(id -u) voicevox-daemon
 ./target/release/voicevox-say --speaker-id 3 "ずんだもんの声なのだ"
 ./target/release/voicevox-say --speaker-id 2 "四国めたんの声です"
 
-# Voice selection by name
-./target/release/voicevox-say --voice zundamon "名前指定なのだ"
+# Voice selection by model
+./target/release/voicevox-say --model 3 "モデル3の音声なのだ"
 
 # Status and information (only commands that produce output)
 ./target/release/voicevox-say --daemon-status
 ./target/release/voicevox-say --list-speakers
-./target/release/voicevox-say --voice "?"
+./target/release/voicevox-say --list-models
 
 # Force standalone mode
 ./target/release/voicevox-say --standalone "テストメッセージ"
@@ -127,34 +127,42 @@ pkill -f -u $(id -u) voicevox-daemon
 echo "標準入力からのテキスト" | ./target/release/voicevox-say
 ```
 
-## Available Voices
+## Voice Discovery (Dynamic Detection)
 
-### Main Characters
+### Dynamic Voice Management
 ```bash
-# Zundamon (ずんだもん) - 8 variations
---speaker-id 3   # ノーマル (Normal)
---speaker-id 1   # あまあま (Sweet)  
---speaker-id 7   # ツンツン (Tsundere)
---speaker-id 5   # セクシー (Sexy)
---speaker-id 22  # ささやき (Whisper)
---speaker-id 38  # ヒソヒソ (Hushed)
---speaker-id 75  # ヘロヘロ (Exhausted)
---speaker-id 76  # なみだめ (Crying)
+# Discover available models
+./target/release/voicevox-say --list-models
 
-# Shikoku Metan (四国めたん) - 6 variations  
---speaker-id 2   # ノーマル (Normal)
---speaker-id 0   # あまあま (Sweet)
---speaker-id 6   # ツンツン (Tsundere) 
---speaker-id 4   # セクシー (Sexy)
---speaker-id 36  # ささやき (Whisper)
---speaker-id 37  # ヒソヒソ (Hushed)
+# Example output:
+# Available VVM models:
+#   Model 0 (/path/to/0.vvm)
+#   Model 3 (/path/to/3.vvm) 
+#   Model 16 (/path/to/16.vvm)
 
-# Other Popular Characters
---speaker-id 8   # 春日部つむぎ (Kasukabe Tsumugi)
---speaker-id 9   # 波音リツ (Namine Ritsu)
---speaker-id 10  # 雨晴はう (Amahare Hau)
---speaker-id 16  # 九州そら (Kyushu Sora)
---speaker-id 20  # もち子さん (Mochiko-san)
+# Get detailed speaker information  
+./target/release/voicevox-say --list-speakers
+
+# Use model by ID
+./target/release/voicevox-say --model 3 "Text"
+
+# Use specific speaker style ID
+./target/release/voicevox-say --speaker-id 3 "Text"
+
+# Check what models are available for a specific voice ID
+./target/release/voicevox-say --check-updates
+```
+
+### Voice Selection Methods
+```bash
+# Method 1: Direct speaker ID (most precise)
+--speaker-id 3   # Use exact style ID from --list-speakers output
+
+# Method 2: Model selection (uses first available style)  
+--model 3        # Load 3.vvm model and use default style
+
+# Method 3: Dynamic name resolution (if speaker metadata available)
+# This requires VOICEVOX Core integration and loaded models
 ```
 
 ## Testing & Development
@@ -169,17 +177,19 @@ sleep 3
 ./target/debug/voicevox-say "動作テストなのだ"
 pkill -f -u $(id -u) voicevox-daemon
 
-# Test various voices
-./target/debug/voicevox-say --speaker-id 3 "ずんだもんノーマル"
-./target/debug/voicevox-say --speaker-id 1 "ずんだもんあまあま"
-./target/debug/voicevox-say --speaker-id 7 "ずんだもんツンツン"
+# Test various voices dynamically
+./target/debug/voicevox-say --speaker-id 3 "スピーカーID 3のテスト"
+./target/debug/voicevox-say --model 3 "モデル3のテスト"
+./target/debug/voicevox-say --model 16 "モデル16のテスト"
 
 # Test file output
 ./target/debug/voicevox-say "ファイル出力テスト" -o test.wav
 
 # Test information commands
 ./target/debug/voicevox-say --list-speakers
+./target/debug/voicevox-say --list-models
 ./target/debug/voicevox-say --daemon-status
+./target/debug/voicevox-say --check-updates
 ```
 
 ## Development Notes
@@ -269,11 +279,14 @@ voicevox-download --output ~/.local/share/voicevox/models
 4. `~/.local/state/voicevox-daemon.sock` (XDG fallback)
 5. `/tmp/voicevox-daemon-{uid}.sock` (temporary, user-specific by UID)
 
-### Voice System
-- **99+ Voice Styles**: 26+ characters with multiple emotional variants
-- **Style ID Mapping**: Direct speaker ID specification or name resolution
-- **Character Variety**: From cute (Zundamon) to mature (No.7) to dramatic (后鬼)
-- **Complete License Coverage**: Individual terms for all voice characters displayed during setup
+### Voice System (Dynamic Detection Architecture)
+- **Fully Dynamic Voice Detection**: No hardcoded voice mappings - automatically adapts to available VVM models
+- **VOICEVOX Core Integration**: Direct speaker information from `libvoicevox_core.dylib` for accurate voice metadata
+- **Model-Based Resolution**: Voice selection via `--model N` for N.vvm files or `--speaker-id ID` for specific styles
+- **Automatic Model Scanning**: Recursive VVM file discovery with `scan_available_models()`
+- **Runtime Voice Mapping**: Daemon generates voice mappings dynamically from loaded models
+- **Zero Hardcoding**: Removed all hardcoded voice names (zundamon, metan, tsumugi, etc.)
+- **Future-Proof**: Automatically supports new VOICEVOX models without code changes
 
 ## Tips
 
@@ -290,3 +303,6 @@ voicevox-download --output ~/.local/share/voicevox/models
 - **Responsibility Separation**: Daemon = synthesis only, Client = user interaction + downloads
 - **Recursive Model Search**: VVM files discovered in nested directory structures automatically
 - **Cleanup Automation**: Unnecessary files (zip, tgz, tar.gz) removed after download
+- **Dynamic Voice System**: Zero hardcoded voice mappings - automatically adapts to new models
+- **Individual Updates**: Selective model updates with `--update-models`, `--update-dict`, `--update-model N`
+- **Version Management**: Complete version tracking with `--version-info` and `--check-updates`

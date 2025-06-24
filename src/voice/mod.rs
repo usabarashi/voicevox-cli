@@ -99,7 +99,7 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
         std::process::exit(0);
     }
     
-    // 直接的な数値指定をサポート
+    // Support direct numeric specification
     if let Ok(style_id) = voice_input.parse::<u32>() {
         return Ok((style_id, format!("Style ID {}", style_id)));
     }
@@ -118,14 +118,14 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
         ));
     }
     
-    // 音声名がモデル番号と一致するかチェック
+    // Check if voice name matches model number
     if let Ok(model_id) = voice_input.parse::<u32>() {
         if available_models.iter().any(|m| m.model_id == model_id) {
             return Ok((model_id, format!("Model {} (Default Style)", model_id)));
         }
     }
     
-    // 一般的なパターンマッチング（動的）
+    // General pattern matching (dynamic)
     let model_suggestions = available_models
         .iter()
         .take(3)
@@ -145,21 +145,21 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
     ))
 }
 
-// モデルIDから利用可能なスタイルを取得（VOICEVOX Core統合版）
+// Get available styles from model ID (VOICEVOX Core integration version)
 pub fn get_styles_for_model_from_core(model_id: u32) -> Result<Vec<Style>> {
-    // VOICEVOX Coreから直接スピーカー情報を取得
+    // Get speaker information directly from VOICEVOX Core
     use crate::core::VoicevoxCore;
     
     match VoicevoxCore::new() {
         Ok(core) => {
-            // コアが初期化できた場合、スピーカー情報を取得
+            // Get speaker information if core initialization succeeds
             match core.get_speakers() {
                 Ok(speakers) => {
                     let mut styles = Vec::new();
                     for speaker in speakers {
-                        // このモデルに関連するスタイルを抽出
+                        // Extract styles related to this model
                         for style in speaker.styles {
-                            // ヒューリスティック：style.idがmodel_idの範囲内かチェック
+                            // Heuristic: Check if style.id is within model_id range
                             if style.id >= model_id * 10 && style.id < (model_id + 1) * 10 {
                                 styles.push(style);
                             } else if model_id <= 30 && style.id == model_id {
@@ -173,24 +173,24 @@ pub fn get_styles_for_model_from_core(model_id: u32) -> Result<Vec<Style>> {
             }
         }
         Err(_) => {
-            // VOICEVOX Coreが利用できない場合は空のベクターを返す
+            // Return empty vector if VOICEVOX Core is unavailable
             Ok(Vec::new())
         }
     }
 }
 
-// 高度な音声名解決（VOICEVOX Core統合版）
+// Advanced voice name resolution (VOICEVOX Core integration version)
 pub fn resolve_voice_with_core_integration(voice_input: &str) -> Result<(u32, String)> {
-    // まず基本的な解決を試行
+    // First attempt basic resolution
     match try_resolve_from_available_models(voice_input) {
         Ok(result) => Ok(result),
         Err(_) => {
-            // 失敗した場合、VOICEVOX Coreから詳細情報を取得
+            // If failed, get detailed information from VOICEVOX Core
             use crate::core::VoicevoxCore;
             
             if let Ok(core) = VoicevoxCore::new() {
                 if let Ok(speakers) = core.get_speakers() {
-                    // スピーカー名での検索
+                    // Search by speaker name
                     for speaker in speakers {
                         let normalized_name = speaker.name
                             .to_lowercase()
@@ -214,7 +214,7 @@ pub fn resolve_voice_with_core_integration(voice_input: &str) -> Result<(u32, St
                 }
             }
             
-            // 最終的に失敗した場合
+            // If ultimately failed
             Err(anyhow!(
                 "Voice '{}' not found. Use --list-speakers to see all available voices.",
                 voice_input
@@ -223,25 +223,25 @@ pub fn resolve_voice_with_core_integration(voice_input: &str) -> Result<(u32, St
     }
 }
 
-// 音声IDから必要なVVMモデル番号を取得（完全動的版）
+// Get required VVM model number from voice ID (fully dynamic version)
 pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
-    // 完全に動的な検出：利用可能なモデルから推定
+    // Fully dynamic detection: infer from available models
     if let Ok(available_models) = scan_available_models() {
-        // voice_idに最も近いmodel_idを検索
+        // Search for model_id closest to voice_id
         available_models
             .iter()
             .find(|model| {
-                // 一般的なパターン：voice_id がmodel_idと同じか、近い値
+                // General pattern: voice_id same as model_id or close value
                 model.model_id == voice_id || 
                 (voice_id >= model.model_id * 10 && voice_id < (model.model_id + 1) * 10)
             })
             .map(|model| model.model_id)
             .or_else(|| {
-                // フォールバック：最初の利用可能なモデル
+                // Fallback: first available model
                 available_models.first().map(|model| model.model_id)
             })
     } else {
-        // モデルスキャンに失敗した場合のフォールバック
+        // Fallback when model scanning fails
         None
     }
 }

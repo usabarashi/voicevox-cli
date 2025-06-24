@@ -7,21 +7,21 @@ use tokio::sync::Mutex;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use futures_util::{SinkExt, StreamExt};
 
-// 動的音声マッピング生成
+// Generate dynamic voice mapping
 fn get_dynamic_voice_mapping() -> std::collections::HashMap<String, (u32, String)> {
     let mut mapping = std::collections::HashMap::new();
     
     if let Ok(available_models) = scan_available_models() {
         for (index, model) in available_models.iter().enumerate() {
-            // モデル番号ベースの基本的なマッピング
+            // Basic mapping based on model numbers
             let model_name = format!("model{}", model.model_id);
             let description = format!("Model {} (Default Style)", model.model_id);
             mapping.insert(model_name, (model.model_id, description));
             
-            // 数値文字列でのアクセスも可能に
+            // Enable access via numeric strings as well
             mapping.insert(model.model_id.to_string(), (model.model_id, format!("Model {}", model.model_id)));
             
-            // 最初のモデルをデフォルトとして設定
+            // Set the first model as default
             if index == 0 {
                 mapping.insert("default".to_string(), (model.model_id, format!("Default Model {}", model.model_id)));
             }

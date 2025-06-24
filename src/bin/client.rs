@@ -18,13 +18,33 @@ async fn try_daemon_with_retry(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    if daemon_mode(text, style_id, voice_description, options.clone(), output_file, quiet, socket_path).await.is_ok() {
+    if daemon_mode(
+        text,
+        style_id,
+        voice_description,
+        options.clone(),
+        output_file,
+        quiet,
+        socket_path,
+    )
+    .await
+    .is_ok()
+    {
         return Ok(());
     }
-    
+
     start_daemon_if_needed().await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
-    daemon_mode(text, style_id, voice_description, options, output_file, quiet, socket_path).await
+    daemon_mode(
+        text,
+        style_id,
+        voice_description,
+        options,
+        output_file,
+        quiet,
+        socket_path,
+    )
+    .await
 }
 
 // Fallback to standalone mode when daemon is not available
@@ -39,9 +59,9 @@ async fn standalone_mode(
     minimal_models: bool,
 ) -> Result<()> {
     // Silent operation like macOS say - no output unless error
-    
+
     let core = VoicevoxCore::new()?;
-    
+
     // Load models silently - no download attempt in client
     if minimal_models {
         if let Err(e) = core.load_minimal_models() {
@@ -56,16 +76,16 @@ async fn standalone_mode(
             return Err(e);
         }
     }
-    
+
     // Synthesize speech silently
     let wav_data = core.synthesize(text, style_id)?;
-    
+
     // Handle output
     if let Some(output_file) = output_file {
         std::fs::write(output_file, &wav_data)?;
         // Silent for file output (like macOS say -o)
     }
-    
+
     // Play audio if not quiet and no output file (like macOS say command)
     if !quiet && output_file.is_none() {
         if let Err(e) = play_audio_from_memory(&wav_data) {
@@ -73,7 +93,7 @@ async fn standalone_mode(
             return Err(e);
         }
     }
-    
+
     Ok(())
 }
 
@@ -228,9 +248,9 @@ async fn main() -> Result<()> {
                 .long("dict-dir")
                 .value_name("PATH"),
         );
-    
+
     let matches = app.get_matches();
-    
+
     // Override environment variables if provided via CLI
     if let Some(models_dir) = matches.get_one::<String>("models-dir") {
         std::env::set_var("VOICEVOX_MODELS_DIR", models_dir);
@@ -238,7 +258,7 @@ async fn main() -> Result<()> {
     if let Some(dict_dir) = matches.get_one::<String>("dict-dir") {
         std::env::set_var("VOICEVOX_DICT_DIR", dict_dir);
     }
-    
+
     if matches.get_flag("daemon-status") {
         let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
             PathBuf::from(custom_path)
@@ -247,24 +267,29 @@ async fn main() -> Result<()> {
         };
         return check_daemon_status(&socket_path).await;
     }
-    
+
     if let Some(voice_name) = matches.get_one::<String>("voice") {
         if voice_name == "?" {
             resolve_voice_dynamic("?")?; // This exits internally
         }
     }
-    
+
     if matches.get_flag("list-models") {
         println!("Scanning for available VVM models...");
         match scan_available_models() {
             Ok(models) => {
                 if models.is_empty() {
-                    println!("No VVM models found. Please download models first with voicevox-daemon.");
+                    println!(
+                        "No VVM models found. Please download models first with voicevox-daemon."
+                    );
                 } else {
                     println!("Available VVM models:");
                     for model in &models {
                         println!("  Model {} ({})", model.model_id, model.file_path.display());
-                        println!("    Usage: --model {} or --speaker-id <STYLE_ID>", model.model_id);
+                        println!(
+                            "    Usage: --model {} or --speaker-id <STYLE_ID>",
+                            model.model_id
+                        );
                     }
                     println!();
                     println!("Tips:");
@@ -280,40 +305,44 @@ async fn main() -> Result<()> {
         }
         return Ok(());
     }
-    
+
     if matches.get_flag("update-models") {
         println!("🔄 Updating voice models only...");
         println!("Note: This feature requires VOICEVOX downloader with --models-only support");
         println!("For now, falling back to full update...");
         return ensure_models_available().await;
     }
-    
+
     if matches.get_flag("update-dict") {
         println!("🔄 Updating dictionary only...");
         println!("Note: This feature requires VOICEVOX downloader with --dict-only support");
         println!("For now, falling back to full update...");
         return ensure_models_available().await;
     }
-    
+
     if let Some(model_id) = matches.get_one::<u32>("update-model") {
         println!("🔄 Updating model {} only...", model_id);
         println!("Note: This feature requires VOICEVOX downloader with --model support");
         println!("For now, falling back to full update...");
         return ensure_models_available().await;
     }
-    
+
     if matches.get_flag("check-updates") {
         println!("🔍 Checking for available updates...");
-        
+
         // Get current models
         match scan_available_models() {
             Ok(current_models) => {
                 println!("📊 Current installation status:");
                 println!("  Voice models: {} VVM files", current_models.len());
                 for model in &current_models {
-                    println!("    Model {} ({})", model.model_id, model.file_path.display());
+                    println!(
+                        "    Model {} ({})",
+                        model.model_id,
+                        model.file_path.display()
+                    );
                 }
-                
+
                 // Check dictionary
                 use voicevox_cli::paths::find_openjtalk_dict;
                 match find_openjtalk_dict() {
@@ -324,7 +353,7 @@ async fn main() -> Result<()> {
                         println!("  Dictionary: Not found ❌");
                     }
                 }
-                
+
                 println!();
                 println!("💡 Update options:");
                 println!("  --update-models     Update all voice models");
@@ -337,14 +366,14 @@ async fn main() -> Result<()> {
         }
         return Ok(());
     }
-    
+
     if matches.get_flag("version-info") {
         println!("📋 VOICEVOX CLI Version Information");
         println!("=====================================");
-        
+
         // Application version
         println!("Application: v{}", env!("CARGO_PKG_VERSION"));
-        
+
         // Get current models with metadata
         match scan_available_models() {
             Ok(current_models) => {
@@ -352,10 +381,16 @@ async fn main() -> Result<()> {
                 for model in &current_models {
                     if let Ok(metadata) = std::fs::metadata(&model.file_path) {
                         let size_kb = metadata.len() / 1024;
-                        println!("  Model {}: {} ({} KB)", 
-                                 model.model_id, 
-                                 model.file_path.file_name().unwrap_or_default().to_string_lossy(),
-                                 size_kb);
+                        println!(
+                            "  Model {}: {} ({} KB)",
+                            model.model_id,
+                            model
+                                .file_path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy(),
+                            size_kb
+                        );
                     }
                 }
             }
@@ -363,7 +398,7 @@ async fn main() -> Result<()> {
                 println!("Voice Models: Error scanning - {}", e);
             }
         }
-        
+
         // Check dictionary
         use voicevox_cli::paths::find_openjtalk_dict;
         match find_openjtalk_dict() {
@@ -374,27 +409,27 @@ async fn main() -> Result<()> {
                 println!("Dictionary: Not installed");
             }
         }
-        
+
         return Ok(());
     }
-    
+
     if matches.get_flag("list-speakers") {
         let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
             PathBuf::from(custom_path)
         } else {
             get_socket_path()
         };
-        
+
         if !matches.get_flag("standalone") {
             if let Ok(_) = list_speakers_daemon(&socket_path).await {
                 return Ok(());
             }
-                }
-        
+        }
+
         // Fallback to standalone
         println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
-        
+
         if matches.get_flag("minimal-models") {
             if let Err(e) = core.load_minimal_models() {
                 println!("Warning: Failed to load some minimal models: {}", e);
@@ -406,7 +441,7 @@ async fn main() -> Result<()> {
                 println!("Please start voicevox-daemon to download models automatically");
             }
         }
-        
+
         println!("All available speakers and styles from loaded models:");
         let speakers = core.get_speakers()?;
         for speaker in &speakers {
@@ -421,7 +456,7 @@ async fn main() -> Result<()> {
         }
         return Ok(());
     }
-    
+
     // Get text input
     let text = get_input_text(&matches)?;
     if text.trim().is_empty() {
@@ -429,21 +464,22 @@ async fn main() -> Result<()> {
             "No text provided. Use command line argument, -f file, or pipe text to stdin."
         ));
     }
-    
+
     // Resolve voice settings
-    let (style_id, voice_description) = if let Some(speaker_id) = matches.get_one::<u32>("speaker-id") {
-        (*speaker_id, format!("Style ID {}", speaker_id))
-    } else if let Some(model_id) = matches.get_one::<u32>("model") {
-        // For now, use the first style from the model (style_id = model_id * 10 as a heuristic)
-        // In the future, this should load the model and get the actual first style ID
-        (*model_id, format!("Model {} (Default Style)", model_id))
-    } else if let Some(voice_name) = matches.get_one::<String>("voice") {
-        resolve_voice_dynamic(voice_name)?
-    } else {
-        // No voice specified - default to speaker ID 3 (ずんだもん ノーマル)
-        (3, "Default (ずんだもん ノーマル)".to_string())
-    };
-    
+    let (style_id, voice_description) =
+        if let Some(speaker_id) = matches.get_one::<u32>("speaker-id") {
+            (*speaker_id, format!("Style ID {}", speaker_id))
+        } else if let Some(model_id) = matches.get_one::<u32>("model") {
+            // For now, use the first style from the model (style_id = model_id * 10 as a heuristic)
+            // In the future, this should load the model and get the actual first style ID
+            (*model_id, format!("Model {} (Default Style)", model_id))
+        } else if let Some(voice_name) = matches.get_one::<String>("voice") {
+            resolve_voice_dynamic(voice_name)?
+        } else {
+            // No voice specified - default to speaker ID 3 (ずんだもん ノーマル)
+            (3, "Default (ずんだもん ノーマル)".to_string())
+        };
+
     // Get other options
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
     let streaming = matches.get_flag("streaming");
@@ -451,14 +487,14 @@ async fn main() -> Result<()> {
     let output_file = matches.get_one::<String>("output-file");
     let minimal_models = matches.get_flag("minimal-models");
     let force_standalone = matches.get_flag("standalone");
-    
+
     // Validate rate
     if rate < 0.5 || rate > 2.0 {
         return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {}", rate));
     }
-    
+
     let options = SynthesizeOptions { rate, streaming };
-    
+
     // Check for models and download if needed (client-side first-run setup)
     if !force_standalone {
         if let Err(_) = ensure_models_available().await {
@@ -468,7 +504,7 @@ async fn main() -> Result<()> {
             }
         }
     }
-    
+
     // Try daemon mode first (unless forced standalone)
     if !force_standalone {
         let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
@@ -476,18 +512,28 @@ async fn main() -> Result<()> {
         } else {
             get_socket_path()
         };
-        
+
         // Try daemon mode with automatic retry
-        if let Ok(_) = try_daemon_with_retry(&text, style_id, &voice_description, options.clone(), output_file, quiet, &socket_path).await {
+        if let Ok(_) = try_daemon_with_retry(
+            &text,
+            style_id,
+            &voice_description,
+            options.clone(),
+            output_file,
+            quiet,
+            &socket_path,
+        )
+        .await
+        {
             return Ok(());
         }
-        
+
         // Daemon failed, log message if not quiet
         if !quiet {
             println!("🔄 Daemon unavailable, using standalone mode...");
         }
     }
-    
+
     // Fallback to standalone mode
     standalone_mode(
         &text,

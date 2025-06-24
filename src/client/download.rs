@@ -195,7 +195,7 @@ pub async fn ensure_models_available() -> Result<()> {
     }
 }
 
-// 音声モデルのみ更新
+// Update voice models only
 pub async fn update_models_only() -> Result<()> {
     println!("🔄 Updating voice models only...");
     
@@ -236,7 +236,7 @@ pub async fn update_models_only() -> Result<()> {
     }
 }
 
-// 辞書のみ更新
+// Update dictionary only
 pub async fn update_dictionary_only() -> Result<()> {
     println!("🔄 Updating dictionary only...");
     
@@ -275,7 +275,7 @@ pub async fn update_dictionary_only() -> Result<()> {
     }
 }
 
-// 特定モデルのみ更新
+// Update specific model only
 pub async fn update_specific_model(model_id: u32) -> Result<()> {
     println!("🔄 Updating model {} only...", model_id);
     
@@ -315,7 +315,7 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
     }
 }
 
-// 更新確認のみ
+// Check updates only
 pub async fn check_updates() -> Result<()> {
     println!("🔍 Checking for available updates...");
     
@@ -349,7 +349,7 @@ pub async fn check_updates() -> Result<()> {
     Ok(())
 }
 
-// バージョン情報表示
+// Display version information
 pub async fn show_version_info() -> Result<()> {
     println!("📋 VOICEVOX CLI Version Information");
     println!("=====================================");

@@ -4,9 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is VOICEVOX CLI (`voicevox-cli`) - a production-ready command-line text-to-speech synthesis tool using VOICEVOX Core 0.16.0. It provides a macOS `say` command-compatible interface for Japanese TTS with various character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
+This is VOICEVOX TTS (`voicevox-tts`) - a production-ready command-line text-to-speech synthesis tool using VOICEVOX Core 0.16.0. It provides a macOS `say` command-compatible interface for Japanese TTS with various character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
 
 The tool uses a **daemon-client architecture** for optimal performance, with pre-loaded voice models in a background daemon process for instant synthesis. It's specifically optimized for macOS with CPU-only processing and maintains complete compatibility with macOS `say` command behavior (silent operation on success, errors to stderr only).
+
+**Key Features:**
+- **Dynamic Voice Detection**: Zero hardcoded voice mappings - automatically adapts to available models
+- **Functional Programming Design**: Immutable data structures, monadic composition, and declarative processing
+- **High-Performance Architecture**: Optimized for minimal latency with pre-loaded models in daemon
+- **macOS Integration**: Complete compatibility with macOS `say` command interface
 
 ## Architecture
 
@@ -20,9 +26,14 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 ### Core Components
 
 - **`src/lib.rs`**: Shared library with VoicevoxCore and IPC protocols
-- **`src/bin/daemon.rs`**: Background daemon process with model management
-- **`src/bin/client.rs`**: Lightweight CLI client (primary interface)
-- **`src/main.rs`**: Legacy standalone implementation
+- **`src/bin/daemon.rs`**: Background daemon process with model management  
+- **`src/bin/client.rs`**: Lightweight CLI client (primary interface) with functional voice resolution
+- **`src/core/mod.rs`**: VOICEVOX Core wrapper with functional programming patterns
+- **`src/voice/mod.rs`**: Dynamic voice detection and resolution system
+- **`src/paths/mod.rs`**: Functional path discovery and XDG compliance
+- **`src/client/`**: Client-side functionality (daemon client, download management)
+- **`src/daemon/`**: Server-side functionality (model loading, synthesis)
+- **`src/ipc/`**: Inter-process communication protocols and data structures
 - **`voicevox_core/`**: VOICEVOX Core runtime libraries (`libvoicevox_core.dylib`) and headers
 - **`models/*.vvm`**: VOICEVOX voice model files (26+ models supported)
 - **`dict/`**: OpenJTalk dictionary for Japanese text processing
@@ -37,6 +48,8 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 6. **Process Management**: Duplicate daemon prevention and graceful shutdown
 7. **Responsibility Separation**: Client-side setup, daemon-side synthesis
 8. **User Isolation**: UID-based daemon identification for multi-user support
+9. **Functional Programming**: Monadic composition, iterator chains, and immutable data flow
+10. **Dynamic Discovery**: Runtime model detection with zero hardcoded mappings
 
 ### FFI Integration
 
@@ -197,6 +210,42 @@ pkill -f -u $(id -u) voicevox-daemon
 - **Real VOICEVOX Only**: Production builds require actual VOICEVOX Core libraries
 - **Silent Operation**: macOS `say` compatible behavior (no output on success)
 - **Error Handling**: All errors go to stderr, never stdout
+- **Functional Programming**: Deep refactoring from imperative to functional patterns throughout codebase
+
+### Code Quality & Patterns
+
+**Functional Programming Implementation**:
+- **Iterator Chains**: Replace for-loops with `filter_map` → `map` → `collect` patterns
+- **Monadic Composition**: `Option` and `Result` chaining with `and_then`, `or_else`, `unwrap_or`
+- **Early Return Elimination**: Functional alternatives to nested if-else and early returns
+- **Responsibility Separation**: Small, composable functions with single responsibilities
+- **Immutable Data Flow**: Minimize side effects and mutable state
+
+**Performance Optimizations**:
+- **Functional Fast Paths**: Optimized short-circuit evaluation for simple cases
+- **Memory Efficiency**: String pre-allocation and minimal copying in pipelines
+- **Recursive Efficiency**: Tail-call optimization patterns for file tree traversal
+- **Pipeline Composition**: Lazy evaluation patterns for large data processing
+
+**Architectural Refactoring Examples**:
+```rust
+// Before: Deep nested imperative style
+for entry in entries.filter_map(|e| e.ok()) {
+    let entry_path = entry.path();
+    if entry_path.is_file() {
+        loaded_count += self.try_load_vvm_file(&entry_path);
+    } else if entry_path.is_dir() {
+        let _ = self.load_vvm_files_recursive(&entry_path);
+    }
+}
+
+// After: Functional composition with separated concerns
+let loaded_count = entries
+    .filter_map(Result::ok)
+    .map(|entry| entry.path())
+    .map(|path| self.process_entry_path(&path))
+    .sum::<u32>();
+```
 
 ### Model Management
 
@@ -304,3 +353,7 @@ voicevox-download --output ~/.local/share/voicevox/models
 - **Dynamic Voice System**: Zero hardcoded voice mappings - automatically adapts to new models
 - **Individual Updates**: Selective model updates with `--update-models`, `--update-dict`, `--update-model N`
 - **Version Management**: Complete version tracking with `--version-info` and `--check-updates`
+- **Functional Programming**: Codebase uses functional patterns - prefer iterator chains over for-loops
+- **Code Style**: Monadic composition over nested conditionals, small composable functions over large implementations
+- **Error Handling**: `Result` and `Option` chaining patterns for clean error propagation
+- **Performance**: Functional fast paths with early bailout for optimal performance in common cases

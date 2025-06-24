@@ -50,37 +50,18 @@ impl VoicevoxCore {
         self.load_vvm_files_recursive(&models_dir)
     }
     
-    // Helper function to recursively load VVM files from a directory
+    // Helper function to recursively load VVM files from a directory (flattened structure)
     fn load_vvm_files_recursive(&self, dir: &PathBuf) -> Result<()> {
+        let entries = std::fs::read_dir(dir)?;
         let mut loaded_count = 0;
         
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let entry_path = entry.path();
-                
-                if entry_path.is_file() {
-                    if let Some(file_name) = entry.file_name().to_str() {
-                        if file_name.ends_with(".vvm") {
-                            match VoiceModelFile::open(&entry_path) {
-                                Ok(model) => {
-                                    match self.synthesizer.load_voice_model(&model) {
-                                        Ok(_) => loaded_count += 1,
-                                        Err(_) => {
-                                            // Model already loaded or other non-critical error
-                                            // Continue loading other models
-                                        }
-                                    }
-                                }
-                                Err(_) => {
-                                    // Failed to open model file, continue with others
-                                }
-                            }
-                        }
-                    }
-                } else if entry_path.is_dir() {
-                    // Recursively search subdirectories
-                    let _ = self.load_vvm_files_recursive(&entry_path);
-                }
+        for entry in entries.filter_map(|e| e.ok()) {
+            let entry_path = entry.path();
+            
+            if entry_path.is_file() {
+                loaded_count += self.try_load_vvm_file(&entry_path);
+            } else if entry_path.is_dir() {
+                let _ = self.load_vvm_files_recursive(&entry_path);
             }
         }
 
@@ -89,6 +70,24 @@ impl VoicevoxCore {
         }
 
         Ok(())
+    }
+    
+    // Flattened VVM file loading logic
+    fn try_load_vvm_file(&self, file_path: &PathBuf) -> u32 {
+        let _file_name = match file_path.file_name().and_then(|f| f.to_str()) {
+            Some(name) if name.ends_with(".vvm") => name,
+            _ => return 0,
+        };
+        
+        let model = match VoiceModelFile::open(file_path) {
+            Ok(model) => model,
+            Err(_) => return 0,
+        };
+        
+        match self.synthesizer.load_voice_model(&model) {
+            Ok(_) => 1,
+            Err(_) => 0, // Model already loaded or other non-critical error
+        }
     }
 
     pub fn load_minimal_models(&self) -> Result<()> {

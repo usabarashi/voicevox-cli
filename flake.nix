@@ -1,10 +1,12 @@
 {
   description = ''
-    VOICEVOX CLI tool for text-to-speech synthesis
+    VOICEVOX TTS CLI for Apple Silicon Macs - Dynamic voice detection system
 
-    This tool uses VOICEVOX Core (MIT License) and requires proper attribution.
-    When using generated audio, please credit VOICEVOX appropriately.
+    Zero-configuration Japanese text-to-speech with automatic voice model discovery.
+    Supports 26+ voice characters with dynamic detection and daemon-client architecture.
 
+    Platform: Apple Silicon (aarch64-darwin) only
+    
     License Information:
     - CLI Tool: MIT License + Apache License 2.0
     - VOICEVOX Core: MIT License (Copyright 2021 Hiroshiba Kazuyuki)
@@ -98,8 +100,8 @@
 
           # Centralized meta information
           packageMeta = with pkgs.lib; {
-            description = "VOICEVOX CLI tool for text-to-speech synthesis";
-            homepage = "https://github.com/usabarashi/voicevox-cli";
+            description = "VOICEVOX TTS CLI for Apple Silicon - Dynamic voice detection system";
+            homepage = "https://github.com/usabarashi/voicevox-tts";
             license = with licenses; [ mit asl20 ];
             maintainers = [ "usabarashi" ];
             platforms = [ "aarch64-darwin" ];
@@ -151,7 +153,7 @@
               export ORT_LIB_LOCATION=${voicevoxResources}/voicevox_core/lib
               export ORT_INCLUDE_LOCATION=${voicevoxResources}/voicevox_core/include
               
-              # Note: Models and dictionary will be downloaded at runtime by voicevox-download
+              # Note: Models downloaded at runtime to ~/.local/share/voicevox/models/
               
               echo "VOICEVOX resources ready for build"
             '';
@@ -207,25 +209,19 @@ if ! command -v "$DOWNLOADER" >/dev/null 2>&1; then
     exit 1
 fi
 
-# Download essential models if not present
-ESSENTIAL_MODELS=("3.vvm" "2.vvm" "8.vvm")
-MISSING_MODELS=()
+# Check if any models are already present
+VVM_COUNT=$(find "$MODEL_DIR" -name "*.vvm" 2>/dev/null | wc -l)
 
-for model in "''${ESSENTIAL_MODELS[@]}"; do
-    if [ ! -f "$MODEL_DIR/$model" ]; then
-        MISSING_MODELS+=("$model")
-    fi
-done
-
-if [ ''${#MISSING_MODELS[@]} -eq 0 ]; then
-    echo "All essential voice models are already installed"
+if [ "$VVM_COUNT" -gt 0 ]; then
+    echo "Voice models already installed ($VVM_COUNT models found)"
     echo "Models found in: $MODEL_DIR"
-    ls -la "$MODEL_DIR"/*.vvm 2>/dev/null || echo "No .vvm files found"
+    ls -la "$MODEL_DIR"/*.vvm 2>/dev/null
+    echo "Use --list-models to see available models"
     exit 0
 fi
 
-echo "Missing models: ''${MISSING_MODELS[*]}"
-echo "Downloading essential voice models (Zundamon, Metan, Tsumugi)..."
+echo "No voice models found. Starting download..."
+echo "Downloading voice models (discovered dynamically)..."
 
 # Use VOICEVOX downloader
 if "$DOWNLOADER" --output "$MODEL_DIR" --help >/dev/null 2>&1; then
@@ -252,9 +248,9 @@ EOF
               mkdir -p $out/lib
               cp -r ${voicevoxResources}/voicevox_core/lib/* $out/lib/
 
-              # Create empty directories for runtime downloads
+              # Note: Runtime voice models discovered dynamically from ~/.local/share/voicevox/
               mkdir -p $out/share/voicevox
-              echo "Runtime resources (models, dict) will be downloaded by voicevox-download"
+              echo "Voice models downloaded at runtime to user directory"
 
               # Fix runtime library paths on macOS
               if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -355,12 +351,15 @@ EOF
             ];
 
             shellHook = ''
-              echo "VOICEVOX CLI Development Environment"
+              echo "VOICEVOX TTS Development Environment (Apple Silicon)"
               echo "Available commands:"
-              echo "  cargo build    - Build the project"
-              echo "  cargo run      - Run voicevox-say"
-              echo "  nix build      - Build with Nix"
-              echo "  nix run        - Run voicevox-say directly"
+              echo "  cargo build --bin voicevox-say     - Build client"
+              echo "  cargo build --bin voicevox-daemon  - Build daemon" 
+              echo "  cargo run --bin voicevox-say       - Run client"
+              echo "  nix build                          - Build with Nix"
+              echo "  nix run                            - Run voicevox-say directly"
+              echo ""
+              echo "Dynamic voice detection system - no hardcoded voice names"
             '';
           };
 
@@ -388,8 +387,8 @@ EOF
       # Extended meta information with VOICEVOX-specific details
       meta = {
         # Basic package information (same as packageMeta)
-        description = "VOICEVOX CLI tool for text-to-speech synthesis";
-        homepage = "https://github.com/usabarashi/voicevox-cli";
+        description = "VOICEVOX TTS CLI for Apple Silicon - Dynamic voice detection system";
+        homepage = "https://github.com/usabarashi/voicevox-tts";
         maintainers = [ "usabarashi" ];
         platforms = [ "aarch64-darwin" ];
 

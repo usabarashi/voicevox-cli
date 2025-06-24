@@ -7,7 +7,7 @@
 }:
 
 rustPlatform.buildRustPackage rec {
-  pname = "voicevox-cli";
+  pname = "voicevox-tts";
   version = "0.1.0";
 
   src = ./.;
@@ -33,18 +33,20 @@ rustPlatform.buildRustPackage rec {
     darwin.apple_sdk.frameworks.CoreServices
   ];
 
-  # Copy VOICEVOX Core libraries and include files
+  # Verify VOICEVOX Core libraries and include files
   preBuild = ''
     if [ ! -d "voicevox_core" ]; then
       echo "Error: voicevox_core directory not found"
       echo "Please place VOICEVOX Core libraries in voicevox_core/"
+      echo "Voice models will be downloaded at runtime to ~/.local/share/voicevox/"
       exit 1
     fi
   '';
 
-  # Install the binary as voicevox-say
+  # Binaries should already be named correctly (voicevox-say, voicevox-daemon)
   postInstall = ''
-    mv $out/bin/voicevox-cli $out/bin/voicevox-say || true
+    # Remove legacy binary names if they exist
+    rm -f $out/bin/voicevox-cli $out/bin/voicevox-tts
   '';
 
   # Meta information passed from flake.nix

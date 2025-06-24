@@ -15,8 +15,8 @@ pub struct VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
-        let onnxruntime = Onnxruntime::load_once().perform()
-            .map_err(|e| anyhow!("Failed to load ONNX Runtime: {}", e))?;
+        let onnxruntime = Onnxruntime::init_once()
+            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {}", e))?;
         
         let dict_path = find_openjtalk_dict()?;
         

@@ -84,69 +84,6 @@ impl VoicevoxCore {
         }
     }
 
-    pub fn load_minimal_models(&self) -> Result<()> {
-        // Load only essential models for faster startup (minimal mode)
-        // Dynamically discover and load first few available models
-        let models_dir = find_models_dir_client()?;
-        let vvm_files = self.find_vvm_files_limited(&models_dir, 3)?; // Limit to first 3 models
-
-        let mut loaded_count = 0;
-        for model_path in vvm_files {
-            match VoiceModelFile::open(&model_path) {
-                Ok(model) => {
-                    match self.synthesizer.load_voice_model(&model) {
-                        Ok(_) => loaded_count += 1,
-                        Err(_) => {
-                            // Model already loaded or other non-critical error
-                            loaded_count += 1; // Count as success for minimal loading
-                        }
-                    }
-                }
-                Err(_) => {
-                    // Failed to open model file, continue with others
-                }
-            }
-        }
-
-        if loaded_count == 0 {
-            return Err(anyhow!("No minimal VVM models were loaded"));
-        }
-
-        Ok(())
-    }
-    
-    // Helper function to find limited number of VVM files for minimal loading
-    fn find_vvm_files_limited(&self, dir: &PathBuf, limit: usize) -> Result<Vec<PathBuf>> {
-        let mut vvm_files = Vec::new();
-        
-        if !dir.exists() {
-            return Ok(vvm_files);
-        }
-        
-        let entries = std::fs::read_dir(dir)?;
-        
-        for entry in entries.filter_map(|e| e.ok()) {
-            if vvm_files.len() >= limit {
-                break;
-            }
-            
-            let path = entry.path();
-            
-            if path.is_file() {
-                if let Some(extension) = path.extension() {
-                    if extension == "vvm" {
-                        vvm_files.push(path);
-                    }
-                }
-            } else if path.is_dir() {
-                let mut sub_files = self.find_vvm_files_limited(&path, limit - vvm_files.len())?;
-                vvm_files.append(&mut sub_files);
-            }
-        }
-        
-        Ok(vvm_files)
-    }
-    
 
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
         let models_dir = find_models_dir_client()?;

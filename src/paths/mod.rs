@@ -83,9 +83,7 @@ fn build_models_search_paths() -> Vec<PathBuf> {
     
     // Static system paths
     let static_paths = [
-        "./voicevox_core/models",
         "./models",
-        "./voicevox_models/models/vvms", // Nix development layout
         "/usr/local/share/voicevox/models",
         "/usr/share/voicevox/models",
         "/opt/voicevox/models",
@@ -186,7 +184,6 @@ pub fn find_openjtalk_dict() -> Result<String> {
     
     // Static system paths
     let static_paths = [
-        "./voicevox_core/dict",
         "./dict",
         "/usr/local/share/open-jtalk/dic",
         "/usr/share/open-jtalk/dic", 

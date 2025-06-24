@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
-// Launch VOICEVOX downloader for direct user interaction
+// Launch VOICEVOX downloader for complete system setup with direct user interaction
 pub async fn launch_downloader_for_user() -> Result<()> {
     let target_dir = std::env::var("HOME")
         .ok()
@@ -36,6 +36,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Launching VOICEVOX downloader...");
+    println!("   This will download: Core libraries, ONNX Runtime, 26+ voice models, and dictionary");
     println!("   Please follow the on-screen instructions to accept license terms.");
     println!("   Press Enter when ready to continue...");
     
@@ -65,15 +66,16 @@ pub async fn launch_downloader_for_user() -> Result<()> {
         let vvm_count = count_vvm_files_recursive(&target_dir);
         
         if vvm_count > 0 {
-            println!("✅ Models successfully downloaded to: {}", target_dir.display());
+            println!("✅ VOICEVOX Core system successfully downloaded to: {}", target_dir.display());
             println!("   Found {} VVM model files", vvm_count);
+            println!("   Includes: VOICEVOX Core libraries, ONNX Runtime, voice models, and dictionary");
             
             // Clean up unnecessary files (zip, tgz, tar.gz) in target directory
             cleanup_unnecessary_files(&target_dir);
             
             Ok(())
         } else {
-            Err(anyhow!("Download completed but no VVM models found in target directory"))
+            Err(anyhow!("Download completed but VOICEVOX Core system components not found in target directory"))
         }
     } else {
         Err(anyhow!("Download process failed or was cancelled"))
@@ -151,7 +153,7 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
     }
 }
 
-// Check for models and download if needed (client-side first-run setup)
+// Check for VOICEVOX Core system and download if needed (client-side first-run setup)
 pub async fn ensure_models_available() -> Result<()> {
     use crate::paths::find_models_dir_client;
     
@@ -160,12 +162,13 @@ pub async fn ensure_models_available() -> Result<()> {
         return Ok(()); // Models already available
     }
     
-    println!("🎭 VOICEVOX CLI - First Run Setup");
-    println!("Voice models are required for text-to-speech synthesis.");
+    println!("🎭 VOICEVOX TTS - First Run Setup");
+    println!("VOICEVOX Core system components are required for text-to-speech synthesis.");
+    println!("This includes VOICEVOX Core libraries, ONNX Runtime, 26+ voice models, and dictionary.");
     println!("");
     
     // Interactive license acceptance
-    print!("Would you like to download voice models now? [Y/n]: ");
+    print!("Would you like to download VOICEVOX Core system now? [Y/n]: ");
     std::io::Write::flush(&mut std::io::stdout())?;
     
     let mut input = String::new();
@@ -173,25 +176,25 @@ pub async fn ensure_models_available() -> Result<()> {
     let response = input.trim().to_lowercase();
     
     if response.is_empty() || response == "y" || response == "yes" {
-        println!("🔄 Starting voice model download...");
-        println!("Note: This will require accepting VOICEVOX license terms.");
+        println!("🔄 Starting VOICEVOX Core system download...");
+        println!("Note: This will require accepting VOICEVOX license terms for 26+ voice characters.");
         println!("");
         
         // Launch downloader directly for user interaction (no expect script)
         match launch_downloader_for_user().await {
             Ok(_) => {
-                println!("✅ Voice models setup completed!");
+                println!("✅ VOICEVOX Core system setup completed!");
                 Ok(())
             }
             Err(e) => {
-                eprintln!("❌ Model download failed: {}", e);
-                eprintln!("You can manually run: voicevox-download --output ~/.local/share/voicevox/models");
+                eprintln!("❌ VOICEVOX Core system download failed: {}", e);
+                eprintln!("You can manually run: voicevox-download --output ~/.local/share/voicevox");
                 Err(e)
             }
         }
     } else {
-        println!("Skipping model download. You can run 'voicevox-setup-models' later.");
-        Err(anyhow!("Voice models are required for operation"))
+        println!("Skipping VOICEVOX Core system download. You can run 'voicevox-setup-models' later.");
+        Err(anyhow!("VOICEVOX Core system components are required for operation"))
     }
 }
 

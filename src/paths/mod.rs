@@ -138,36 +138,39 @@ fn build_models_search_paths() -> Vec<PathBuf> {
 }
 
 // Helper function to check if a directory contains .dic files (including subdirectories)
+#[allow(dead_code)]
 fn has_dic_files(dict_path: &PathBuf) -> bool {
     has_direct_dic_files(dict_path) || find_dic_subdir(dict_path).is_some()
 }
 
 // Helper function to check if a directory contains .dic files directly
 fn has_direct_dic_files(dict_path: &PathBuf) -> bool {
-    if let Ok(entries) = std::fs::read_dir(dict_path) {
-        entries.filter_map(|e| e.ok()).any(|entry| {
-            if let Some(file_name) = entry.file_name().to_str() {
-                file_name.ends_with(".dic")
-            } else {
-                false
-            }
-        })
-    } else {
-        false
-    }
+    let entries = match std::fs::read_dir(dict_path) {
+        Ok(entries) => entries,
+        Err(_) => return false,
+    };
+    
+    entries.filter_map(|e| e.ok()).any(|entry| {
+        entry.file_name().to_str()
+            .map_or(false, |name| name.ends_with(".dic"))
+    })
 }
 
 // Helper function to find subdirectory containing .dic files (for VOICEVOX downloader structure)
 fn find_dic_subdir(dict_path: &PathBuf) -> Option<PathBuf> {
-    if let Ok(entries) = std::fs::read_dir(dict_path) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            if entry.path().is_dir() {
-                if has_direct_dic_files(&entry.path()) {
-                    return Some(entry.path());
-                }
-            }
+    let entries = std::fs::read_dir(dict_path).ok()?;
+    
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        
+        if has_direct_dic_files(&path) {
+            return Some(path);
         }
     }
+    
     None
 }
 
@@ -230,18 +233,18 @@ pub fn find_openjtalk_dict() -> Result<String> {
     search_paths.extend(additional_paths.into_iter().flatten());
 
     for path_option in search_paths.into_iter() {
-        if path_option.exists() {
-            // First check if dictionary files are directly in this directory
-            if has_direct_dic_files(&path_option) {
-                let path_str = path_option.to_string_lossy().to_string();
-                return Ok(path_str);
-            }
-            
-            // Then check subdirectories for dictionary files
-            if let Some(dict_subdir) = find_dic_subdir(&path_option) {
-                let path_str = dict_subdir.to_string_lossy().to_string();
-                return Ok(path_str);
-            }
+        if !path_option.exists() {
+            continue;
+        }
+        
+        // First check if dictionary files are directly in this directory
+        if has_direct_dic_files(&path_option) {
+            return Ok(path_option.to_string_lossy().to_string());
+        }
+        
+        // Then check subdirectories for dictionary files
+        if let Some(dict_subdir) = find_dic_subdir(&path_option) {
+            return Ok(dict_subdir.to_string_lossy().to_string());
         }
     }
 

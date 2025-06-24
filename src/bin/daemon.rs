@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::{Arg, Command};
 use std::path::PathBuf;
 
-use voicevox_tts::daemon::{check_and_prevent_duplicate, run_daemon};
-use voicevox_tts::paths::get_socket_path;
+use voicevox_cli::daemon::{check_and_prevent_duplicate, run_daemon};
+use voicevox_cli::paths::get_socket_path;
 
 #[tokio::main]
 async fn main() -> Result<()> {

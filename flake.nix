@@ -101,7 +101,7 @@
           # Centralized meta information
           packageMeta = with pkgs.lib; {
             description = "VOICEVOX TTS CLI for Apple Silicon - Dynamic voice detection system";
-            homepage = "https://github.com/usabarashi/voicevox-tts";
+            homepage = "https://github.com/usabarashi/voicevox-cli";
             license = with licenses; [ mit asl20 ];
             maintainers = [ "usabarashi" ];
             platforms = [ "aarch64-darwin" ];
@@ -109,7 +109,7 @@
 
           # Package definition using voicevoxResources
           voicevox-cli = pkgs.rustPlatform.buildRustPackage {
-            pname = "voicevox-tts";
+            pname = "voicevox-cli";
             version = "0.1.0";
 
             src = ./.;
@@ -161,9 +161,9 @@
             # Install binaries and setup runtime environment
             postInstall = ''
               # Install both client and daemon binaries (voicevox-say and voicevox-daemon are already correct)
-              # Remove legacy voicevox-cli if it exists
-              if [ -f "$out/bin/voicevox-cli" ]; then
-                rm $out/bin/voicevox-cli
+              # Remove legacy voicevox-tts if it exists
+              if [ -f "$out/bin/voicevox-tts" ]; then
+                rm $out/bin/voicevox-tts
               fi
               
               # voicevox-daemon should already be built, just make sure it exists
@@ -388,7 +388,7 @@ EOF
       meta = {
         # Basic package information (same as packageMeta)
         description = "VOICEVOX TTS CLI for Apple Silicon - Dynamic voice detection system";
-        homepage = "https://github.com/usabarashi/voicevox-tts";
+        homepage = "https://github.com/usabarashi/voicevox-cli";
         maintainers = [ "usabarashi" ];
         platforms = [ "aarch64-darwin" ];
 

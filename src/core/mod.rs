@@ -48,40 +48,46 @@ impl VoicevoxCore {
     
     fn load_vvm_files_recursive(&self, dir: &PathBuf) -> Result<()> {
         let entries = std::fs::read_dir(dir)?;
-        let mut loaded_count = 0;
         
-        for entry in entries.filter_map(|e| e.ok()) {
-            let entry_path = entry.path();
-            
-            if entry_path.is_file() {
-                loaded_count += self.try_load_vvm_file(&entry_path);
-            } else if entry_path.is_dir() {
-                let _ = self.load_vvm_files_recursive(&entry_path);
-            }
-        }
+        let loaded_count = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .map(|path| self.process_entry_path(&path))
+            .sum::<u32>();
 
-        if loaded_count == 0 {
-            return Err(anyhow!("Failed to load any models"));
+        (loaded_count > 0)
+            .then_some(())
+            .ok_or_else(|| anyhow!("Failed to load any models"))
+    }
+    
+    fn process_entry_path(&self, path: &PathBuf) -> u32 {
+        match path {
+            p if p.is_file() => self.try_load_vvm_file(p),
+            p if p.is_dir() => self.count_loaded_models_in_dir(p),
+            _ => 0,
         }
-
-        Ok(())
+    }
+    
+    fn count_loaded_models_in_dir(&self, dir: &PathBuf) -> u32 {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|entry| self.process_entry_path(&entry.path()))
+                    .sum()
+            })
+            .unwrap_or(0)
     }
     
     fn try_load_vvm_file(&self, file_path: &PathBuf) -> u32 {
-        let _file_name = match file_path.file_name().and_then(|f| f.to_str()) {
-            Some(name) if name.ends_with(".vvm") => name,
-            _ => return 0,
-        };
-        
-        let model = match VoiceModelFile::open(file_path) {
-            Ok(model) => model,
-            Err(_) => return 0,
-        };
-        
-        match self.synthesizer.load_voice_model(&model) {
-            Ok(_) => 1,
-            Err(_) => 0, // Model already loaded or other non-critical error
-        }
+        file_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .filter(|name| name.ends_with(".vvm"))
+            .and_then(|_| VoiceModelFile::open(file_path).ok())
+            .and_then(|model| self.synthesizer.load_voice_model(&model).ok())
+            .map(|_| 1)
+            .unwrap_or(0)
     }
 
 
@@ -89,17 +95,19 @@ impl VoicevoxCore {
         let models_dir = find_models_dir_client()?;
         let model_path = models_dir.join(format!("{}.vvm", model_name));
 
-        if !model_path.exists() {
-            return Err(anyhow!("Model not found: {}.vvm", model_name));
-        }
-
-        let model = VoiceModelFile::open(&model_path)
-            .map_err(|e| anyhow!("Failed to open model {}: {}", model_name, e))?;
-        
-        self.synthesizer.load_voice_model(&model)
-            .map_err(|e| anyhow!("Failed to load model {}: {}", model_name, e))?;
-
-        Ok(())
+        model_path
+            .exists()
+            .then_some(())
+            .ok_or_else(|| anyhow!("Model not found: {}.vvm", model_name))
+            .and_then(|_| {
+                VoiceModelFile::open(&model_path)
+                    .map_err(|e| anyhow!("Failed to open model {}: {}", model_name, e))
+            })
+            .and_then(|model| {
+                self.synthesizer
+                    .load_voice_model(&model)
+                    .map_err(|e| anyhow!("Failed to load model {}: {}", model_name, e))
+            })
     }
 
     pub fn synthesize(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
@@ -112,19 +120,23 @@ impl VoicevoxCore {
     }
 
     pub fn get_speakers(&self) -> Result<Vec<Speaker>> {
-        let metas = self.synthesizer.metas();
-        
-        // Convert VOICEVOX Core metadata to our Speaker format
-        let speakers: Vec<Speaker> = metas
+        // Convert VOICEVOX Core metadata to our Speaker format using functional composition
+        let speakers = self
+            .synthesizer
+            .metas()
             .iter()
             .map(|meta| Speaker {
                 name: meta.name.clone(),
                 speaker_uuid: meta.speaker_uuid.clone(),
-                styles: meta.styles.iter().map(|style| crate::voice::Style {
-                    name: style.name.clone(),
-                    id: style.id.0,
-                    style_type: Some(format!("{:?}", style.r#type)),
-                }).collect(),
+                styles: meta
+                    .styles
+                    .iter()
+                    .map(|style| crate::voice::Style {
+                        name: style.name.clone(),
+                        id: style.id.0,
+                        style_type: Some(format!("{:?}", style.r#type)),
+                    })
+                    .collect(),
                 version: meta.version.to_string(),
             })
             .collect();

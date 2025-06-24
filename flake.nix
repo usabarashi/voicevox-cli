@@ -85,20 +85,27 @@
               pkg-config
               cmake
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk.frameworks.AudioUnit
-              pkgs.darwin.apple_sdk.frameworks.CoreAudio
-              pkgs.darwin.apple_sdk.frameworks.CoreServices
+              pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
+              pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
+              pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
             ];
 
-            buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk.frameworks.AudioUnit
-              pkgs.darwin.apple_sdk.frameworks.CoreAudio
-              pkgs.darwin.apple_sdk.frameworks.CoreServices
+            buildInputs = with pkgs; [
+              onnxruntime
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
+              pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
+              pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
             ];
 
             # Note: All libraries downloaded at runtime by voicevox-download
             preBuild = ''
-              echo "Build ready - using dynamic library loading"
+              echo "Build ready - using system ONNX Runtime"
+              echo "ONNX Runtime location: ${pkgs.onnxruntime}/lib"
+              export ORT_LIB_LOCATION="${pkgs.onnxruntime}/lib"
+              export ORT_STRATEGY="system"
+              export ORT_USE_SYSTEM_LIB="1"
+              export PKG_CONFIG_PATH="${pkgs.onnxruntime}/lib/pkgconfig:$PKG_CONFIG_PATH"
             '';
 
             # Install binaries and setup runtime environment

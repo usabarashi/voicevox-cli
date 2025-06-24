@@ -1,4 +1,3 @@
-// Re-export all modules for backward compatibility
 pub mod core;
 pub mod ipc;
 pub mod voice;
@@ -7,7 +6,6 @@ pub mod setup;
 pub mod client;
 pub mod daemon;
 
-// Re-export commonly used types and functions for backward compatibility
 pub use core::VoicevoxCore;
 pub use ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions};
 pub use voice::{Speaker, Style, get_model_for_voice_id, resolve_voice_dynamic, scan_available_models, AvailableModel};

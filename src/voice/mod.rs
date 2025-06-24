@@ -27,14 +27,12 @@ pub struct AvailableModel {
     pub speakers: Vec<Speaker>,
 }
 
-// VVMファイルを自動検出する
 pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     use crate::paths::find_models_dir_client;
     
     let models_dir = find_models_dir_client()?;
     let mut available_models = Vec::new();
     
-    // VVMファイルを検索（再帰的）
     let vvm_files = find_vvm_files(&models_dir)?;
     
     for vvm_file in vvm_files {
@@ -42,18 +40,16 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
             available_models.push(AvailableModel {
                 model_id,
                 file_path: vvm_file,
-                speakers: Vec::new(), // 実際のスピーカー情報は後で動的に取得
+                speakers: Vec::new(),
             });
         }
     }
     
-    // モデルIDでソート
     available_models.sort_by_key(|m| m.model_id);
     
     Ok(available_models)
 }
 
-// VVMファイルを再帰的に検索
 fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
     let mut vvm_files = Vec::new();
     
@@ -73,7 +69,6 @@ fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
                 }
             }
         } else if path.is_dir() {
-            // 再帰的に検索
             vvm_files.extend(find_vvm_files(&path)?);
         }
     }
@@ -81,16 +76,13 @@ fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
     Ok(vvm_files)
 }
 
-// VVMファイルパスからモデルIDを抽出（例: "3.vvm" -> 3）
 fn extract_model_id_from_path(path: &PathBuf) -> Option<u32> {
     path.file_stem()
         .and_then(|stem| stem.to_str())
         .and_then(|stem| stem.parse::<u32>().ok())
 }
 
-// 動的音声解決システム
 pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
-    // 音声一覧表示の特別なケース
     if voice_input == "?" {
         println!("Available VOICEVOX voices:");
         println!();
@@ -112,14 +104,10 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
         return Ok((style_id, format!("Style ID {}", style_id)));
     }
     
-    // 高度な音声名解決（VOICEVOX Core統合）
     resolve_voice_with_core_integration(voice_input)
 }
 
-
-// 利用可能なモデルから動的に音声を検索
 fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
-    // まず利用可能なモデルをスキャン
     let available_models = scan_available_models().map_err(|e| {
         anyhow!("Failed to scan available models: {}. Use --speaker-id for direct ID specification.", e)
     })?;

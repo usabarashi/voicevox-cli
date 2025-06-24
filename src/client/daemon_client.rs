@@ -10,7 +10,6 @@ use futures_util::{SinkExt, StreamExt};
 use crate::ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions};
 use crate::paths::get_socket_path;
 
-// Flattened daemon binary discovery logic
 fn find_daemon_binary() -> PathBuf {
     // Try current executable directory first
     if let Ok(current_exe) = std::env::current_exe() {
@@ -200,7 +199,6 @@ pub async fn start_daemon_if_needed() -> Result<()> {
         }
     }
     
-    // Find daemon binary (flattened logic)
     let daemon_path = find_daemon_binary();
     
     println!("🔄 Starting VOICEVOX daemon automatically...");

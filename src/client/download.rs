@@ -124,14 +124,12 @@ pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
                 // Recursively clean subdirectories
                 cleanup_unnecessary_files(&path);
                 
-                // Remove empty directories (flattened logic)
                 try_remove_empty_directory(&path);
             }
         }
     }
 }
 
-// Flattened empty directory removal logic
 fn try_remove_empty_directory(path: &std::path::PathBuf) {
     let entries = match std::fs::read_dir(path) {
         Ok(entries) => entries,

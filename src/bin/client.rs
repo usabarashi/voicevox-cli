@@ -3,11 +3,11 @@ use clap::{Arg, Command};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use voicevox_tts::client::*;
-use voicevox_tts::core::VoicevoxCore;
-use voicevox_tts::ipc::SynthesizeOptions;
-use voicevox_tts::paths::get_socket_path;
-use voicevox_tts::voice::{resolve_voice_dynamic, scan_available_models};
+use voicevox_cli::client::*;
+use voicevox_cli::core::VoicevoxCore;
+use voicevox_cli::ipc::SynthesizeOptions;
+use voicevox_cli::paths::get_socket_path;
+use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
 
 async fn try_daemon_with_retry(
     text: &str,
@@ -316,7 +316,7 @@ async fn main() -> Result<()> {
                 }
                 
                 // Check dictionary
-                use voicevox_tts::paths::find_openjtalk_dict;
+                use voicevox_cli::paths::find_openjtalk_dict;
                 match find_openjtalk_dict() {
                     Ok(dict_path) => {
                         println!("  Dictionary: {} ✅", dict_path);
@@ -366,7 +366,7 @@ async fn main() -> Result<()> {
         }
         
         // Check dictionary
-        use voicevox_tts::paths::find_openjtalk_dict;
+        use voicevox_cli::paths::find_openjtalk_dict;
         match find_openjtalk_dict() {
             Ok(dict_path) => {
                 println!("Dictionary: {}", dict_path);

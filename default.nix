@@ -6,8 +6,8 @@
 , meta ? { }
 }:
 
-rustPlatform.buildRustPackage rec {
-  pname = "voicevox-tts";
+rustPlatform.buildRustPackage {
+  pname = "voicevox-cli";
   version = "0.1.0";
 
   src = ./.;
@@ -46,7 +46,7 @@ rustPlatform.buildRustPackage rec {
   # Binaries should already be named correctly (voicevox-say, voicevox-daemon)
   postInstall = ''
     # Remove legacy binary names if they exist
-    rm -f $out/bin/voicevox-cli $out/bin/voicevox-tts
+    rm -f $out/bin/voicevox-tts
   '';
 
   # Meta information passed from flake.nix

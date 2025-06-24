@@ -2564,6 +2564,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "voicevox-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "clap",
+ "futures-util",
+ "libc",
+ "rodio",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "voicevox_core",
+]
+
+[[package]]
 name = "voicevox-ort"
 version = "2.0.0-rc.4"
 source = "git+https://github.com/VOICEVOX/ort.git?rev=1ebb5768a78313f9db70a35c497816ec2ffae18b#1ebb5768a78313f9db70a35c497816ec2ffae18b"
@@ -2590,23 +2607,6 @@ dependencies = [
  "sha2",
  "tar",
  "ureq",
-]
-
-[[package]]
-name = "voicevox-tts"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "clap",
- "futures-util",
- "libc",
- "rodio",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "voicevox_core",
 ]
 
 [[package]]

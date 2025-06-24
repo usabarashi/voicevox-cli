@@ -99,7 +99,6 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
         std::process::exit(0);
     }
     
-    // Support direct numeric specification
     if let Ok(style_id) = voice_input.parse::<u32>() {
         return Ok((style_id, format!("Style ID {}", style_id)));
     }
@@ -118,14 +117,12 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
         ));
     }
     
-    // Check if voice name matches model number
     if let Ok(model_id) = voice_input.parse::<u32>() {
         if available_models.iter().any(|m| m.model_id == model_id) {
             return Ok((model_id, format!("Model {} (Default Style)", model_id)));
         }
     }
     
-    // General pattern matching (dynamic)
     let model_suggestions = available_models
         .iter()
         .take(3)
@@ -145,21 +142,16 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
     ))
 }
 
-// Get available styles from model ID (VOICEVOX Core integration version)
 pub fn get_styles_for_model_from_core(model_id: u32) -> Result<Vec<Style>> {
-    // Get speaker information directly from VOICEVOX Core
     use crate::core::VoicevoxCore;
     
     match VoicevoxCore::new() {
         Ok(core) => {
-            // Get speaker information if core initialization succeeds
             match core.get_speakers() {
                 Ok(speakers) => {
                     let mut styles = Vec::new();
                     for speaker in speakers {
-                        // Extract styles related to this model
                         for style in speaker.styles {
-                            // Heuristic: Check if style.id is within model_id range
                             if style.id >= model_id * 10 && style.id < (model_id + 1) * 10 {
                                 styles.push(style);
                             } else if model_id <= 30 && style.id == model_id {
@@ -173,24 +165,19 @@ pub fn get_styles_for_model_from_core(model_id: u32) -> Result<Vec<Style>> {
             }
         }
         Err(_) => {
-            // Return empty vector if VOICEVOX Core is unavailable
             Ok(Vec::new())
         }
     }
 }
 
-// Advanced voice name resolution (VOICEVOX Core integration version)
 pub fn resolve_voice_with_core_integration(voice_input: &str) -> Result<(u32, String)> {
-    // First attempt basic resolution
     match try_resolve_from_available_models(voice_input) {
         Ok(result) => Ok(result),
         Err(_) => {
-            // If failed, get detailed information from VOICEVOX Core
             use crate::core::VoicevoxCore;
             
             if let Ok(core) = VoicevoxCore::new() {
                 if let Ok(speakers) = core.get_speakers() {
-                    // Search by speaker name
                     for speaker in speakers {
                         let normalized_name = speaker.name
                             .to_lowercase()
@@ -214,7 +201,6 @@ pub fn resolve_voice_with_core_integration(voice_input: &str) -> Result<(u32, St
                 }
             }
             
-            // If ultimately failed
             Err(anyhow!(
                 "Voice '{}' not found. Use --list-speakers to see all available voices.",
                 voice_input
@@ -223,25 +209,19 @@ pub fn resolve_voice_with_core_integration(voice_input: &str) -> Result<(u32, St
     }
 }
 
-// Get required VVM model number from voice ID (fully dynamic version)
 pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
-    // Fully dynamic detection: infer from available models
     if let Ok(available_models) = scan_available_models() {
-        // Search for model_id closest to voice_id
         available_models
             .iter()
             .find(|model| {
-                // General pattern: voice_id same as model_id or close value
                 model.model_id == voice_id || 
                 (voice_id >= model.model_id * 10 && voice_id < (model.model_id + 1) * 10)
             })
             .map(|model| model.model_id)
             .or_else(|| {
-                // Fallback: first available model
                 available_models.first().map(|model| model.model_id)
             })
     } else {
-        // Fallback when model scanning fails
         None
     }
 }

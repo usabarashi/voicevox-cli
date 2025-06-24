@@ -160,7 +160,7 @@ pub async fn ensure_models_available() -> Result<()> {
         return Ok(()); // Models already available
     }
     
-    println!("🎭 VOICEVOX TTS - First Run Setup");
+    println!("🎭 VOICEVOX CLI - First Run Setup");
     println!("Voice models are required for text-to-speech synthesis.");
     println!("");
     
@@ -351,7 +351,7 @@ pub async fn check_updates() -> Result<()> {
 
 // バージョン情報表示
 pub async fn show_version_info() -> Result<()> {
-    println!("📋 VOICEVOX TTS Version Information");
+    println!("📋 VOICEVOX CLI Version Information");
     println!("=====================================");
     
     // Application version

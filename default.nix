@@ -43,11 +43,7 @@ rustPlatform.buildRustPackage {
     fi
   '';
 
-  # Binaries should already be named correctly (voicevox-say, voicevox-daemon)
-  postInstall = ''
-    # Remove legacy binary names if they exist
-    rm -f $out/bin/voicevox-tts
-  '';
+  postInstall = "";
 
   # Meta information passed from flake.nix
   inherit meta;

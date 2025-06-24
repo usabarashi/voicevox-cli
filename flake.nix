@@ -274,7 +274,8 @@ EOF
               # Add rpath for runtime library discovery (including OpenJTalk)
               export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib $RUSTFLAGS"
               
-              # Only voice models (VVM files) downloaded at runtime by voicevox-download
+              # Static Linking Complete: Core libraries embedded at build time
+              # Runtime Downloads: Voice models (VVM files) only via voicevox-download --only models
             '';
 
             # Install binaries and setup runtime environment
@@ -310,6 +311,9 @@ fi
 
 echo "Setting up VOICEVOX voice models..."
 echo "Models will be downloaded to: $MODEL_DIR ($INSTALL_TYPE)"
+echo ""
+echo "Note: VOICEVOX Core, ONNX Runtime, and dictionary are statically linked"
+echo "      Only voice model files (.vvm) will be downloaded"
 
 # Create models directory
 mkdir -p "$MODEL_DIR"
@@ -333,19 +337,19 @@ if [ "$VVM_COUNT" -gt 0 ]; then
 fi
 
 echo "No voice models found. Starting download..."
-echo "Downloading voice models (discovered dynamically)..."
+echo "Downloading voice models only (VVM files)..."
 
-# Use VOICEVOX downloader
-if "$DOWNLOADER" --output "$MODEL_DIR" --help >/dev/null 2>&1; then
-    echo "Using VOICEVOX Core downloader..."
-    "$DOWNLOADER" --output "$MODEL_DIR" || {
+# Use VOICEVOX downloader with --only models to avoid redundant downloads
+if "$DOWNLOADER" --only models --output "$MODEL_DIR" --help >/dev/null 2>&1; then
+    echo "Using VOICEVOX Core downloader (models only)..."
+    "$DOWNLOADER" --only models --output "$MODEL_DIR" || {
         echo "Download failed. Please try again or download manually"
         echo "Voice models should be placed in: $MODEL_DIR"
         exit 1
     }
 else
-    echo "Please run the downloader manually:"
-    echo "  $DOWNLOADER --output $MODEL_DIR"
+    echo "Please run the downloader manually (models only):"
+    echo "  $DOWNLOADER --only models --output $MODEL_DIR"
     echo ""
     echo "Or download voice models from VOICEVOX official sources"
     echo "and place .vvm files in: $MODEL_DIR"
@@ -356,7 +360,11 @@ echo "You can now use voicevox-say for text-to-speech synthesis"
 EOF
               chmod +x $out/bin/voicevox-setup-models
               
-              # Note: Static libraries managed by Nix, only voice models (VVM files) downloaded at runtime
+              # Static Linking Priority Architecture:
+              # - VOICEVOX Core C-API: Statically linked at build time (no runtime download)
+              # - ONNX Runtime: Statically linked at build time (no runtime download)  
+              # - OpenJTalk Dictionary: Statically linked at build time (no runtime download)
+              # - Voice Models (VVM): Runtime download only (~200MB, 26+ characters)
               # Voice models stored in ~/.local/share/voicevox/models/
               
               echo "VOICEVOX CLI package installation completed"
@@ -366,34 +374,33 @@ EOF
             meta = packageMeta;
           };
 
-          # Auto-license acceptance script for user-specific setup
+          # Minimal voice models setup for user-specific installation
           licenseAcceptor = pkgs.writeScriptBin "voicevox-auto-setup" ''
             #!${pkgs.bash}/bin/bash
             set -euo pipefail
             
             MODELS_DIR="$1"
             
-            echo "🎭 VOICEVOX CLI - System Setup"
-            echo "Installing VOICEVOX Core system for current user..."
-            echo "Includes: VOICEVOX Core libraries, ONNX Runtime, 26+ voice models, and dictionary"
+            echo "🎭 VOICEVOX CLI - Voice Models Setup"
+            echo "Setting up voice models for current user..."
+            echo "Note: VOICEVOX Core libraries and ONNX Runtime are statically linked"
             echo ""
             echo "By using this Nix package, you agree to:"
-            echo "- VOICEVOX Core Library License (commercial/non-commercial use allowed)"
             echo "- Individual voice library terms for 26+ characters (credit required: 'VOICEVOX:[Character]')"
             echo "- See: https://voicevox.hiroshiba.jp/ for details"
             echo ""
             echo "Target: $MODELS_DIR (user-specific)"
-            echo "No sudo privileges required"
+            echo "Download size: ~200MB (voice models only)"
             echo ""
             
             # Create user models directory
             mkdir -p "$(dirname "$MODELS_DIR")"
             mkdir -p "$MODELS_DIR"
             
-            # Use expect to auto-accept license during download
+            # Use expect to auto-accept license during download (models only)
             ${pkgs.expect}/bin/expect -c "
               set timeout 300
-              spawn ${voicevoxResources}/bin/voicevox-download --output $MODELS_DIR
+              spawn ${voicevoxResources}/bin/voicevox-download --only models --output $MODELS_DIR
               expect {
                 \"*同意しますか*\" { send \"y\r\"; exp_continue }
                 \"*[y,n,r]*\" { send \"y\r\"; exp_continue }
@@ -403,13 +410,13 @@ EOF
               }
             " || {
               echo "⚠️  Automatic download failed. You can manually run:"
-              echo "  voicevox-download --output $MODELS_DIR"
+              echo "  voicevox-download --only models --output $MODELS_DIR"
               exit 1
             }
             
-            echo "✅ VOICEVOX Core system setup completed!"
-            echo "   VOICEVOX Core libraries, ONNX Runtime, voice models, and dictionary are available"
+            echo "✅ Voice models setup completed!"
             echo "   26+ voice characters ready for text-to-speech synthesis"
+            echo "   Static libraries (Core + ONNX Runtime) already available"
           '';
         in
         {

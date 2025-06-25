@@ -13,6 +13,7 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 - **Functional Programming Design**: Immutable data structures, monadic composition, and declarative processing
 - **High-Performance Architecture**: Optimized for minimal latency with pre-loaded models in daemon
 - **macOS Integration**: Complete compatibility with macOS `say` command interface
+- **Static Linking Priority**: VOICEVOX Core, ONNX Runtime, and OpenJTalk statically linked for minimal dependencies
 
 ## Architecture
 
@@ -40,29 +41,28 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 
 ### Key Architecture Patterns
 
-1. **Daemon-Client IPC**: Unix socket communication with tokio async runtime
-2. **Pre-loaded Models**: Daemon loads all available VVM models on startup for instant synthesis  
-3. **CPU-Only Processing**: Hardcoded CPU mode on macOS (no GPU dependencies)
-4. **Silent Operation**: macOS `say` compatible - no output on success, errors to stderr
-5. **Automatic Fallback**: Client → Daemon → Standalone → Error progression
-6. **Process Management**: Duplicate daemon prevention and graceful shutdown
-7. **Responsibility Separation**: Client-side setup, daemon-side synthesis
-8. **User Isolation**: UID-based daemon identification for multi-user support
-9. **Functional Programming**: Monadic composition, iterator chains, and immutable data flow
-10. **Dynamic Discovery**: Runtime model detection with zero hardcoded mappings
+1. **Static Linking Priority**: VOICEVOX Core, ONNX Runtime, OpenJTalk embedded at build time
+2. **Daemon-Client IPC**: Unix socket communication with tokio async runtime
+3. **Pre-loaded Models**: Daemon loads all available VVM models on startup for instant synthesis
+4. **Dynamic Discovery**: Runtime model detection with zero hardcoded mappings
+5. **Functional Programming**: Monadic composition, iterator chains, and immutable data flow
+6. **Silent Operation**: macOS `say` compatible - no output on success, errors to stderr
+7. **User Isolation**: UID-based daemon identification for multi-user support
 
-### FFI Integration
+### Static Linking Architecture
 
-**Production Integration**: No dummy implementations - real VOICEVOX Core integration only:
-- **Static Linking**: Direct FFI calls to `libvoicevox_core.dylib` 
-- **Dynamic Loading**: Optional `dynamic_voicevox` feature for runtime loading
-- **Manual Bindings**: Production-ready manual FFI bindings (no bindgen dependency)
+**Production Integration**: Static linking priority with optimized Nix builds:
+- **VOICEVOX Core**: Statically linked `libvoicevox_core.dylib` 
+- **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib` with compatibility symlinks
+- **OpenJTalk Dictionary**: Embedded dictionary via static linking
+- **Voice Models Only**: Runtime downloads limited to VVM files (~200MB, 26+ characters)
+- **Package Size**: ~54MB total with optimized configuration
 
 ## Build Commands
 
-### Nix (Recommended)
+### Nix (Recommended - Optimized Static Linking)
 ```bash
-# Build the project
+# Build the project (optimized ~54MB package)
 nix build
 
 # Run daemon directly
@@ -73,7 +73,21 @@ nix run .#voicevox-say -- "テストメッセージ"
 
 # Development shell
 nix develop
+
+# Check package size and contents
+du -sh result/
+ls -la result/bin/
+
+# Test functionality after build
+./result/bin/voicevox-say "静的リンクテストなのだ"
+./result/bin/voicevox-say --list-speakers
 ```
+
+**Nix Build Features:**
+- **Static Linking**: Core libraries embedded at build time
+- **Lightweight**: ~54MB total package size
+- **No Runtime Setup**: Libraries pre-configured
+- **Automatic Paths**: DYLD_LIBRARY_PATH configured automatically
 
 ### Cargo (Production Ready)
 ```bash
@@ -97,8 +111,8 @@ cargo build --features use_bindgen           # Generate FFI bindings
 
 ### Daemon Management
 ```bash
-# Start daemon (production - loads all 19 models)
-export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
+# Start daemon (production - loads all 26+ models)
+# Note: With Nix builds, DYLD_LIBRARY_PATH is automatically configured
 ./target/release/voicevox-daemon
 
 # Development mode (foreground with output)
@@ -180,6 +194,8 @@ echo "標準入力からのテキスト" | ./target/release/voicevox-say
 
 ```bash
 # Start development environment
+# Note: With Nix builds, library paths are automatically configured
+# For Cargo builds:
 export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
 
 # Test daemon-client workflow
@@ -205,155 +221,83 @@ pkill -f -u $(id -u) voicevox-daemon
 
 ## Development Notes
 
-### Production Architecture  
-- **No Dummy Code**: Completely removed all dummy implementations
-- **Real VOICEVOX Only**: Production builds require actual VOICEVOX Core libraries
+### Build System Features
+- **Static Linking Priority**: Core libraries embedded at build time (~54MB total)
+- **Functional Programming**: Monadic composition, iterator chains, immutable data flow
 - **Silent Operation**: macOS `say` compatible behavior (no output on success)
 - **Error Handling**: All errors go to stderr, never stdout
-- **Functional Programming**: Deep refactoring from imperative to functional patterns throughout codebase
 
-### Code Quality & Patterns
+### Build Validation
+```bash
+# Verify build size and functionality
+du -sh result/  # Should show ~54MB
+./result/bin/voicevox-say "テストなのだ"
+./result/bin/voicevox-say --list-speakers
 
-**Functional Programming Implementation**:
-- **Iterator Chains**: Replace for-loops with `filter_map` → `map` → `collect` patterns
-- **Monadic Composition**: `Option` and `Result` chaining with `and_then`, `or_else`, `unwrap_or`
-- **Early Return Elimination**: Functional alternatives to nested if-else and early returns
-- **Responsibility Separation**: Small, composable functions with single responsibilities
-- **Immutable Data Flow**: Minimize side effects and mutable state
-
-**Performance Optimizations**:
-- **Functional Fast Paths**: Optimized short-circuit evaluation for simple cases
-- **Memory Efficiency**: String pre-allocation and minimal copying in pipelines
-- **Recursive Efficiency**: Tail-call optimization patterns for file tree traversal
-- **Pipeline Composition**: Lazy evaluation patterns for large data processing
-
-**Architectural Refactoring Examples**:
-```rust
-// Before: Deep nested imperative style
-for entry in entries.filter_map(|e| e.ok()) {
-    let entry_path = entry.path();
-    if entry_path.is_file() {
-        loaded_count += self.try_load_vvm_file(&entry_path);
-    } else if entry_path.is_dir() {
-        let _ = self.load_vvm_files_recursive(&entry_path);
-    }
-}
-
-// After: Functional composition with separated concerns
-let loaded_count = entries
-    .filter_map(Result::ok)
-    .map(|entry| entry.path())
-    .map(|path| self.process_entry_path(&path))
-    .sum::<u32>();
+# Check linked libraries
+otool -L result/bin/voicevox-say
 ```
+
+### Code Quality Patterns
+
+**Functional Programming**:
+- **Iterator Chains**: `filter_map` → `map` → `collect` patterns over for-loops
+- **Monadic Composition**: `Option` and `Result` chaining with `and_then`, `or_else`
+- **Immutable Data Flow**: Minimize side effects and mutable state
+- **Composable Functions**: Small, single-responsibility functions
+
 
 ### Model Management
 
-**Responsibility Separation Architecture**:
-- **Daemon**: Model loading and speech synthesis only (no download capability)  
-- **Client**: User interaction, first-run setup, and model downloads
-- **All Models Default**: Daemon loads all available VVM models on startup (~26+ characters)
-- **Environment Independent**: Automatic path discovery for models and dictionaries
-- **Duplicate Prevention**: Multiple daemon startup protection via UID-based isolation
-- **Recursive VVM Search**: Deep directory scanning for VVM files in nested structures
+**Architecture**:
+- **Daemon**: Model loading and speech synthesis only
+- **Client**: User interaction, first-run setup, and model downloads  
+- **Static Components**: VOICEVOX Core, ONNX Runtime, OpenJTalk dictionary embedded
+- **Runtime Downloads**: Voice models (VVM files) only (~200MB, 26+ characters)
 
-#### Voice Model Setup Process
-
-**Client-Side First-Run Setup (Current Implementation)**:
+**First-Run Setup**:
 ```bash
-# First time usage triggers client-side interactive setup
+# Triggers interactive setup
 voicevox-say "初回起動テスト"
 
-# Client-side workflow:
-# 1. Checks for existing models with find_models_dir_client()
-# 2. If not found, prompts user for download consent
-# 3. Launches VOICEVOX downloader with direct user interaction
-# 4. User manually accepts license terms for 26+ voice characters
-# 5. Models downloaded to ~/.local/share/voicevox/models/
-```
-
-**Interactive License Acceptance**:
-```bash
-# User sees complete license display with pager:
-🎭 VOICEVOX CLI - First Run Setup
-Voice models are required for text-to-speech synthesis.
-
-Would you like to download voice models now? [Y/n]: y
-🔄 Starting voice model download...
-Note: This will require accepting VOICEVOX license terms.
-
-📦 Target directory: ~/.local/share/voicevox/models
-🔄 Launching VOICEVOX downloader...
-   Please follow the on-screen instructions to accept license terms.
-   Press Enter when ready to continue...
-
-# Complete license terms displayed for:
-# - VOICEVOX Audio Model License  
-# - Individual voice library terms (26+ characters)
-# - VOICEVOX ONNX Runtime License
-# User presses 'q' to exit pager, then 'y' to accept
-```
-
-**Manual Setup**:
-```bash
-# Use dedicated setup command
+# Manual setup
 voicevox-setup-models
-
-# Or direct downloader  
 voicevox-download --output ~/.local/share/voicevox/models
 ```
 
 **Setup Features**:
-- **Client-Side Responsibility**: Model downloads handled by voicevox-say client
-- **Official VOICEVOX Downloader**: Direct integration with `voicevox-download` from VOICEVOX Core
-- **Complete License Display**: Interactive pager shows all 26+ character license terms
-- **Manual User Confirmation**: No automated acceptance - user must manually review and accept
+- **Interactive License**: Complete license terms for 26+ characters displayed
+- **Manual Confirmation**: User must manually review and accept terms
 - **XDG Compliance**: Models stored in `~/.local/share/voicevox/models/`
-- **Size Information**: ~1.1GB download (26+ voice models)
-- **Automatic Detection**: Recursive VVM file discovery after download
-- **Graceful Fallback**: If download fails/declined, falls back to standalone mode
+- **Static Dependencies**: Core libraries pre-installed, only VVM downloads needed
 
 ### IPC Protocol
 - **Unix Sockets**: XDG-compliant socket paths with automatic directory creation
 - **Tokio Async**: Full async/await support with length-delimited frames
 - **Bincode Serialization**: Efficient binary protocol for requests/responses
-- **Automatic Fallback**: Client automatically starts daemon if needed
+- **Socket Priority**: `$VOICEVOX_SOCKET_PATH` → `$XDG_RUNTIME_DIR` → `~/.local/state` → `/tmp`
 
-### Socket Path Priority (XDG Base Directory Specification)
-1. `$VOICEVOX_SOCKET_PATH` (environment override)
-2. `$XDG_RUNTIME_DIR/voicevox-daemon.sock` (runtime files)
-3. `$XDG_STATE_HOME/voicevox-daemon.sock` (persistent state)
-4. `~/.local/state/voicevox-daemon.sock` (XDG fallback)
-5. `/tmp/voicevox-daemon-{uid}.sock` (temporary, user-specific by UID)
-
-### Voice System (Dynamic Detection Architecture)
-- **Fully Dynamic Voice Detection**: No hardcoded voice mappings - automatically adapts to available VVM models
-- **VOICEVOX Core Integration**: Direct speaker information from `libvoicevox_core.dylib` for accurate voice metadata
-- **Model-Based Resolution**: Voice selection via `--model N` for N.vvm files or `--speaker-id ID` for specific styles
-- **Automatic Model Scanning**: Recursive VVM file discovery with `scan_available_models()`
-- **Runtime Voice Mapping**: Daemon generates voice mappings dynamically from loaded models
-- **Zero Hardcoding**: Removed all hardcoded voice names (zundamon, metan, tsumugi, etc.)
+### Voice System
+- **Dynamic Detection**: No hardcoded voice mappings - automatically adapts to available models
+- **Model-Based Resolution**: Voice selection via `--model N` or `--speaker-id ID`
+- **Runtime Mapping**: Daemon generates voice mappings dynamically from loaded models
 - **Future-Proof**: Automatically supports new VOICEVOX models without code changes
 
 ## Tips
 
-- **Production Deployment**: Always use `--release` builds for performance
+### Build & Deployment
+- **Nix Builds Recommended**: Use `nix build` for optimal static linking (~54MB package)
+- **Production**: Always use `--release` builds for performance
+- **Static Linking**: Core libraries embedded - no runtime library setup needed
+
+### Usage
 - **Silent Operation**: Normal usage produces zero output (like macOS `say`)
-- **Voice Discovery**: Use `--list-speakers` to see all available voices and IDs  
+- **Voice Discovery**: Use `--list-speakers` to see all available voices and IDs
 - **Development**: Use `--foreground` flag on daemon for debugging output
-- **Performance**: Daemon startup takes ~3 seconds but subsequent synthesis is instant
-- **First-Run Setup**: Client handles initial setup - users can accept (Y) or decline (n) model download
-- **License Compliance**: Complete VOICEVOX license terms displayed interactively during setup
-- **Manual License Review**: No automated acceptance - users must manually review all terms
-- **Storage Management**: Voice models use ~1.1GB in `~/.local/share/voicevox/models/`
-- **User Isolation**: Daemon processes isolated by UID for multi-user systems (improved duplicate checking)
+- **Performance**: Daemon startup ~3 seconds, subsequent synthesis instant
+
+### Architecture
 - **Responsibility Separation**: Daemon = synthesis only, Client = user interaction + downloads
-- **Recursive Model Search**: VVM files discovered in nested directory structures automatically
-- **Cleanup Automation**: Unnecessary files (zip, tgz, tar.gz) removed after download
 - **Dynamic Voice System**: Zero hardcoded voice mappings - automatically adapts to new models
-- **Individual Updates**: Selective model updates with `--update-models`, `--update-dict`, `--update-model N`
-- **Version Management**: Complete version tracking with `--version-info` and `--check-updates`
-- **Functional Programming**: Codebase uses functional patterns - prefer iterator chains over for-loops
-- **Code Style**: Monadic composition over nested conditionals, small composable functions over large implementations
-- **Error Handling**: `Result` and `Option` chaining patterns for clean error propagation
-- **Performance**: Functional fast paths with early bailout for optimal performance in common cases
+- **Functional Programming**: Iterator chains, monadic composition, immutable data flow
+- **Storage**: Voice models use ~200MB in `~/.local/share/voicevox/models/`

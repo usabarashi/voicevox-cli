@@ -4,12 +4,12 @@ Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon
 
 ## Features
 
-- **🚀 Zero Configuration**: `nix profile install` → instant TTS
-- **🎭 Dynamic Voice Detection**: 26+ characters automatically discovered from VVM models
-- **⚡ Instant Response**: Shared background daemon for immediate synthesis
-- **🔇 Silent Operation**: macOS `say` compatible (no output unless error)
-- **📦 Nix Pure**: Reproducible builds with fixed SHA256 dependencies
-- **👤 Interactive Setup**: Voice models with proper license acceptance on first use
+- **🚀 Zero Configuration**: Install and use immediately
+- **🎭 26+ Voice Characters**: Automatic detection of available voice models
+- **⚡ Instant Response**: Fast voice synthesis after initial setup
+- **🔇 Silent Operation**: Works like macOS `say` command
+- **💾 Lightweight**: Small download size, easy installation
+- **👤 Interactive Setup**: Guided setup with license acceptance on first use
 
 ## Quick Start
 
@@ -52,27 +52,12 @@ nix build
 nix run . -- "テストメッセージなのだ"
 ```
 
-### Direct Install
 
-```bash
-# Install directly via Nix
-nix profile install github:usabarashi/voicevox-cli
-
-# Use in shell environment
-nix shell github:usabarashi/voicevox-cli
-```
-
-**Note**: Nix builds use fixed SHA256 hashes for reproducible dependency management:
-- VOICEVOX Core 0.16.0 libraries
-- ONNX Runtime 1.17.3
-- OpenJTalk dictionary
-- VOICEVOX Core downloader tool
-
-Voice models are managed in user directories (`~/.local/share/voicevox/models/`) for mutable storage.
+**Note**: Voice models are stored in your user directory (`~/.local/share/voicevox/models/`) and only need to be downloaded once.
 
 ## Initial Setup
 
-### Interactive First-Run Setup (Current Implementation)
+### Interactive First-Run Setup
 
 On first use, VOICEVOX CLI will detect missing voice models and offer to download them with proper license acceptance:
 
@@ -95,35 +80,32 @@ voicevox-say "こんにちは、ずんだもんなのだ"
 ```
 
 **License Review Process**:
-1. **Complete License Display**: Interactive pager shows detailed terms for all 26+ voice characters
-2. **Manual Navigation**: Use arrow keys to scroll, 'q' to exit license viewer
-3. **Explicit Acceptance**: Type 'y' and press Enter to accept terms
-4. **Download Progress**: Models downloaded after license acceptance (~1.1GB)
+1. **License Display**: Review terms for all voice characters
+2. **Navigation**: Use arrow keys to scroll, 'q' to exit
+3. **Acceptance**: Type 'y' and press Enter to accept
+4. **Download**: Voice models downloaded automatically
 
 The setup process will:
-- Display comprehensive VOICEVOX license terms for all voice characters
-- Require manual user confirmation (no automated acceptance)
-- Download all official voice models after license acceptance
-- Install models to `~/.local/share/voicevox/models/`
-- Enable immediate voice synthesis for subsequent usage
+- Show VOICEVOX license terms for all voice characters
+- Require your confirmation before downloading
+- Download voice models to your computer
+- Enable voice synthesis for immediate use
 
 ### Manual Setup
 
 If you prefer manual setup or need to reinstall models:
 
 ```bash
-# Download essential voice models (requires license acceptance)
+# Download voice models
 voicevox-setup-models
 
-# Or manually using the downloader (interactive license acceptance)
+# Or use the downloader directly
 voicevox-download --output ~/.local/share/voicevox/models
-
-# Note: All manual setup methods still require interactive license acceptance
 ```
 
 ## Usage
 
-### Daemon-Client Mode (Recommended)
+### Basic Usage
 
 ```bash
 # Voice synthesis with automatic daemon startup
@@ -143,7 +125,7 @@ echo "パイプからの入力" | voicevox-say
 voicevox-say --daemon-status
 ```
 
-### Voice Discovery (Dynamic Detection)
+### Voice Discovery
 
 ```bash
 # List available VVM models
@@ -160,89 +142,79 @@ voicevox-say --model 3 "モデル3の音声"
 voicevox-say --speaker-id 3 "スピーカーID3の音声"
 ```
 
-### Advanced Options
 
+## Voice Characters
+
+### Available Voices
+
+Voice characters are automatically detected from your downloaded voice models.
+
+**Find Available Voices:**
 ```bash
-# Use without daemon (slower but self-contained)
-voicevox-say --standalone "独立実行モード"
-```
-
-## Voice Characters (Dynamic Detection)
-
-### Dynamic Voice Management
-
-This system uses **dynamic voice detection** - no hardcoded voice names. Voice characters are automatically discovered from available VVM model files.
-
-**Discovery Commands:**
-```bash
-# See all available models
+# See available voice models
 voicevox-say --list-models
 
-# Get detailed speaker information
+# See detailed voice information
 voicevox-say --list-speakers
 ```
 
-**Usage Methods:**
+**Use Different Voices:**
 ```bash
-# Method 1: Direct speaker ID (most reliable)
-voicevox-say --speaker-id 3 "スピーカーID指定"
+# Use a specific voice (by speaker ID)
+voicevox-say --speaker-id 3 "声を変えてみるのだ"
 
-# Method 2: Model selection (uses first available style)
-voicevox-say --model 3 "モデル番号指定"
+# Use a voice model (by model number)
+voicevox-say --model 3 "違うモデルで試すのだ"
 ```
 
-### Character Examples (Typical Installation)
+### Popular Characters
 
-When models are downloaded, you typically get 26+ characters including:
-- **ずんだもん (Zundamon)** - Multiple emotional variations
-- **四国めたん (Shikoku Metan)** - Multiple emotional variations
-- **春日部つむぎ (Kasukabe Tsumugi)**, **雨晴はう (Amehare Hau)**, **波音リツ (Namine Ritsu)**, **九州そら (Kyushu Sora)**, **もち子さん (Mochiko-san)**, and many more
+When you download voice models, you get 26+ characters including:
+- **ずんだもん** - Cheerful and energetic character
+- **四国めたん** - Sweet and gentle character  
+- **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
 
-**Note**: Exact voice IDs and available characters depend on your downloaded models. Use `--list-speakers` for definitive information.
+**Note**: Use `--list-speakers` to see all available voices on your system.
 
 ## System Requirements
 
-- **Platform**: macOS Apple Silicon (aarch64) only
-- **Architecture**: arm64/aarch64 optimized binaries
-- **Audio Format**: WAV output with rodio/afplay playback
-- **Performance**: Near-instant voice synthesis after initial setup
-- **Storage**: ~1.1GB for all voice models in `~/.local/share/voicevox/models/`
-- **Network**: Required for initial model download and license acceptance
+- **Platform**: macOS Apple Silicon (M1, M2, M3, etc.) only
+- **Audio**: WAV file output and system audio playback
+- **Storage**: Voice models stored in your user directory
+- **Network**: Required for initial voice model download
 
-**Note**: This build is specifically optimized for Apple Silicon Macs (M1, M2, M3, etc.). Intel Mac support is not included in this distribution.
+**Note**: This version is designed specifically for Apple Silicon Macs. Intel Mac support is not included.
 
 ## Troubleshooting
 
-### First-Run Setup Issues
+### Common Issues
 
-**License Pager Navigation**:
-- Use ↑↓ arrow keys or Space to scroll through license terms
+**License Setup**:
+- Use arrow keys or Space to scroll through license terms
 - Press 'q' to exit the license viewer
 - Type 'y' and press Enter to accept terms
-- If pager crashes, restart and try again
 
-**Model Download Fails**:
+**Download Problems**:
 ```bash
-# Check if models directory exists
-ls ~/.local/share/voicevox/models/
+# Check if voice models are installed
+voicevox-say --list-models
 
-# Manual cleanup and retry
-rm -rf ~/.local/share/voicevox/models/
-voicevox-say "再試行テストなのだ"
+# Reinstall voice models if needed
+voicevox-setup-models
 ```
 
-**Daemon Connection Issues**:
+**Voice Synthesis Issues**:
 ```bash
-# Check daemon status
+# Check system status
 voicevox-say --daemon-status
 
-# Force standalone mode
-voicevox-say --standalone "スタンドアロンテスト"
+# List available voices
+voicevox-say --list-speakers
 ```
 
 ## Contributing
 
-Issues and Pull Requests are welcome! See CLAUDE.md for development details.
+Issues and Pull Requests are welcome!
 
 ## License
 
@@ -254,7 +226,7 @@ This project includes multiple components with different licenses. See [LICENSE]
 - ❌ No redistribution of VOICEVOX software without permission
 - 📋 Individual character license terms apply (displayed during setup)
 
-**Important**: License terms for all 26+ voice characters are displayed interactively during first-run setup and must be manually accepted.
+**Important**: You'll need to accept license terms for all voice characters during first-run setup.
 
 Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
 

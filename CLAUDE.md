@@ -17,6 +17,95 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 
 ## Architecture
 
+### System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    VOICEVOX CLI Architecture                    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌───────────────────┐    Unix Socket    ┌─────────────────────────┐
+│   voicevox-say    │◄─────────────────►│    voicevox-daemon      │
+│   (CLI Client)    │     IPC/Tokio     │   (Background Service)  │
+├───────────────────┤                   ├─────────────────────────┤
+│ • User Interface  │                   │ • Model Loading         │
+│ • Argument Parse  │                   │ • Voice Synthesis       │
+│ • First-run Setup │                   │ • Audio Generation      │
+│ • Model Download  │                   │ • Socket Server         │
+└───────────────────┘                   └─────────────────────────┘
+         │                                         │
+         │                                         │
+         ▼                                         ▼
+┌───────────────────┐                   ┌─────────────────────────┐
+│  Static Libraries │                   │   Voice Models (VVM)    │
+│  (Build-time)     │                   │   (Runtime Download)    │
+├───────────────────┤                   ├─────────────────────────┤
+│ ✓ VOICEVOX Core   │                   │ • 26+ Characters        │
+│ ✓ ONNX Runtime    │                   │ • Zundamon, Metan, etc. │
+│ ✓ OpenJTalk Dict  │                   │ • ~/.local/share/...    │
+│ ✓ FFI Bindings    │                   │ • User-specific         │
+└───────────────────┘                   └─────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        File Structure                           │
+├─────────────────────────────────────────────────────────────────┤
+│ src/                                                            │
+│ ├── lib.rs              # Shared library & IPC protocols       │
+│ ├── bin/                                                        │
+│ │   ├── daemon.rs        # Background daemon process            │
+│ │   └── client.rs        # CLI client (primary interface)      │
+│ ├── core/               # VOICEVOX Core wrapper                 │
+│ ├── voice/              # Dynamic voice detection               │
+│ ├── paths/              # XDG-compliant path discovery          │
+│ ├── client/             # Client-side functionality             │
+│ ├── daemon/             # Server-side functionality             │
+│ └── ipc/                # Inter-process communication           │
+│                                                                 │
+│ Static Resources (Build-time):                                  │
+│ ├── voicevox_core/      # Statically linked libraries          │
+│ └── flake.nix           # Optimized Nix build configuration     │
+│                                                                 │
+│ Runtime Resources (User directory):                             │
+│ └── ~/.local/share/voicevox/models/  # Voice model files       │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    Process Flow Diagram                         │
+└─────────────────────────────────────────────────────────────────┘
+
+User Command: voicevox-say "Hello"
+         │
+         ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Client Start │────►│  Check Daemon   │────►│  Send Request   │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+         │                       │                       │
+         │                       ▼                       │
+         │              ┌─────────────────┐              │
+         │              │  Start Daemon   │              │
+         │              │  (if needed)    │              │
+         │              └─────────────────┘              │
+         │                       │                       │
+         │                       ▼                       │
+         │              ┌─────────────────┐              │
+         │              │  Load Models    │              │
+         │              │  (26+ VVM)      │              │
+         │              └─────────────────┘              │
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 ▼
+                    ┌─────────────────┐
+                    │ Voice Synthesis │
+                    │ (VOICEVOX Core) │
+                    └─────────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────┐     ┌─────────────────┐
+                    │ Audio Output    │────►│ Client Response │
+                    │ (WAV/Speaker)   │     │ (Silent/Error)  │
+                    └─────────────────┘     └─────────────────┘
+```
+
 ### Daemon-Client Architecture
 
 **Production Architecture**: The system now uses a high-performance daemon-client model instead of standalone execution:
@@ -52,6 +141,75 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 ### Static Linking Architecture
 
 **Production Integration**: Static linking priority with optimized Nix builds:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 Static Linking Priority Architecture            │
+└─────────────────────────────────────────────────────────────────┘
+
+Build Time (Nix):                    Runtime:
+┌─────────────────┐                   ┌─────────────────┐
+│  flake.nix      │                   │ voicevox-daemon │
+│  Configuration  │                   │ voicevox-say    │
+└─────────────────┘                   └─────────────────┘
+         │                                     │
+         ▼                                     │
+┌─────────────────┐                           │
+│ Static Linking  │                           │
+│ Process         │                           │
+├─────────────────┤                           │
+│ ✓ VOICEVOX Core │──────────────────────────►│
+│ ✓ ONNX Runtime  │  Embedded at Build Time  │
+│ ✓ OpenJTalk     │                           │
+│ ✓ FFI Bindings  │                           │
+└─────────────────┘                           │
+         │                                     │
+         ▼                                     │
+┌─────────────────┐                           │
+│ Optimized       │                           │
+│ Package (~54MB) │                           │
+└─────────────────┘                           │
+                                               │
+Runtime Download:                              │
+┌─────────────────┐                           │
+│ Voice Models    │                           │
+│ (VVM Files)     │◄──────────────────────────┘
+├─────────────────┤    First-run Setup
+│ • 26+ Chars     │    User Downloads
+│ • ~/.local/...  │    License Acceptance
+│ • ~200MB        │
+└─────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    Library Dependency Comparison                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ Traditional Approach:          Static Linking Approach:         │
+│                                                                 │
+│ ┌─────────────────┐            ┌─────────────────┐              │
+│ │ voicevox-say    │            │ voicevox-say    │              │
+│ │ (Small binary)  │            │ (All embedded)  │              │
+│ └─────────────────┘            └─────────────────┘              │
+│          │                               │                      │
+│          ▼                               ▼                      │
+│ ┌─────────────────┐            ┌─────────────────┐              │
+│ │ Runtime Loading │            │ Instant Ready   │              │
+│ │ • DYLD_LIB_PATH │            │ • No setup      │              │
+│ │ • Library deps  │            │ • Pre-linked    │              │
+│ │ • Setup needed  │            │ • Zero config   │              │
+│ └─────────────────┘            └─────────────────┘              │
+│          │                                                      │
+│          ▼                                                      │
+│ ┌─────────────────┐                                             │
+│ │ External Libs   │                                             │
+│ │ • Download req  │                                             │
+│ │ • Path config   │                                             │
+│ │ • Version deps  │                                             │
+│ └─────────────────┘                                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Static Linking Components**:
 - **VOICEVOX Core**: Statically linked `libvoicevox_core.dylib` 
 - **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib` with compatibility symlinks
 - **OpenJTalk Dictionary**: Embedded dictionary via static linking

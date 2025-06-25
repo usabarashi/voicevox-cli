@@ -142,7 +142,24 @@ fn has_direct_dic_files(dict_path: &PathBuf) -> bool {
 }
 
 pub fn find_openjtalk_dict() -> Result<String> {
-    // Check for build-time embedded dictionary first
+    // Build-time embedded dictionary path (compile-time constant)
+    #[cfg(openjtalk_dict_path)]
+    {
+        const EMBEDDED_DICT_PATH: &str = env!("OPENJTALK_DICT_PATH");
+        if PathBuf::from(EMBEDDED_DICT_PATH).exists() {
+            return Ok(EMBEDDED_DICT_PATH.to_string());
+        }
+    }
+    
+    // Fallback: Build-time embedded dictionary path (legacy)
+    const EMBEDDED_DICT_LEGACY: Option<&str> = option_env!("OPENJTALK_DICT_DIR");
+    if let Some(dict_dir) = EMBEDDED_DICT_LEGACY {
+        if PathBuf::from(dict_dir).exists() {
+            return Ok(dict_dir.to_string());
+        }
+    }
+    
+    // Runtime environment variable (development/override)
     if let Ok(dict_dir) = std::env::var("OPENJTALK_DICT_DIR") {
         if !dict_dir.is_empty() && PathBuf::from(&dict_dir).exists() {
             return Ok(dict_dir);
@@ -175,6 +192,7 @@ pub fn find_openjtalk_dict() -> Result<String> {
     }
     
     Err(anyhow!(
-        "OpenJTalk dictionary not found. Static linking should provide embedded dictionary."
+        "OpenJTalk dictionary not found. Build-time path: {:?}, searched paths: ./dict, ~/.local/share/voicevox/dict",
+        EMBEDDED_DICT_LEGACY
     ))
 }

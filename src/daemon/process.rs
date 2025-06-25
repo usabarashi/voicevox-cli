@@ -27,7 +27,7 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
     
     // Check for running daemon processes (user-specific)
     match process::Command::new("pgrep")
-        .arg("-f")
+        .arg("-x")
         .arg("-u")
         .arg(&format!("{}", unsafe { libc::getuid() }))
         .arg("voicevox-daemon")
@@ -45,8 +45,8 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
                 
                 if !other_pids.is_empty() {
                     return Err(anyhow!(
-                        "VOICEVOX daemon process(es) already running for this user (PIDs: {}). Stop them first with 'pkill -f -u {} voicevox-daemon'",
-                        other_pids.join(", "), unsafe { libc::getuid() }
+                        "VOICEVOX daemon process(es) already running for this user (PIDs: {}). Stop them first with 'voicevox-daemon --stop'",
+                        other_pids.join(", ")
                     ));
                 }
             }

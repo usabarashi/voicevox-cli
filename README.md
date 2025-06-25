@@ -148,6 +148,24 @@ voicevox-say --model 3 "モデル3の音声"
 voicevox-say --speaker-id 3 "スピーカーID3の音声"
 ```
 
+### Daemon Management
+
+```bash
+# Start daemon manually
+voicevox-daemon --start
+
+# Stop daemon
+voicevox-daemon --stop
+
+# Check daemon status
+voicevox-daemon --status
+
+# Restart daemon
+voicevox-daemon --restart
+
+# Development mode (foreground with debugging output)
+voicevox-daemon --foreground
+```
 
 ## Voice Characters
 
@@ -214,8 +232,14 @@ voicevox-setup-models
 # Check system status
 voicevox-say --daemon-status
 
+# Check daemon status with voicevox-daemon
+voicevox-daemon --status
+
 # List available voices
 voicevox-say --list-speakers
+
+# Restart daemon if needed
+voicevox-daemon --restart
 ```
 
 ## Contributing

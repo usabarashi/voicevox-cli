@@ -96,7 +96,7 @@ EOF
             nativeBuildInputs = with pkgs; [ unzip gnutar ];
             
             buildCommand = ''
-              mkdir -p $out/{voicevox_core,bin}
+              mkdir -p $out/{voicevox_core,bin,openjtalk_dict}
               cd $TMPDIR
               ${pkgs.unzip}/bin/unzip ${voicevoxCore}
               VOICEVOX_DIR=$(find . -maxdepth 1 -name "voicevox_core*" -type d | head -1)
@@ -110,6 +110,18 @@ EOF
               mkdir -p $out/voicevox_core/lib
               if [ -d "$ONNX_DIR/lib" ]; then
                 cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
+              fi
+              
+              # Extract OpenJTalk dictionary
+              cd $TMPDIR
+              ${pkgs.gnutar}/bin/tar -xzf ${openJTalkDict}
+              DICT_DIR=$(find . -maxdepth 1 -name "open_jtalk_dic*" -type d | head -1)
+              if [ -d "$DICT_DIR" ]; then
+                cp -r "$DICT_DIR"/* $out/openjtalk_dict/
+                echo "OpenJTalk dictionary extracted to $out/openjtalk_dict/"
+                ls -la $out/openjtalk_dict/
+              else
+                echo "Warning: OpenJTalk dictionary directory not found"
               fi
               
               cp ${voicevoxDownloader} $out/bin/voicevox-download
@@ -212,7 +224,8 @@ EOF
               export LD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$LD_LIBRARY_PATH"
               export DYLD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$DYLD_LIBRARY_PATH"
               
-              export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib $RUSTFLAGS"
+              export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
+              export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib --cfg openjtalk_dict_path $RUSTFLAGS"
               
             '';
 

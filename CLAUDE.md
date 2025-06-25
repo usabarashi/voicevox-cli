@@ -168,6 +168,8 @@ User Command: voicevox-say "Hello"
 9. **Functional Programming**: Monadic composition, iterator chains, and immutable data flow
 10. **Silent Operation**: macOS `say` compatible - no output on success, errors to stderr
 11. **User Isolation**: UID-based daemon identification for multi-user support
+12. **Daemon Process Management**: User-friendly `--start/--stop/--status/--restart` operations
+13. **Build-time Dictionary Embedding**: OpenJTalk dictionary paths embedded via `env!()` macro (no runtime environment variables)
 
 ### Static Linking Architecture
 
@@ -244,7 +246,7 @@ Runtime Download:                             │
 **Static Linking Components**:
 - **VOICEVOX Core**: Official Rust crate with statically linked `libvoicevox_core.dylib`
 - **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib` with compatibility symlinks
-- **OpenJTalk Dictionary**: Embedded dictionary via static linking
+- **OpenJTalk Dictionary**: Build-time embedded dictionary via `env!()` macro (no runtime environment variables)
 - **Voice Models Only**: Runtime downloads limited to VVM files (~200MB, 26+ characters)
 - **Package Size**: ~54MB total package size
 
@@ -312,16 +314,24 @@ cargo build --release --features "performance,parallel,zero_copy"  # Performance
 ### Daemon Management
 ```bash
 # Start daemon (production - loads all 26+ models)
-# Note: With Nix builds, DYLD_LIBRARY_PATH is automatically configured
-./target/release/voicevox-daemon
+voicevox-daemon --start
+
+# Stop daemon
+voicevox-daemon --stop
+
+# Check daemon status
+voicevox-daemon --status
+
+# Restart daemon
+voicevox-daemon --restart
 
 # Development mode (foreground with output)
-./target/debug/voicevox-daemon --foreground
+voicevox-daemon --foreground
 
 # Custom socket path
 voicevox-daemon --socket-path /custom/path/daemon.sock
 
-# Stop daemon (user-specific)
+# Legacy manual stop (if needed)
 pkill -f -u $(id -u) voicevox-daemon
 ```
 
@@ -593,10 +603,12 @@ impl VoiceEngine<Initialized> {
 
 ### Build System Features
 - **Static Linking Priority**: Core libraries embedded at build time (~54MB total)
+- **Dictionary Embedding**: OpenJTalk dictionary paths embedded at compile-time via `env!()` macro
 - **Module Structure**: Single-file modules where appropriate
 - **Functional Programming**: Monadic composition, iterator chains, immutable data flow
 - **Silent Operation**: macOS `say` compatible behavior (no output on success)
 - **Error Handling**: All errors go to stderr, never stdout
+- **Daemon Management**: User-friendly process control with `--start/--stop/--status/--restart`
 
 ### Module Organization
 **Single-File Modules** (Simple, self-contained functionality):
@@ -695,6 +707,7 @@ voicevox-download --output ~/.local/share/voicevox
 - **Voice Discovery**: Use `--list-speakers` to see all available voices and IDs
 - **Development**: Use `--foreground` flag on daemon for debugging output
 - **Performance**: Daemon startup ~3 seconds, subsequent synthesis instant
+- **Daemon Control**: Use `--start/--stop/--status/--restart` for process management
 
 ### Rust Patterns
 - **GATs**: Type-safe async traits eliminate runtime checks and improve performance
@@ -708,3 +721,4 @@ voicevox-download --output ~/.local/share/voicevox
 - **Functional Programming**: Iterator chains, monadic composition, immutable data flow
 - **Parallel Processing**: Rayon integration for concurrent model loading and audio processing
 - **Storage**: Voice models use ~200MB in `~/.local/share/voicevox/models/`
+- **Dictionary Integration**: OpenJTalk dictionary embedded at build-time (no runtime environment dependencies)

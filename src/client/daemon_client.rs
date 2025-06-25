@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 use std::time::Duration;
@@ -185,7 +186,37 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     Err(anyhow!("Failed to get speakers from daemon"))
 }
 
-// Start daemon process if not already running  
+// Start daemon process if not already running (with user confirmation)
+pub async fn start_daemon_with_confirmation() -> Result<()> {
+    let socket_path = get_socket_path();
+    
+    // Check if daemon is already running
+    match UnixStream::connect(&socket_path).await {
+        Ok(_) => {
+            // Daemon is already running
+            return Ok(());
+        }
+        Err(_) => {
+            // Daemon not running, ask user for confirmation
+        }
+    }
+    
+    print!("VOICEVOX daemon is not running.
+Would you like to start the daemon automatically? [Y/n]: ");
+    io::stdout().flush()?;
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+    
+    if input.is_empty() || input == "y" || input == "yes" {
+        start_daemon_automatically().await
+    } else {
+        Err(anyhow!("Daemon startup declined by user. Use 'voicevox-daemon --start' to start manually."))
+    }
+}
+
+// Start daemon process if not already running (automatic, no confirmation)  
 pub async fn start_daemon_if_needed() -> Result<()> {
     let socket_path = get_socket_path();
     
@@ -200,13 +231,19 @@ pub async fn start_daemon_if_needed() -> Result<()> {
         }
     }
     
+    start_daemon_automatically().await
+}
+
+// Internal function to actually start the daemon
+async fn start_daemon_automatically() -> Result<()> {
+    let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary();
     
     println!("🔄 Starting VOICEVOX daemon automatically...");
     
-    // Start daemon with --detach for background operation
+    // Start daemon with --start --detach for background operation
     let output = ProcessCommand::new(&daemon_path)
-        .arg("--detach")
+        .args(["--start", "--detach"])
         .output();
     
     match output {

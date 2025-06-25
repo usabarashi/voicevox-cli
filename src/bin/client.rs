@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use voicevox_cli::client::*;
+use voicevox_cli::client::daemon_client::start_daemon_with_confirmation;
 use voicevox_cli::core::VoicevoxCore;
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
@@ -58,7 +59,7 @@ async fn try_daemon_with_retry(
         return Ok(());
     }
 
-    start_daemon_if_needed().await?;
+    start_daemon_with_confirmation().await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
     daemon_mode(
         text,

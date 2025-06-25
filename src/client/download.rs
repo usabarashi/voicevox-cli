@@ -36,7 +36,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Launching VOICEVOX downloader...");
-    println!("   This will download: Core libraries, ONNX Runtime, 26+ voice models, and dictionary");
+    println!("   This will download: 26+ voice models and dictionary");
     println!("   Please follow the on-screen instructions to accept license terms.");
     println!("   Press Enter when ready to continue...");
     
@@ -66,16 +66,15 @@ pub async fn launch_downloader_for_user() -> Result<()> {
         let vvm_count = count_vvm_files_recursive(&target_dir);
         
         if vvm_count > 0 {
-            println!("✅ VOICEVOX Core system successfully downloaded to: {}", target_dir.display());
+            println!("✅ Voice models and dictionary successfully downloaded to: {}", target_dir.display());
             println!("   Found {} VVM model files", vvm_count);
-            println!("   Includes: VOICEVOX Core libraries, ONNX Runtime, voice models, and dictionary");
             
             // Clean up unnecessary files (zip, tgz, tar.gz) in target directory
             cleanup_unnecessary_files(&target_dir);
             
             Ok(())
         } else {
-            Err(anyhow!("Download completed but VOICEVOX Core system components not found in target directory"))
+            Err(anyhow!("Download completed but voice model files not found in target directory"))
         }
     } else {
         Err(anyhow!("Download process failed or was cancelled"))
@@ -111,8 +110,7 @@ fn count_vvm_file(path: &std::path::PathBuf) -> usize {
 // Clean up unnecessary downloaded files to save space using functional composition
 pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
     let unnecessary_extensions = [
-        ".zip", ".tgz", ".tar.gz", ".tar", ".gz", // Archive files
-        ".exe", ".dll", ".so",                    // Executable files not needed after extraction
+        ".zip", ".tgz", ".tar.gz", ".tar", ".gz", // Archive files only
     ];
     
     std::fs::read_dir(dir)
@@ -144,7 +142,7 @@ fn process_cleanup_file(path: &std::path::PathBuf, unnecessary_extensions: &[&st
         });
 }
 
-// Functional approach to removing empty directories
+// Functional approach to removing empty directories  
 fn try_remove_empty_directory(path: &std::path::PathBuf) {
     let is_empty = std::fs::read_dir(path)
         .map(|entries| entries.count() == 0)
@@ -153,7 +151,6 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
     if is_empty {
         path.file_name()
             .and_then(|n| n.to_str())
-            .filter(|&name| ["c_api", "onnxruntime"].contains(&name))
             .map(|dir_name| {
                 std::fs::remove_dir(path)
                     .map(|_| println!("   Removed empty directory: {}", dir_name))
@@ -174,12 +171,12 @@ pub async fn ensure_models_available() -> Result<()> {
     }
     
     println!("🎭 VOICEVOX TTS - First Run Setup");
-    println!("VOICEVOX Core system components are required for text-to-speech synthesis.");
-    println!("This includes VOICEVOX Core libraries, ONNX Runtime, 26+ voice models, and dictionary.");
+    println!("Voice models and dictionary are required for text-to-speech synthesis.");
+    println!("This includes 26+ voice models and dictionary.");
     println!("");
     
     // Interactive license acceptance
-    print!("Would you like to download VOICEVOX Core system now? [Y/n]: ");
+    print!("Would you like to download voice models and dictionary now? [Y/n]: ");
     std::io::Write::flush(&mut std::io::stdout())?;
     
     let mut input = String::new();
@@ -187,25 +184,25 @@ pub async fn ensure_models_available() -> Result<()> {
     let response = input.trim().to_lowercase();
     
     if response.is_empty() || response == "y" || response == "yes" {
-        println!("🔄 Starting VOICEVOX Core system download...");
+        println!("🔄 Starting voice models and dictionary download...");
         println!("Note: This will require accepting VOICEVOX license terms for 26+ voice characters.");
         println!("");
         
         // Launch downloader directly for user interaction (no expect script)
         match launch_downloader_for_user().await {
             Ok(_) => {
-                println!("✅ VOICEVOX Core system setup completed!");
+                println!("✅ Voice models and dictionary setup completed!");
                 Ok(())
             }
             Err(e) => {
-                eprintln!("❌ VOICEVOX Core system download failed: {}", e);
+                eprintln!("❌ Voice models and dictionary download failed: {}", e);
                 eprintln!("You can manually run: voicevox-download --output ~/.local/share/voicevox");
                 Err(e)
             }
         }
     } else {
-        println!("Skipping VOICEVOX Core system download. You can run 'voicevox-setup-models' later.");
-        Err(anyhow!("VOICEVOX Core system components are required for operation"))
+        println!("Skipping voice models and dictionary download. You can run 'voicevox-setup-models' later.");
+        Err(anyhow!("Voice models and dictionary are required for operation"))
     }
 }
 

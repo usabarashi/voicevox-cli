@@ -133,11 +133,7 @@ fn build_models_search_paths() -> Vec<PathBuf> {
         .collect()
 }
 
-// Helper function to check if a directory contains .dic files (including subdirectories)
-#[allow(dead_code)]
-fn has_dic_files(dict_path: &PathBuf) -> bool {
-    has_direct_dic_files(dict_path) || find_dic_subdir(dict_path).is_some()
-}
+// Note: has_dic_files() removed - no longer needed with static linking
 
 // Helper function to check if a directory contains .dic files directly
 fn has_direct_dic_files(dict_path: &PathBuf) -> bool {
@@ -152,107 +148,46 @@ fn has_direct_dic_files(dict_path: &PathBuf) -> bool {
     })
 }
 
-// Helper function to find subdirectory containing .dic files (for VOICEVOX downloader structure)
-fn find_dic_subdir(dict_path: &PathBuf) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(dict_path).ok()?;
-    
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        
-        if has_direct_dic_files(&path) {
-            return Some(path);
+// Note: find_dic_subdir() removed - no longer needed with static linking
+
+pub fn find_openjtalk_dict() -> Result<String> {
+    // Static linking priority: OpenJTalk dictionary is embedded in Nix build
+    // Check for build-time embedded dictionary first
+    if let Ok(dict_dir) = std::env::var("OPENJTALK_DICT_DIR") {
+        if !dict_dir.is_empty() && PathBuf::from(&dict_dir).exists() {
+            return Ok(dict_dir);
         }
     }
     
-    None
-}
-
-pub fn find_openjtalk_dict() -> Result<String> {
-    let mut search_paths = Vec::new();
-
-    // Environment variables with their corresponding paths
-    let env_paths = [
-        ("XDG_DATA_HOME", "voicevox/dict"),
-        ("HOME", ".local/share/voicevox/dict"),
-        ("HOME", ".voicevox/dict"), // Legacy
-        ("VOICEVOX_DICT_DIR", ""),
-        ("OPENJTALK_DICT_DIR", ""),
+    // Static embedded path - set by Nix build environment
+    let home_dict_path = std::env::var("HOME").ok()
+        .map(|home| format!("{}/.local/share/voicevox/dict", home));
+    let static_dict_paths = [
+        "./dict",  // Workspace development
+        home_dict_path.as_deref().unwrap_or(""),
     ];
     
-    // Static system paths
-    let static_paths = [
-        "./dict",
-        "/usr/local/share/open-jtalk/dic",
-        "/usr/share/open-jtalk/dic", 
-        "/opt/open-jtalk/dic",
-        "/usr/local/share/voicevox/dict",
-        "/usr/share/voicevox/dict",
-        "/opt/voicevox/dict",
-        "/Applications/VOICEVOX.app/Contents/Resources/dict",
-        "/opt/homebrew/share/open-jtalk/dic",
-        "/opt/homebrew/share/voicevox/dict",
-        "/opt/local/share/open-jtalk/dic",
-    ];
+    // Check minimal set of static paths for embedded dictionary
+    for path_str in static_dict_paths.iter().filter(|p| !p.is_empty()) {
+        let path = PathBuf::from(path_str);
+        if path.exists() && has_direct_dic_files(&path) {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
     
-    // Build paths using functional composition
-    let env_based_paths = env_paths
-        .iter()
-        .filter_map(|(env_var, suffix)| {
-            std::env::var(env_var).ok().map(|env_value| {
-                if suffix.is_empty() {
-                    PathBuf::from(env_value)
-                } else {
-                    PathBuf::from(env_value).join(suffix)
-                }
-            })
-        });
-    
-    let static_based_paths = static_paths
-        .iter()
-        .map(|p| PathBuf::from(p));
-    
-    let package_path = std::env::current_exe()
-        .ok()
-        .and_then(|exe_path| {
-            exe_path.parent()
-                .and_then(|p| p.parent())
-                .map(|pkg_root| pkg_root.join("share/voicevox/dict"))
-        });
-    
-    let workspace_path = std::env::current_dir()
-        .ok()
-        .and_then(|current_dir| {
-            current_dir
-                .ancestors()
-                .find(|a| a.join("dict").exists())
-                .map(|p| p.join("dict"))
-        });
-    
-    // Compose all paths using functional chain
-    search_paths.extend(
-        env_based_paths
-            .chain(static_based_paths)
-            .chain(package_path)
-            .chain(workspace_path)
-    );
-
-    search_paths
-        .into_iter()
-        .filter(|path| path.exists())
-        .find_map(|path| {
-            // First check if dictionary files are directly in this directory
-            if has_direct_dic_files(&path) {
-                Some(path.to_string_lossy().to_string())
-            } else {
-                // Then check subdirectories for dictionary files
-                find_dic_subdir(&path)
-                    .map(|dict_subdir| dict_subdir.to_string_lossy().to_string())
+    // Package-relative path (Nix installation)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(pkg_dict) = exe_path.parent()
+            .and_then(|p| p.parent())
+            .map(|pkg_root| pkg_root.join("share/voicevox/dict"))
+        {
+            if pkg_dict.exists() && has_direct_dic_files(&pkg_dict) {
+                return Ok(pkg_dict.to_string_lossy().to_string());
             }
-        })
-        .ok_or_else(|| {
-            anyhow!("OpenJTalk dictionary not found. Please ensure the dictionary is installed in one of the standard locations or set VOICEVOX_DICT_DIR/OPENJTALK_DICT_DIR environment variable.")
-        })
+        }
+    }
+    
+    Err(anyhow!(
+        "OpenJTalk dictionary not found. Static linking should provide embedded dictionary."
+    ))
 }

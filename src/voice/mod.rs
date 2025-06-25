@@ -1,32 +1,110 @@
+//! Dynamic voice detection and resolution system
+//!
+//! This module provides zero hardcoded voice mappings, automatically adapting to available models.
+//! Voice characters are discovered dynamically from VVM files and VOICEVOX Core metadata.
+//!
+//! # Architecture
+//!
+//! - **Dynamic Discovery**: Runtime detection of available voice models with no hardcoded mappings
+//! - **Functional Programming**: Monadic composition and iterator chains for efficient processing
+//! - **Future-Proof**: Automatically supports new VOICEVOX models without code changes
+//! - **Model-Based Resolution**: Voice selection via `--model N` or `--speaker-id ID`
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use voicevox_cli::voice::{scan_available_models, resolve_voice_dynamic};
+//!
+//! // Dynamically discover all available voice models
+//! let models = scan_available_models()?;
+//! println!("Found {} voice models", models.len());
+//!
+//! // Resolve a voice dynamically without hardcoded mappings
+//! if let Ok(speaker_id) = resolve_voice_dynamic(3, None, &models) {
+//!     println!("Model 3 resolved to speaker ID: {}", speaker_id);
+//! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Voice speaker metadata with multiple emotional styles
+///
+/// Represents a voice character (e.g., Zundamon, Metan) with different emotional
+/// expressions or speaking styles. Each speaker can have multiple styles like
+/// "normal", "happy", "sad", etc.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Speaker {
+    /// Display name of the speaker character
     pub name: String,
+    /// Unique identifier for the speaker (UUID format)
     #[serde(default)]
     pub speaker_uuid: String,
+    /// Available emotional/speaking styles for this speaker
     pub styles: Vec<Style>,
+    /// Voice model version
     #[serde(default)]
     pub version: String,
 }
 
+/// Individual voice style within a speaker
+///
+/// Represents a specific emotional expression or speaking style for a voice character.
+/// Each style has a unique ID used for synthesis requests.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Style {
+    /// Display name of the style (e.g., "ノーマル", "あまあま", "ツンツン")
     pub name: String,
+    /// Unique style ID used for speech synthesis
     pub id: u32,
+    /// Optional style type classification
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub style_type: Option<String>,
 }
 
+/// Available voice model with metadata
+///
+/// Represents a discovered VVM file with its associated speakers and metadata.
+/// Used for dynamic voice resolution and model management.
 #[derive(Debug, Clone)]
 pub struct AvailableModel {
+    /// Numeric model ID extracted from filename (e.g., 3 from "3.vvm")
     pub model_id: u32,
+    /// Full path to the VVM model file
     pub file_path: PathBuf,
+    /// List of voice speakers contained in this model
     pub speakers: Vec<Speaker>,
 }
 
+/// Scans for available voice models in the models directory
+///
+/// Dynamically discovers VVM files and extracts model metadata without hardcoded mappings.
+/// Uses functional programming patterns for efficient directory traversal and file processing.
+///
+/// # Returns
+///
+/// A vector of available models with their metadata, sorted by model ID
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Models directory not found or inaccessible
+/// - No valid VVM files found in directory
+/// - File system errors during directory traversal
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use voicevox_cli::voice::scan_available_models;
+///
+/// let models = scan_available_models()?;
+/// for model in &models {
+///     println!("Model {}: {} speakers", model.model_id, model.speakers.len());
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     use crate::paths::find_models_dir_client;
     

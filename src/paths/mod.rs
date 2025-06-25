@@ -1,7 +1,62 @@
+//! XDG-compliant path discovery and management
+//!
+//! This module provides functional path discovery following XDG Base Directory Specification
+//! with graceful fallbacks and automatic directory creation. All paths are user-specific for
+//! multi-user system isolation.
+//!
+//! # Architecture
+//!
+//! - **XDG Compliance**: Follows XDG Base Directory Specification for cross-platform compatibility
+//! - **Functional Programming**: Pure functions with monadic composition for path resolution
+//! - **Static Linking Priority**: Prefers embedded resources over runtime downloads
+//! - **Automatic Fallbacks**: Graceful degradation when preferred paths are unavailable
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use voicevox_cli::paths::{get_socket_path, find_models_dir_client, find_openjtalk_dict};
+//!
+//! // Get XDG-compliant socket path for daemon communication
+//! let socket = get_socket_path();
+//!
+//! // Find voice models directory (client-side, no downloads)
+//! if let Ok(models_dir) = find_models_dir_client() {
+//!     println!("Models found at: {}", models_dir.display());
+//! }
+//!
+//! // Find OpenJTalk dictionary (static linking priority)
+//! let dict_path = find_openjtalk_dict()?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
-// Socket path for IPC - user-specific for daemon isolation
+/// Gets XDG-compliant socket path for daemon communication
+///
+/// Returns a user-specific Unix socket path following XDG Base Directory Specification
+/// with automatic directory creation and UID-based isolation for multi-user systems.
+///
+/// # Path Priority
+///
+/// 1. `$VOICEVOX_SOCKET_PATH` (direct override)
+/// 2. `$XDG_RUNTIME_DIR/voicevox-daemon.sock` (runtime files)
+/// 3. `$XDG_STATE_HOME/voicevox-daemon.sock` (persistent state)
+/// 4. `~/.local/state/voicevox-daemon.sock` (XDG fallback)
+/// 5. `/tmp/voicevox-daemon-{uid}.sock` (temporary, UID-isolated)
+///
+/// # Returns
+///
+/// Path to Unix socket for IPC communication
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use voicevox_cli::paths::get_socket_path;
+///
+/// let socket_path = get_socket_path();
+/// println!("Daemon socket: {}", socket_path.display());
+/// ```
 pub fn get_socket_path() -> PathBuf {
     // Environment variables with their corresponding socket paths
     let env_socket_paths = [

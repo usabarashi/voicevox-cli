@@ -1,3 +1,9 @@
+//! VOICEVOX CLI daemon binary - `voicevox-daemon`
+//!
+//! Background service that pre-loads voice models and handles synthesis requests
+//! via Unix socket IPC. Provides instant response times after initial model loading.
+//! Supports graceful shutdown and duplicate process prevention.
+
 use anyhow::Result;
 use clap::{Arg, Command};
 use std::path::PathBuf;

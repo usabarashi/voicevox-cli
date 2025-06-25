@@ -1,9 +1,18 @@
+//! Inter-process communication protocols and data structures
+//!
+//! This module defines the binary protocol for daemon-client communication using
+//! Unix sockets with bincode serialization. Provides type-safe, efficient IPC
+//! for voice synthesis operations.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::voice::Speaker;
 
-// IPC Protocol Definitions
+/// Request messages sent from client to daemon
+///
+/// Defines all operations that clients can request from the daemon,
+/// including synthesis, speaker listing, and model management.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DaemonRequest {
     Ping,

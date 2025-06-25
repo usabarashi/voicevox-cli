@@ -8,12 +8,56 @@ use voicevox_core::{
 use crate::paths::{find_models_dir, find_models_dir_client, find_openjtalk_dict};
 use crate::voice::Speaker;
 
-// VOICEVOX Core wrapper using official Rust implementation
+/// VOICEVOX Core wrapper using official Rust implementation with static linking
+///
+/// This struct provides a high-level interface to VOICEVOX Core 0.16.0, managing
+/// the synthesizer, OpenJTalk text analyzer, and ONNX Runtime components with
+/// functional programming patterns.
+///
+/// # Architecture
+///
+/// - **Static Linking**: Uses statically linked VOICEVOX Core libraries for zero dependencies
+/// - **Functional Design**: Immutable operations with monadic error handling
+/// - **CPU-Only**: Optimized for Apple Silicon with CPU-only processing
+/// - **Thread-Safe**: Automatically detects optimal CPU thread count
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use voicevox_cli::VoicevoxCore;
+/// use std::path::PathBuf;
+///
+/// // Initialize with static linking (no runtime dependencies)
+/// let mut core = VoicevoxCore::new()?;
+///
+/// // Load a voice model dynamically
+/// let model_path = PathBuf::from("path/to/model.vvm");
+/// core.load_model(&model_path)?;
+///
+/// // Synthesize speech with speaker ID
+/// let audio_data = core.synthesize("こんにちは、ずんだもんなのだ", 3)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct VoicevoxCore {
     synthesizer: Synthesizer<OpenJtalk>,
 }
 
 impl VoicevoxCore {
+    /// Creates a new VoicevoxCore instance with static linking
+    ///
+    /// Initializes ONNX Runtime and OpenJTalk with embedded dictionary.
+    /// Uses CPU-only acceleration mode optimized for Apple Silicon.
+    ///
+    /// # Returns
+    ///
+    /// A configured VoicevoxCore instance ready for model loading
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - ONNX Runtime initialization fails
+    /// - OpenJTalk dictionary not found or invalid
+    /// - Synthesizer configuration is invalid
     pub fn new() -> Result<Self> {
         let onnxruntime = Onnxruntime::init_once()
             .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {}", e))?;
@@ -33,13 +77,41 @@ impl VoicevoxCore {
         Ok(VoicevoxCore { synthesizer })
     }
 
+    /// Loads all available voice models from the models directory
+    ///
+    /// Recursively scans the models directory and loads all VVM files found.
+    /// May trigger first-run setup if models are not found.
+    ///
+    /// # Returns
+    ///
+    /// Success if at least one model was loaded
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Models directory not found and setup fails
+    /// - No valid VVM files found in directory
+    /// - All model loading attempts fail
     pub fn load_all_models(&self) -> Result<()> {
         // Find the models directory - this may trigger first-run setup
         let models_dir = find_models_dir()?;
         self.load_vvm_files_recursive(&models_dir)
     }
 
-    // Client-side model loading (no download attempt)
+    /// Loads all available voice models without attempting download
+    ///
+    /// Client-side model loading that skips first-run setup and download attempts.
+    /// Used by daemon client to avoid triggering downloads on the server side.
+    ///
+    /// # Returns
+    ///
+    /// Success if at least one model was loaded
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Models directory not found (no download attempt made)
+    /// - No valid VVM files found in directory
     pub fn load_all_models_no_download(&self) -> Result<()> {
         // Find the models directory - no download attempt for client side
         let models_dir = find_models_dir_client()?;
@@ -110,6 +182,38 @@ impl VoicevoxCore {
             })
     }
 
+    /// Synthesizes speech from text using the specified voice style
+    ///
+    /// Converts Japanese text to speech using the loaded voice models and the specified style ID.
+    /// The text is processed through OpenJTalk for phonetic analysis and then synthesized
+    /// using VOICEVOX Core neural networks.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - Japanese text to synthesize (UTF-8)
+    /// * `style_id` - Voice style identifier (speaker + emotional style)
+    ///
+    /// # Returns
+    ///
+    /// WAV audio data as bytes on success
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Text analysis fails (invalid Japanese text)
+    /// - Style ID not found in loaded models
+    /// - Neural network synthesis fails
+    /// - Memory allocation fails during processing
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use voicevox_cli::VoicevoxCore;
+    /// # let core = VoicevoxCore::new()?;
+    /// // Synthesize with Zundamon's normal voice (style ID 3)
+    /// let audio = core.synthesize("こんにちは、ずんだもんなのだ", 3)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn synthesize(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
         use voicevox_core::StyleId;
         

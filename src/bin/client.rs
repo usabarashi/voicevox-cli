@@ -1,3 +1,9 @@
+//! VOICEVOX CLI client binary - `voicevox-say`
+//!
+//! Lightweight CLI client that communicates with the daemon via Unix sockets.
+//! Provides macOS `say` command-compatible interface for Japanese TTS with
+//! various character voices. Handles first-run setup and model downloads.
+
 use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
 use std::path::PathBuf;

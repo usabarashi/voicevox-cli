@@ -1,7 +1,61 @@
+//! Voice model download and management functionality
+//!
+//! This module handles client-side voice model downloads with interactive license acceptance,
+//! functional file management, and XDG-compliant storage. Supports selective downloads and
+//! automatic cleanup.
+//!
+//! # Architecture
+//!
+//! - **Client-Side Responsibility**: Downloads handled by client, not daemon
+//! - **Interactive License**: Manual user confirmation for all 26+ voice character licenses
+//! - **Functional Programming**: Monadic composition for error handling and file processing
+//! - **Selective Downloads**: Models-only, dictionary-only, or specific model downloads
+//! - **Automatic Cleanup**: Removes unnecessary archive files after extraction
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use voicevox_cli::client::download::{ensure_models_available, update_models_only};
+//!
+//! // Ensure models are available (triggers first-run setup if needed)
+//! ensure_models_available().await?;
+//!
+//! // Update only voice models (skips dictionary and other components)
+//! update_models_only().await?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
-// Launch VOICEVOX downloader for complete system setup with direct user interaction
+/// Launches VOICEVOX downloader for voice models with direct user interaction
+///
+/// Downloads voice models only (VVM files) with interactive license acceptance.
+/// Uses `--only models` flag to skip dictionary and other components that are
+/// statically linked. Creates target directory and handles user confirmation.
+///
+/// # Returns
+///
+/// Success if models downloaded and verified
+///
+/// # Errors
+///
+/// Returns error if:
+/// - User cancels download process
+/// - VOICEVOX downloader not found
+/// - Download fails or is interrupted
+/// - No VVM files found after download
+/// - File system errors during verification
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use voicevox_cli::client::download::launch_downloader_for_user;
+///
+/// // Interactive download with license acceptance
+/// launch_downloader_for_user().await?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub async fn launch_downloader_for_user() -> Result<()> {
     let target_dir = std::env::var("HOME")
         .ok()

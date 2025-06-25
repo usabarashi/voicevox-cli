@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is VOICEVOX TTS (`voicevox-tts`) - a production-ready command-line text-to-speech synthesis tool using VOICEVOX Core 0.16.0. It provides a macOS `say` command-compatible interface for Japanese TTS with various character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
+This is VOICEVOX CLI (`voicevox-cli`) - a production-ready command-line text-to-speech synthesis tool using VOICEVOX Core 0.16.0. It provides a macOS `say` command-compatible interface for Japanese TTS with various character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
 
 The tool uses a **daemon-client architecture** for optimal performance, with pre-loaded voice models in a background daemon process for instant synthesis. It's specifically optimized for macOS with CPU-only processing and maintains complete compatibility with macOS `say` command behavior (silent operation on success, errors to stderr only).
 
@@ -43,17 +43,17 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 │ ✓ VOICEVOX Core   │                   │ • 26+ Characters        │
 │ ✓ ONNX Runtime    │                   │ • Zundamon, Metan, etc. │
 │ ✓ OpenJTalk Dict  │                   │ • ~/.local/share/...    │
-│ ✓ FFI Bindings    │                   │ • User-specific         │
+│ ✓ Rust API        │                   │ • User-specific         │
 └───────────────────┘                   └─────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                        File Structure                           │
 ├─────────────────────────────────────────────────────────────────┤
 │ src/                                                            │
-│ ├── lib.rs              # Shared library & IPC protocols       │
+│ ├── lib.rs              # Shared library & IPC protocols        │
 │ ├── bin/                                                        │
-│ │   ├── daemon.rs        # Background daemon process            │
-│ │   └── client.rs        # CLI client (primary interface)      │
+│ │   ├── daemon.rs       # Background daemon process             │
+│ │   └── client.rs       # CLI client (primary interface)        │
 │ ├── core/               # VOICEVOX Core wrapper                 │
 │ ├── voice/              # Dynamic voice detection               │
 │ ├── paths/              # XDG-compliant path discovery          │
@@ -62,11 +62,11 @@ The tool uses a **daemon-client architecture** for optimal performance, with pre
 │ └── ipc/                # Inter-process communication           │
 │                                                                 │
 │ Static Resources (Build-time):                                  │
-│ ├── voicevox_core/      # Statically linked libraries          │
+│ ├── voicevox_core/      # Statically linked libraries           │
 │ └── flake.nix           # Optimized Nix build configuration     │
 │                                                                 │
 │ Runtime Resources (User directory):                             │
-│ └── ~/.local/share/voicevox/models/  # Voice model files       │
+│ └── ~/.local/share/voicevox/models/  # Voice model files        │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -77,7 +77,7 @@ User Command: voicevox-say "Hello"
          │
          ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Client Start │────►│  Check Daemon   │────►│  Send Request   │
+│   Client Start  │────►│  Check Daemon   │────►│  Send Request   │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
          │                       │                       │
          │                       ▼                       │
@@ -116,7 +116,7 @@ User Command: voicevox-say "Hello"
 ### Core Components
 
 - **`src/lib.rs`**: Shared library with VoicevoxCore and IPC protocols
-- **`src/bin/daemon.rs`**: Background daemon process with model management  
+- **`src/bin/daemon.rs`**: Background daemon process with model management
 - **`src/bin/client.rs`**: Lightweight CLI client (primary interface) with functional voice resolution
 - **`src/core/mod.rs`**: VOICEVOX Core wrapper with functional programming patterns
 - **`src/voice/mod.rs`**: Dynamic voice detection and resolution system
@@ -152,32 +152,32 @@ Build Time (Nix):                    Runtime:
 │  flake.nix      │                   │ voicevox-daemon │
 │  Configuration  │                   │ voicevox-say    │
 └─────────────────┘                   └─────────────────┘
-         │                                     │
-         ▼                                     │
+         │                                    │
+         ▼                                    │
 ┌─────────────────┐                           │
 │ Static Linking  │                           │
 │ Process         │                           │
 ├─────────────────┤                           │
 │ ✓ VOICEVOX Core │──────────────────────────►│
-│ ✓ ONNX Runtime  │  Embedded at Build Time  │
+│ ✓ ONNX Runtime  │  Embedded at Build Time   │
 │ ✓ OpenJTalk     │                           │
-│ ✓ FFI Bindings  │                           │
+│ ✓ Rust API      │                           │
 └─────────────────┘                           │
-         │                                     │
-         ▼                                     │
+         │                                    │
+         ▼                                    │
 ┌─────────────────┐                           │
 │ Optimized       │                           │
 │ Package (~54MB) │                           │
 └─────────────────┘                           │
-                                               │
-Runtime Download:                              │
+                                              │
+Runtime Download:                             │
 ┌─────────────────┐                           │
-│ VOICEVOX Bundle │                           │
-│ (Full Package)  │◄──────────────────────────┘
+│ Voice Models    │                           │
+│ (VVM Files)     │◄──────────────────────────┘
 ├─────────────────┤    First-run Setup
-│ • Voice Models  │    User Downloads
-│ • Dictionary    │    License Acceptance
-│ • ONNX Terms    │    (via voicevox-download)
+│ • 26+ Characters│    User Downloads
+│ • Zundamon      │    License Acceptance
+│ • Metan, etc.   │    (via voicevox-download)
 │ • ~/.local/...  │
 └─────────────────┘
 
@@ -211,10 +211,10 @@ Runtime Download:                              │
 ```
 
 **Static Linking Components**:
-- **VOICEVOX Core**: Statically linked `libvoicevox_core.dylib` 
+- **VOICEVOX Core**: Official Rust crate with statically linked `libvoicevox_core.dylib`
 - **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib` with compatibility symlinks
 - **OpenJTalk Dictionary**: Embedded dictionary via static linking
-- **VOICEVOX Package**: Runtime downloads include full package (models, dictionary, terms) (~200MB, 26+ characters)
+- **Voice Models Only**: Runtime downloads limited to VVM files (~200MB, 26+ characters)
 - **Package Size**: ~54MB total with optimized configuration
 
 ## Build Commands
@@ -261,9 +261,8 @@ cargo build --release --bin voicevox-say      # Primary CLI (client)
 # Development build
 cargo build --bin voicevox-daemon --bin voicevox-say
 
-# Features (production uses default: link_voicevox)
-cargo build --features dynamic_voicevox       # Dynamic library loading
-cargo build --features use_bindgen           # Generate FFI bindings
+# Features (production uses default: static linking via official crate)
+cargo build --features dynamic_voicevox       # Alternative: dynamic library loading
 ```
 
 ## Production Usage
@@ -321,10 +320,10 @@ echo "標準入力からのテキスト" | ./target/release/voicevox-say
 # Example output:
 # Available VVM models:
 #   Model 0 (/path/to/0.vvm)
-#   Model 3 (/path/to/3.vvm) 
+#   Model 3 (/path/to/3.vvm)
 #   Model 16 (/path/to/16.vvm)
 
-# Get detailed speaker information  
+# Get detailed speaker information
 ./target/release/voicevox-say --list-speakers
 
 # Use model by ID
@@ -342,7 +341,7 @@ echo "標準入力からのテキスト" | ./target/release/voicevox-say
 # Method 1: Direct speaker ID (most precise)
 --speaker-id 3   # Use exact style ID from --list-speakers output
 
-# Method 2: Model selection (uses first available style)  
+# Method 2: Model selection (uses first available style)
 --model 3        # Load 3.vvm model and use default style
 
 # Method 3: Dynamic name resolution (if speaker metadata available)
@@ -410,9 +409,9 @@ otool -L result/bin/voicevox-say
 
 **Architecture**:
 - **Daemon**: Model loading and speech synthesis only
-- **Client**: User interaction, first-run setup, and model downloads  
+- **Client**: User interaction, first-run setup, and model downloads
 - **Static Components**: VOICEVOX Core, ONNX Runtime, OpenJTalk dictionary embedded
-- **Runtime Downloads**: Full VOICEVOX package (voice models, dictionary, terms) (~200MB, 26+ characters)
+- **Runtime Downloads**: Voice models only (VVM files) (~200MB, 26+ characters)
 
 **First-Run Setup**:
 ```bash
@@ -459,4 +458,4 @@ voicevox-download --output ~/.local/share/voicevox
 - **Responsibility Separation**: Daemon = synthesis only, Client = user interaction + downloads
 - **Dynamic Voice System**: Zero hardcoded voice mappings - automatically adapts to new models
 - **Functional Programming**: Iterator chains, monadic composition, immutable data flow
-- **Storage**: VOICEVOX package uses ~200MB in `~/.local/share/voicevox/`
+- **Storage**: Voice models use ~200MB in `~/.local/share/voicevox/models/`

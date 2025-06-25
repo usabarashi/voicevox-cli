@@ -14,8 +14,8 @@ Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon
 ## Quick Start
 
 ```bash
-# Install with Nix
-nix profile install github:usabarashi/voicevox-cli
+# Try with Nix (temporary shell)
+nix shell github:usabarashi/voicevox-cli
 
 # First usage (interactive setup)
 voicevox-say "こんにちは、ずんだもんなのだ"
@@ -27,14 +27,21 @@ voicevox-say "その後の呼び出しは瞬時なのだ"
 
 ## Installation
 
-### Direct Install (Recommended)
+### Try with Nix Shell (Recommended)
 
 ```bash
-# Install directly with Nix
-nix profile install github:usabarashi/voicevox-cli
+# Try in temporary shell environment (no permanent installation)
+nix shell github:usabarashi/voicevox-cli
 
 # First usage triggers interactive setup
 voicevox-say "こんにちは、ずんだもんなのだ"
+```
+
+### Permanent Installation (Optional)
+
+```bash
+# Install permanently to your profile
+nix profile install github:usabarashi/voicevox-cli
 ```
 
 ### Development
@@ -52,8 +59,7 @@ nix build
 nix run . -- "テストメッセージなのだ"
 ```
 
-
-**Note**: Voice models and related components are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once.
+**Note**: Voice models and related components are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once. Using `nix shell` provides a temporary environment to try the tool without permanent installation.
 
 ## Initial Setup
 
@@ -171,7 +177,7 @@ voicevox-say --model 3 "違うモデルで試すのだ"
 
 When you download voice models, you get 26+ characters including:
 - **ずんだもん** - Cheerful and energetic character
-- **四国めたん** - Sweet and gentle character  
+- **四国めたん** - Sweet and gentle character
 - **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
 
 **Note**: Use `--list-speakers` to see all available voices on your system.

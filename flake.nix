@@ -230,13 +230,16 @@ DOWNLOADER="voicevox-download"
 
 # Determine target directory - prefer system-wide if writable
 if [ -d "/usr/local/share/voicevox" ] && [ -w "/usr/local/share/voicevox" ]; then
-    MODEL_DIR="/usr/local/share/voicevox/models"
+    VOICEVOX_DIR="/usr/local/share/voicevox"
+    MODEL_DIR="$VOICEVOX_DIR/models"
     INSTALL_TYPE="system-wide"
 elif [ -d "/opt/voicevox" ] && [ -w "/opt/voicevox" ]; then
-    MODEL_DIR="/opt/voicevox/models"
+    VOICEVOX_DIR="/opt/voicevox"
+    MODEL_DIR="$VOICEVOX_DIR/models"
     INSTALL_TYPE="system-wide"
 else
-    MODEL_DIR="$HOME/.local/share/voicevox/models"
+    VOICEVOX_DIR="$HOME/.local/share/voicevox"
+    MODEL_DIR="$VOICEVOX_DIR/models"
     INSTALL_TYPE="user-specific"
 fi
 
@@ -246,8 +249,8 @@ echo ""
 echo "Note: VOICEVOX Core, ONNX Runtime, and dictionary are statically linked"
 echo "      Only voice model files (.vvm) will be downloaded"
 
-# Create models directory
-mkdir -p "$MODEL_DIR"
+# Create VOICEVOX directory (models will be created within)
+mkdir -p "$VOICEVOX_DIR"
 
 # Check if downloader is available
 if ! command -v "$DOWNLOADER" >/dev/null 2>&1; then
@@ -270,21 +273,13 @@ fi
 echo "No voice models found. Starting download..."
 echo "Downloading voice models only (VVM files)..."
 
-# Use VOICEVOX downloader with --only models to avoid redundant downloads
-if "$DOWNLOADER" --only models --output "$MODEL_DIR" --help >/dev/null 2>&1; then
-    echo "Using VOICEVOX Core downloader (models only)..."
-    "$DOWNLOADER" --only models --output "$MODEL_DIR" || {
-        echo "Download failed. Please try again or download manually"
-        echo "Voice models should be placed in: $MODEL_DIR"
-        exit 1
-    }
-else
-    echo "Please run the downloader manually (models only):"
-    echo "  $DOWNLOADER --only models --output $MODEL_DIR"
-    echo ""
-    echo "Or download voice models from VOICEVOX official sources"
-    echo "and place .vvm files in: $MODEL_DIR"
-fi
+# Use VOICEVOX downloader with --only models to download voice models only
+echo "Using VOICEVOX Core downloader (models only)..."
+"$DOWNLOADER" --only models --output "$VOICEVOX_DIR" || {
+    echo "Download failed. Please try again or download manually"
+    echo "Voice models should be placed in: $MODEL_DIR"
+    exit 1
+}
 
 echo "Voice model setup completed!"
 echo "You can now use voicevox-say for text-to-speech synthesis"

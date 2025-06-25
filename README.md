@@ -53,13 +53,13 @@ nix run . -- "テストメッセージなのだ"
 ```
 
 
-**Note**: Voice models are stored in your user directory (`~/.local/share/voicevox/models/`) and only need to be downloaded once.
+**Note**: Voice models and related components are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once.
 
 ## Initial Setup
 
 ### Interactive First-Run Setup
 
-On first use, VOICEVOX CLI will detect missing voice models and offer to download them with proper license acceptance:
+On first use, VOICEVOX CLI will detect missing voice components and offer to download them with proper license acceptance:
 
 ```bash
 # First time usage - interactive setup prompt will appear
@@ -67,13 +67,13 @@ voicevox-say "こんにちは、ずんだもんなのだ"
 
 # You'll see:
 # 🎭 VOICEVOX CLI - First Run Setup
-# Voice models are required for text-to-speech synthesis.
+# Voice models and dictionary are required for text-to-speech synthesis.
 #
-# Would you like to download voice models now? [Y/n]: y
-# 🔄 Starting voice model download...
+# Would you like to download voice models and dictionary now? [Y/n]: y
+# 🔄 Starting voice models and dictionary download...
 # Note: This will require accepting VOICEVOX license terms.
 #
-# 📦 Target directory: ~/.local/share/voicevox/models
+# 📦 Target directory: ~/.local/share/voicevox
 # 🔄 Launching VOICEVOX downloader...
 #    Please follow the on-screen instructions to accept license terms.
 #    Press Enter when ready to continue...
@@ -88,7 +88,7 @@ voicevox-say "こんにちは、ずんだもんなのだ"
 The setup process will:
 - Show VOICEVOX license terms for all voice characters
 - Require your confirmation before downloading
-- Download voice models to your computer
+- Download voice models and related components to your computer
 - Enable voice synthesis for immediate use
 
 ### Manual Setup
@@ -100,7 +100,7 @@ If you prefer manual setup or need to reinstall models:
 voicevox-setup-models
 
 # Or use the downloader directly
-voicevox-download --output ~/.local/share/voicevox/models
+voicevox-download --output ~/.local/share/voicevox
 ```
 
 ## Usage

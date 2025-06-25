@@ -7,28 +7,40 @@ use tokio::sync::Mutex;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use futures_util::{SinkExt, StreamExt};
 
-fn get_dynamic_voice_mapping() -> std::collections::HashMap<String, (u32, String)> {
+fn get_dynamic_voice_mapping() -> std::collections::HashMap<std::borrow::Cow<'static, str>, (u32, std::borrow::Cow<'static, str>)> {
+    use std::borrow::Cow;
+    
     let mut mapping = std::collections::HashMap::new();
     
-    if let Ok(available_models) = scan_available_models() {
-        for (index, model) in available_models.iter().enumerate() {
+    let available_models = scan_available_models().unwrap_or_default();
+    
+    available_models
+        .iter()
+        .enumerate()
+        .for_each(|(index, model)| {
             let model_name = format!("model{}", model.model_id);
             let description = format!("Model {} (Default Style)", model.model_id);
-            mapping.insert(model_name, (model.model_id, description));
+            mapping.insert(Cow::Owned(model_name), (model.model_id, Cow::Owned(description)));
             
-            mapping.insert(model.model_id.to_string(), (model.model_id, format!("Model {}", model.model_id)));
+            mapping.insert(
+                Cow::Owned(model.model_id.to_string()), 
+                (model.model_id, Cow::Owned(format!("Model {}", model.model_id)))
+            );
             
             if index == 0 {
-                mapping.insert("default".to_string(), (model.model_id, format!("Default Model {}", model.model_id)));
+                mapping.insert(
+                    Cow::Borrowed("default"), 
+                    (model.model_id, Cow::Owned(format!("Default Model {}", model.model_id)))
+                );
             }
-        }
-    }
+        });
     
     mapping
 }
 
 use crate::core::VoicevoxCore;
-use crate::ipc::{DaemonRequest, DaemonResponse};
+use crate::ipc::{DaemonRequest, DaemonResponse, OwnedRequest, OwnedResponse};
+use std::borrow::Cow;
 use crate::voice::{resolve_voice_dynamic, scan_available_models};
 
 pub struct DaemonState {
@@ -49,80 +61,82 @@ impl DaemonState {
         Ok(DaemonState { core })
     }
     
-    pub async fn handle_request(&self, request: DaemonRequest) -> DaemonResponse {
+    pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
         match request {
-            DaemonRequest::Ping => {
-                DaemonResponse::Pong
+            OwnedRequest::Ping => {
+                OwnedResponse::Pong
             }
             
-            DaemonRequest::Synthesize { text, style_id, options: _ } => {
+            OwnedRequest::Synthesize { text, style_id, options: _ } => {
                 match self.core.synthesize(&text, style_id) {
                     Ok(wav_data) => {
-                        DaemonResponse::SynthesizeResult { wav_data }
+                        OwnedResponse::SynthesizeResult { 
+                            wav_data: Cow::Owned(wav_data) 
+                        }
                     }
                     Err(e) => {
                         eprintln!("Synthesis failed: {}", e);
-                        DaemonResponse::Error {
-                            message: format!("Synthesis failed: {}", e),
+                        OwnedResponse::Error {
+                            message: Cow::Owned(format!("Synthesis failed: {}", e)),
                         }
                     }
                 }
             }
             
-            DaemonRequest::ListSpeakers => {
+            OwnedRequest::ListSpeakers => {
                 match self.core.get_speakers() {
                     Ok(speakers) => {
-                        DaemonResponse::SpeakersList { speakers }
+                        OwnedResponse::SpeakersList { speakers: Cow::Owned(speakers) }
                     }
                     Err(e) => {
                         eprintln!("Failed to get speakers: {}", e);
-                        DaemonResponse::Error {
-                            message: format!("Failed to get speakers: {}", e),
+                        OwnedResponse::Error {
+                            message: Cow::Owned(format!("Failed to get speakers: {}", e)),
                         }
                     }
                 }
             }
             
-            DaemonRequest::LoadModel { model_name } => {
+            OwnedRequest::LoadModel { model_name } => {
                 println!("Loading model: {}", model_name);
                 match self.core.load_specific_model(&model_name) {
                     Ok(_) => {
                         println!("Model loaded successfully: {}", model_name);
-                        DaemonResponse::Success
+                        OwnedResponse::Success
                     }
                     Err(e) => {
                         println!("Failed to load model {}: {}", model_name, e);
-                        DaemonResponse::Error {
-                            message: format!("Failed to load model {}: {}", model_name, e),
+                        OwnedResponse::Error {
+                            message: Cow::Owned(format!("Failed to load model {}: {}", model_name, e)),
                         }
                     }
                 }
             }
             
-            DaemonRequest::GetVoiceMapping => {
+            OwnedRequest::GetVoiceMapping => {
                 println!("Getting voice mapping");
                 // Return dynamic voice mapping from available models
                 let dynamic_mapping = get_dynamic_voice_mapping();
                 
-                DaemonResponse::VoiceMapping {
+                OwnedResponse::VoiceMapping {
                     mapping: dynamic_mapping,
                 }
             }
             
-            DaemonRequest::ResolveVoiceName { voice_name } => {
+            OwnedRequest::ResolveVoiceName { voice_name } => {
                 println!("Resolving voice name: {}", voice_name);
                 match resolve_voice_dynamic(&voice_name) {
                     Ok((style_id, description)) => {
                         println!("Resolved to style ID {} ({})", style_id, description);
-                        DaemonResponse::VoiceResolution {
+                        OwnedResponse::VoiceResolution {
                             style_id,
-                            description,
+                            description: Cow::Owned(description),
                         }
                     }
                     Err(e) => {
                         println!("Failed to resolve voice name {}: {}", voice_name, e);
-                        DaemonResponse::Error {
-                            message: format!("Failed to resolve voice name {}: {}", voice_name, e),
+                        OwnedResponse::Error {
+                            message: Cow::Owned(format!("Failed to resolve voice name {}: {}", voice_name, e)),
                         }
                     }
                 }
@@ -166,8 +180,8 @@ pub async fn handle_client(stream: UnixStream, state: Arc<Mutex<DaemonState>>) -
                     }
                     Err(e) => {
                         println!("Failed to deserialize request: {}", e);
-                        let error_response = DaemonResponse::Error {
-                            message: format!("Failed to deserialize request: {}", e),
+                        let error_response = OwnedResponse::Error {
+                            message: Cow::Owned(format!("Failed to deserialize request: {}", e)),
                         };
                         
                         if let Ok(error_data) = bincode::serialize(&error_response) {

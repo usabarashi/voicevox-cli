@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use voicevox_cli::client::*;
 use voicevox_cli::core::VoicevoxCore;
-use voicevox_cli::ipc::SynthesizeOptions;
+use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
 
@@ -38,7 +38,7 @@ async fn try_daemon_with_retry(
     text: &str,
     style_id: u32,
     voice_description: &str,
-    options: SynthesizeOptions,
+    options: OwnedSynthesizeOptions,
     output_file: Option<&String>,
     quiet: bool,
     socket_path: &PathBuf,
@@ -465,7 +465,11 @@ async fn main() -> Result<()> {
         return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {}", rate));
     }
 
-    let options = SynthesizeOptions { rate, streaming };
+    let options = OwnedSynthesizeOptions { 
+        rate, 
+        streaming,
+        context: None 
+    };
 
     if !force_standalone {
         if let Err(_) = ensure_models_available().await {

@@ -21,22 +21,62 @@ name = "voicevox_cli"
 path = "src/lib.rs"
 
 [dependencies]
+# Core error handling and CLI - 2025 modern versions
 anyhow = "1.0"
-clap = { version = "4.0", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env", "unicode", "wrap_help"] }
+
+# Serialization with modern performance optimizations
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
-rodio = { version = "0.17", features = ["wav"] }
 bincode = "1.3"
-tokio = { version = "1.0", features = ["full"] }
-tokio-util = { version = "0.7", features = ["codec"] }
-futures-util = { version = "0.3", features = ["sink"] }
+
+# Audio processing with SIMD support
+rodio = { version = "0.19", features = ["wav", "symphonia-all"] }
+
+# Async runtime with modern features
+tokio = { version = "1.40", features = ["full", "tracing"] }
+tokio-util = { version = "0.7", features = ["codec", "io-util"] }
+futures-util = { version = "0.3", features = ["sink", "io"] }
+
+# VOICEVOX Core integration
 voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", tag = "0.16.0", features = ["link-onnxruntime"], default-features = false }
+
+# System integration
 libc = "0.2"
+
+# Optional 2025 performance dependencies
+rayon = { version = "1.10", optional = true }  # Data parallelism
+smallvec = { version = "1.13", features = ["serde"], optional = true }  # Stack-allocated vectors
+compact_str = { version = "0.8", features = ["serde"], optional = true }  # Efficient string storage
 
 [features]
 default = []
+# 2025 modern performance features
+simd = ["rayon"]                    # Enable SIMD and parallel processing
+fast-strings = ["compact_str"]      # Optimized string operations  
+small-vectors = ["smallvec"]        # Stack-allocated collections
+performance = ["simd", "fast-strings", "small-vectors"]  # All performance features
 
 [profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
+# 2025 modern Rust optimization flags
+lto = "fat"              # Full LTO for maximum optimization
+codegen-units = 1        # Single codegen unit for better optimization
+panic = "abort"          # Remove unwinding for size/performance
+opt-level = 3           # Maximum optimization level
+overflow-checks = false  # Disable overflow checks in release
+debug = false           # Remove debug info for smaller binaries
+strip = true            # Strip symbols for minimal binary size
+incremental = false     # Disable incremental compilation for release builds
+
+[profile.dev]
+# Fast development builds
+opt-level = 0
+debug = true
+overflow-checks = true
+incremental = true
+
+[profile.bench]
+# Benchmarking profile for performance testing
+inherits = "release"
+debug = true            # Keep debug info for profiling
+strip = false          # Keep symbols for benchmarking tools

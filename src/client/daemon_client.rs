@@ -7,8 +7,9 @@ use tokio::time::timeout;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use futures_util::{SinkExt, StreamExt};
 
-use crate::ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions};
+use crate::ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
+use std::borrow::Cow;
 
 fn find_daemon_binary() -> PathBuf {
     // Try current executable directory first
@@ -38,7 +39,7 @@ pub async fn daemon_mode(
     text: &str,
     style_id: u32,
     _voice_description: &str,
-    options: SynthesizeOptions,
+    options: OwnedSynthesizeOptions,
     output_file: Option<&String>,
     quiet: bool,
     socket_path: &PathBuf,
@@ -54,8 +55,8 @@ pub async fn daemon_mode(
     let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
     
     // Send synthesis request
-    let request = DaemonRequest::Synthesize {
-        text: text.to_string(),
+    let request = OwnedRequest::Synthesize {
+        text: Cow::Owned(text.to_string()),
         style_id,
         options,
     };
@@ -75,11 +76,11 @@ pub async fn daemon_mode(
         .ok_or_else(|| anyhow!("Connection closed by daemon"))?
         .map_err(|e| anyhow!("Failed to receive response: {}", e))?;
     
-    let response: DaemonResponse = bincode::deserialize(&response_frame)
+    let response: OwnedResponse = bincode::deserialize(&response_frame)
         .map_err(|e| anyhow!("Failed to deserialize response: {}", e))?;
     
     match response {
-        DaemonResponse::SynthesizeResult { wav_data } => {
+        OwnedResponse::SynthesizeResult { wav_data } => {
             
             // Handle output
             if let Some(output_file) = output_file {
@@ -96,7 +97,7 @@ pub async fn daemon_mode(
             
             Ok(())
         }
-        DaemonResponse::Error { message } => Err(anyhow!("Daemon error: {}", message)),
+        OwnedResponse::Error { message } => Err(anyhow!("Daemon error: {}", message)),
         _ => Err(anyhow!("Unexpected response from daemon")),
     }
 }
@@ -117,10 +118,10 @@ pub async fn check_daemon_status(socket_path: &PathBuf) -> Result<()> {
             // Receive response
             if let Some(response_frame) = framed_reader.next().await {
                 let response_frame = response_frame?;
-                let response: DaemonResponse = bincode::deserialize(&response_frame)?;
+                let response: OwnedResponse = bincode::deserialize(&response_frame)?;
                 
                 match response {
-                    DaemonResponse::Pong => {
+                    OwnedResponse::Pong => {
                         println!("VOICEVOX daemon is running and responsive");
                         println!("Socket: {}", socket_path.display());
                         return Ok(());
@@ -155,12 +156,12 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     // Receive response
     if let Some(response_frame) = framed_reader.next().await {
         let response_frame = response_frame?;
-        let response: DaemonResponse = bincode::deserialize(&response_frame)?;
+        let response: OwnedResponse = bincode::deserialize(&response_frame)?;
         
         match response {
-            DaemonResponse::SpeakersList { speakers } => {
+            OwnedResponse::SpeakersList { speakers } => {
                 println!("All available speakers and styles from daemon:");
-                for speaker in &speakers {
+                for speaker in speakers.as_ref() {
                     println!("  {}", speaker.name);
                     for style in &speaker.styles {
                         println!("    {} (ID: {})", style.name, style.id);
@@ -172,7 +173,7 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
                 }
                 return Ok(());
             }
-            DaemonResponse::Error { message } => {
+            OwnedResponse::Error { message } => {
                 return Err(anyhow!("Daemon error: {}", message));
             }
             _ => {

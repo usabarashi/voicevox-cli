@@ -110,61 +110,60 @@ EOF
               ${pkgs.unzip}/bin/unzip ${voicevoxCore}
               VOICEVOX_DIR=$(find . -maxdepth 1 -name "voicevox_core*" -type d | head -1)
               
-              # Copy only essential build files (libraries and headers)
+              # Copy only essential runtime files (libraries only)
               if [ -d "$VOICEVOX_DIR/lib" ]; then
                 cp -r "$VOICEVOX_DIR"/lib $out/voicevox_core/
               fi
-              if [ -d "$VOICEVOX_DIR/include" ]; then
-                cp -r "$VOICEVOX_DIR"/include $out/voicevox_core/
-              fi
+              # Note: Headers removed - not needed for runtime execution
               
               echo "Extracting ONNX Runtime libraries..."
               cd $TMPDIR
               ${pkgs.gnutar}/bin/tar -xzf ${onnxRuntime}
               ONNX_DIR=$(find . -maxdepth 1 -name "voicevox_onnxruntime*" -type d | head -1)
               
-              # Ensure lib directory exists
+              # Ensure lib directory exists and debug library presence
               mkdir -p $out/voicevox_core/lib
               if [ -d "$ONNX_DIR/lib" ]; then
+                echo "Found ONNX libraries in $ONNX_DIR/lib:"
+                ls -la "$ONNX_DIR"/lib/ || true
                 cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
+                echo "Libraries copied to $out/voicevox_core/lib:"
+                ls -la $out/voicevox_core/lib/ || true
+              else
+                echo "Warning: ONNX lib directory not found in $ONNX_DIR"
               fi
               
-              echo "Extracting OpenJTalk dictionary..."
-              cd $TMPDIR
-              ${pkgs.gnutar}/bin/tar -xzf ${openJTalkDict}
-              mkdir -p $out/openjtalk_dict
-              DICT_DIR=$(find . -maxdepth 1 -name "open_jtalk_dic*" -type d | head -1)
-              if [ -d "$DICT_DIR" ]; then
-                cp -r "$DICT_DIR"/* $out/openjtalk_dict/
-              fi
+              # Note: OpenJTalk dictionary extraction removed - static linking handles this
+              # Dictionary is embedded via static linking, no need for separate download
               
-              echo "Setting up pre-built OpenJTalk static libraries..."
-              # Copy pre-built OpenJTalk static libraries
-              mkdir -p $out/openjtalk_libs/{lib,include}
-              cp -r ${openJTalkStaticLibs}/lib/* $out/openjtalk_libs/lib/
-              cp -r ${openJTalkStaticLibs}/include/* $out/openjtalk_libs/include/
-              
-              # Create symbolic links for easy access
-              mkdir -p $out/lib $out/include
-              ln -sf $out/openjtalk_libs/lib/* $out/lib/
-              ln -sf $out/openjtalk_libs/include/* $out/include/
-              
-              echo "Pre-built OpenJTalk static libraries installed"
+              # Note: OpenJTalk static libraries setup removed - handled by static linking
+              # Runtime execution uses statically linked OpenJTalk, no separate libraries needed
               
               # Install VOICEVOX downloader for runtime downloads
               echo "Installing VOICEVOX downloader for runtime use..."
               cp ${voicevoxDownloader} $out/bin/voicevox-download
               chmod +x $out/bin/voicevox-download
               
-              # Fix library paths for macOS
-              echo "Fixing library paths..."
+              # Fix library paths and create proper symlinks for macOS
+              echo "Fixing library paths and creating linker-compatible symlinks..."
               if [ -d "$out/voicevox_core/lib" ]; then
                 cd $out/voicevox_core/lib
+                
+                # Fix install names for all dylibs
                 for dylib in *.dylib; do
                   if [ -f "$dylib" ]; then
                     ${pkgs.darwin.cctools}/bin/install_name_tool -id "@rpath/$dylib" "$dylib" || true
                   fi
                 done
+                
+                # Create linker-compatible symlinks for ONNX Runtime
+                if [ -f "libvoicevox_onnxruntime.dylib" ]; then
+                  echo "Creating onnxruntime symlink for linker compatibility..."
+                  ln -sf libvoicevox_onnxruntime.dylib libonnxruntime.dylib
+                fi
+                
+                echo "Final library structure:"
+                ls -la || true
               fi
               
               echo "Build resources prepared (runtime downloads handled by voicevox-download)"

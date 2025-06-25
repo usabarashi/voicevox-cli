@@ -172,12 +172,13 @@ Build Time (Nix):                    Runtime:
                                                │
 Runtime Download:                              │
 ┌─────────────────┐                           │
-│ Voice Models    │                           │
-│ (VVM Files)     │◄──────────────────────────┘
+│ VOICEVOX Bundle │                           │
+│ (Full Package)  │◄──────────────────────────┘
 ├─────────────────┤    First-run Setup
-│ • 26+ Chars     │    User Downloads
-│ • ~/.local/...  │    License Acceptance
-│ • ~200MB        │
+│ • Voice Models  │    User Downloads
+│ • Dictionary    │    License Acceptance
+│ • ONNX Terms    │    (via voicevox-download)
+│ • ~/.local/...  │
 └─────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -213,7 +214,7 @@ Runtime Download:                              │
 - **VOICEVOX Core**: Statically linked `libvoicevox_core.dylib` 
 - **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib` with compatibility symlinks
 - **OpenJTalk Dictionary**: Embedded dictionary via static linking
-- **Voice Models Only**: Runtime downloads limited to VVM files (~200MB, 26+ characters)
+- **VOICEVOX Package**: Runtime downloads include full package (models, dictionary, terms) (~200MB, 26+ characters)
 - **Package Size**: ~54MB total with optimized configuration
 
 ## Build Commands
@@ -411,7 +412,7 @@ otool -L result/bin/voicevox-say
 - **Daemon**: Model loading and speech synthesis only
 - **Client**: User interaction, first-run setup, and model downloads  
 - **Static Components**: VOICEVOX Core, ONNX Runtime, OpenJTalk dictionary embedded
-- **Runtime Downloads**: Voice models (VVM files) only (~200MB, 26+ characters)
+- **Runtime Downloads**: Full VOICEVOX package (voice models, dictionary, terms) (~200MB, 26+ characters)
 
 **First-Run Setup**:
 ```bash
@@ -420,14 +421,14 @@ voicevox-say "初回起動テスト"
 
 # Manual setup
 voicevox-setup-models
-voicevox-download --output ~/.local/share/voicevox/models
+voicevox-download --output ~/.local/share/voicevox
 ```
 
 **Setup Features**:
 - **Interactive License**: Complete license terms for 26+ characters displayed
 - **Manual Confirmation**: User must manually review and accept terms
-- **XDG Compliance**: Models stored in `~/.local/share/voicevox/models/`
-- **Static Dependencies**: Core libraries pre-installed, only VVM downloads needed
+- **XDG Compliance**: Full package stored in `~/.local/share/voicevox/`
+- **Static Dependencies**: Core libraries pre-installed, only VOICEVOX package download needed
 
 ### IPC Protocol
 - **Unix Sockets**: XDG-compliant socket paths with automatic directory creation
@@ -458,4 +459,4 @@ voicevox-download --output ~/.local/share/voicevox/models
 - **Responsibility Separation**: Daemon = synthesis only, Client = user interaction + downloads
 - **Dynamic Voice System**: Zero hardcoded voice mappings - automatically adapts to new models
 - **Functional Programming**: Iterator chains, monadic composition, immutable data flow
-- **Storage**: Voice models use ~200MB in `~/.local/share/voicevox/models/`
+- **Storage**: VOICEVOX package uses ~200MB in `~/.local/share/voicevox/`

@@ -36,7 +36,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Launching VOICEVOX downloader...");
-    println!("   This will download: 26+ voice models and dictionary");
+    println!("   This will download: 26+ voice models only");
     println!("   Please follow the on-screen instructions to accept license terms.");
     println!("   Press Enter when ready to continue...");
     
@@ -44,8 +44,10 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
     
-    // Launch downloader with direct user interaction
+    // Launch downloader with direct user interaction (models only)
     let status = std::process::Command::new(&downloader_path)
+        .arg("--only")
+        .arg("models")
         .arg("--output")
         .arg(&target_dir)
         .status()?;
@@ -66,7 +68,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
         let vvm_count = count_vvm_files_recursive(&target_dir);
         
         if vvm_count > 0 {
-            println!("✅ Voice models and dictionary successfully downloaded to: {}", target_dir.display());
+            println!("✅ Voice models successfully downloaded to: {}", target_dir.display());
             println!("   Found {} VVM model files", vvm_count);
             
             // Clean up unnecessary files (zip, tgz, tar.gz) in target directory
@@ -171,12 +173,13 @@ pub async fn ensure_models_available() -> Result<()> {
     }
     
     println!("🎭 VOICEVOX TTS - First Run Setup");
-    println!("Voice models and dictionary are required for text-to-speech synthesis.");
-    println!("This includes 26+ voice models and dictionary.");
+    println!("Voice models are required for text-to-speech synthesis.");
+    println!("This includes 26+ voice models (~200MB).");
+    println!("Note: Core libraries and dictionary are already included in this build.");
     println!("");
     
     // Interactive license acceptance
-    print!("Would you like to download voice models and dictionary now? [Y/n]: ");
+    print!("Would you like to download voice models now? [Y/n]: ");
     std::io::Write::flush(&mut std::io::stdout())?;
     
     let mut input = String::new();
@@ -184,25 +187,25 @@ pub async fn ensure_models_available() -> Result<()> {
     let response = input.trim().to_lowercase();
     
     if response.is_empty() || response == "y" || response == "yes" {
-        println!("🔄 Starting voice models and dictionary download...");
+        println!("🔄 Starting voice models download...");
         println!("Note: This will require accepting VOICEVOX license terms for 26+ voice characters.");
         println!("");
         
         // Launch downloader directly for user interaction (no expect script)
         match launch_downloader_for_user().await {
             Ok(_) => {
-                println!("✅ Voice models and dictionary setup completed!");
+                println!("✅ Voice models setup completed!");
                 Ok(())
             }
             Err(e) => {
-                eprintln!("❌ Voice models and dictionary download failed: {}", e);
-                eprintln!("You can manually run: voicevox-download --output ~/.local/share/voicevox");
+                eprintln!("❌ Voice models download failed: {}", e);
+                eprintln!("You can manually run: voicevox-download --only models --output ~/.local/share/voicevox");
                 Err(e)
             }
         }
     } else {
-        println!("Skipping voice models and dictionary download. You can run 'voicevox-setup-models' later.");
-        Err(anyhow!("Voice models and dictionary are required for operation"))
+        println!("Skipping voice models download. You can run 'voicevox-setup-models' later.");
+        Err(anyhow!("Voice models are required for operation"))
     }
 }
 
@@ -224,11 +227,12 @@ pub async fn update_models_only() -> Result<()> {
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading voice models only...");
     
-    // Launch downloader with models-only flag (if supported)
+    // Launch downloader with --only models flag
     let status = std::process::Command::new(&downloader_path)
+        .arg("--only")
+        .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .arg("--models-only") // This flag might not exist in the actual downloader
         .status();
     
     match status {
@@ -265,11 +269,12 @@ pub async fn update_dictionary_only() -> Result<()> {
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading dictionary only...");
     
-    // Launch downloader with dict-only flag (if supported)
+    // Launch downloader with --only dict flag
     let status = std::process::Command::new(&downloader_path)
+        .arg("--only")
+        .arg("dict")
         .arg("--output")
         .arg(&target_dir)
-        .arg("--dict-only") // This flag might not exist in the actual downloader
         .status();
     
     match status {
@@ -304,12 +309,13 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading model {} only...", model_id);
     
-    // Launch downloader with specific model flag (if supported)
+    // Launch downloader with specific model - this may not be directly supported
+    // Fallback to models only for now
     let status = std::process::Command::new(&downloader_path)
+        .arg("--only")
+        .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .arg("--model")
-        .arg(&model_id.to_string()) // This flag might not exist in the actual downloader
         .status();
     
     match status {

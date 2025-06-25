@@ -17,6 +17,21 @@
 //! - **macOS Integration**: Complete compatibility with macOS `say` command interface
 //! - **Static Linking Priority**: VOICEVOX Core, ONNX Runtime, and OpenJTalk statically linked
 //!
+//! ## Module Organization
+//!
+//! This library follows **Rust 2018+ patterns** for optimal code organization:
+//!
+//! **Single-File Modules** (Simple, self-contained functionality):
+//! - [`core`] - VOICEVOX Core wrapper with functional programming patterns
+//! - [`voice`] - Dynamic voice detection and resolution system  
+//! - [`paths`] - XDG-compliant path discovery and management
+//! - [`setup`] - First-run setup and model management utilities
+//! - [`ipc`] - Inter-process communication protocols and data structures
+//!
+//! **Multi-File Modules** (Complex functionality requiring separation):
+//! - [`client`] - Client-side functionality (daemon communication, downloads, audio)
+//! - [`daemon`] - Server-side functionality (model loading, synthesis, process management)
+//!
 //! ## Example Usage
 //!
 //! ```rust,no_run
@@ -36,10 +51,12 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+// Single-file modules (Rust 2018+ pattern)
+
 /// VOICEVOX Core wrapper with functional programming patterns
 pub mod core;
 
-/// Inter-process communication protocols and data structures
+/// Inter-process communication protocols and data structures  
 pub mod ipc;
 
 /// Dynamic voice detection and resolution system
@@ -51,6 +68,8 @@ pub mod paths;
 /// First-run setup and model management utilities
 pub mod setup;
 
+// Multi-file modules (complex functionality)
+
 /// Client-side functionality (daemon client, download management)
 pub mod client;
 
@@ -60,6 +79,9 @@ pub mod daemon;
 // Re-export core types for convenient access
 pub use core::VoicevoxCore;
 pub use ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions};
-pub use voice::{Speaker, Style, get_model_for_voice_id, resolve_voice_dynamic, scan_available_models, AvailableModel};
-pub use paths::{get_socket_path, find_models_dir, find_models_dir_client, find_openjtalk_dict};
+pub use paths::{find_models_dir, find_models_dir_client, find_openjtalk_dict, get_socket_path};
 pub use setup::{attempt_first_run_setup, is_valid_models_directory};
+pub use voice::{
+    get_model_for_voice_id, resolve_voice_dynamic, scan_available_models, AvailableModel, Speaker,
+    Style,
+};

@@ -1,61 +1,9 @@
 //! Voice model download and management functionality
-//!
-//! This module handles client-side voice model downloads with interactive license acceptance,
-//! functional file management, and XDG-compliant storage. Supports selective downloads and
-//! automatic cleanup.
-//!
-//! # Architecture
-//!
-//! - **Client-Side Responsibility**: Downloads handled by client, not daemon
-//! - **Interactive License**: Manual user confirmation for all 26+ voice character licenses
-//! - **Functional Programming**: Monadic composition for error handling and file processing
-//! - **Selective Downloads**: Models-only, dictionary-only, or specific model downloads
-//! - **Automatic Cleanup**: Removes unnecessary archive files after extraction
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use voicevox_cli::client::download::{ensure_models_available, update_models_only};
-//!
-//! // Ensure models are available (triggers first-run setup if needed)
-//! ensure_models_available().await?;
-//!
-//! // Update only voice models (skips dictionary and other components)
-//! update_models_only().await?;
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
 
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
 /// Launches VOICEVOX downloader for voice models with direct user interaction
-///
-/// Downloads voice models only (VVM files) with interactive license acceptance.
-/// Uses `--only models` flag to skip dictionary and other components that are
-/// statically linked. Creates target directory and handles user confirmation.
-///
-/// # Returns
-///
-/// Success if models downloaded and verified
-///
-/// # Errors
-///
-/// Returns error if:
-/// - User cancels download process
-/// - VOICEVOX downloader not found
-/// - Download fails or is interrupted
-/// - No VVM files found after download
-/// - File system errors during verification
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use voicevox_cli::client::download::launch_downloader_for_user;
-///
-/// // Interactive download with license acceptance
-/// launch_downloader_for_user().await?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 pub async fn launch_downloader_for_user() -> Result<()> {
     let target_dir = std::env::var("HOME")
         .ok()
@@ -145,7 +93,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     }
 }
 
-// Helper function to count VVM files recursively using functional composition
+// Count VVM files recursively
 pub fn count_vvm_files_recursive(dir: &std::path::PathBuf) -> usize {
     std::fs::read_dir(dir)
         .map(|entries| {
@@ -162,7 +110,6 @@ pub fn count_vvm_files_recursive(dir: &std::path::PathBuf) -> usize {
         .unwrap_or(0)
 }
 
-// Helper function to count single VVM file
 fn count_vvm_file(path: &std::path::PathBuf) -> usize {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -171,7 +118,7 @@ fn count_vvm_file(path: &std::path::PathBuf) -> usize {
         .unwrap_or(0)
 }
 
-// Clean up unnecessary downloaded files to save space using functional composition
+// Clean up unnecessary downloaded files
 pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
     let unnecessary_extensions = [
         ".zip", ".tgz", ".tar.gz", ".tar", ".gz", // Archive files only
@@ -194,7 +141,6 @@ pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
         .unwrap_or(());
 }
 
-// Helper function to process file cleanup
 fn process_cleanup_file(path: &std::path::PathBuf, unnecessary_extensions: &[&str]) {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -210,7 +156,6 @@ fn process_cleanup_file(path: &std::path::PathBuf, unnecessary_extensions: &[&st
         });
 }
 
-// Functional approach to removing empty directories
 fn try_remove_empty_directory(path: &std::path::PathBuf) {
     let is_empty = std::fs::read_dir(path)
         .map(|entries| entries.count() == 0)
@@ -230,7 +175,7 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
     }
 }
 
-// Check for VOICEVOX Core system and download if needed (client-side first-run setup)
+// Check for VOICEVOX Core system and download if needed
 pub async fn ensure_models_available() -> Result<()> {
     use crate::paths::find_models_dir_client;
 
@@ -260,7 +205,7 @@ pub async fn ensure_models_available() -> Result<()> {
         );
         println!("");
 
-        // Launch downloader directly for user interaction (no expect script)
+        // Launch downloader directly for user interaction
         match launch_downloader_for_user().await {
             Ok(_) => {
                 println!("✅ Voice models setup completed!");
@@ -313,7 +258,7 @@ pub async fn update_models_only() -> Result<()> {
             Ok(())
         }
         _ => {
-            // Fallback to full download if models-only not supported
+            // Fallback to full download
             println!("⚠️  Models-only update not supported, falling back to full update...");
             launch_downloader_for_user().await
         }
@@ -353,7 +298,7 @@ pub async fn update_dictionary_only() -> Result<()> {
             Ok(())
         }
         _ => {
-            // Fallback to manual dictionary download
+            // Fallback to full download
             println!("⚠️  Dictionary-only update not supported, falling back to full update...");
             launch_downloader_for_user().await
         }
@@ -394,7 +339,7 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
             Ok(())
         }
         _ => {
-            // Fallback to full download if specific model not supported
+            // Fallback to full download
             println!("⚠️  Specific model update not supported, falling back to full update...");
             launch_downloader_for_user().await
         }
@@ -483,7 +428,7 @@ pub async fn show_version_info() -> Result<()> {
     Ok(())
 }
 
-// Helper function to find downloader binary
+// Find downloader binary
 fn find_downloader_binary() -> Result<PathBuf> {
     if let Ok(current_exe) = std::env::current_exe() {
         let mut downloader = current_exe.clone();
@@ -504,7 +449,6 @@ fn find_downloader_binary() -> Result<PathBuf> {
     Err(anyhow!("voicevox-download not found"))
 }
 
-// Helper functions for file metadata
 fn get_file_size(path: &PathBuf) -> Result<u64> {
     Ok(std::fs::metadata(path)?.len())
 }

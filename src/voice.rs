@@ -1,73 +1,72 @@
 //! Dynamic voice detection and resolution system
-//!
-//! This module provides zero hardcoded voice mappings, automatically adapting to available models.
-//! Voice characters are discovered dynamically from VVM files and VOICEVOX Core metadata.
-//!
-//! # Architecture
-//!
-//! - **Dynamic Discovery**: Runtime detection of available voice models with no hardcoded mappings
-//! - **Functional Programming**: Monadic composition and iterator chains for efficient processing
-//! - **Future-Proof**: Automatically supports new VOICEVOX models without code changes
-//! - **Model-Based Resolution**: Voice selection via `--model N` or `--speaker-id ID`
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use voicevox_cli::voice::{scan_available_models, resolve_voice_dynamic};
-//!
-//! // Dynamically discover all available voice models
-//! let models = scan_available_models()?;
-//! println!("Found {} voice models", models.len());
-//!
-//! // Resolve a voice dynamically without hardcoded mappings
-//! if let Ok(speaker_id) = resolve_voice_dynamic(3, None, &models) {
-//!     println!("Model 3 resolved to speaker ID: {}", speaker_id);
-//! }
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
+#[cfg(feature = "smallvec")]
+use smallvec::SmallVec;
+
+#[cfg(feature = "compact_str")]
+use compact_str::CompactString;
+
 /// Voice speaker metadata with multiple emotional styles
-///
-/// Represents a voice character (e.g., Zundamon, Metan) with different emotional
-/// expressions or speaking styles. Each speaker can have multiple styles like
-/// "normal", "happy", "sad", etc.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Speaker {
     /// Display name of the speaker character
+    #[cfg(feature = "compact_str")]
+    pub name: CompactString,
+    #[cfg(not(feature = "compact_str"))]
     pub name: String,
+    
     /// Unique identifier for the speaker (UUID format)
     #[serde(default)]
+    #[cfg(feature = "compact_str")]
+    pub speaker_uuid: CompactString,
+    #[serde(default)]
+    #[cfg(not(feature = "compact_str"))]
     pub speaker_uuid: String,
+    
     /// Available emotional/speaking styles for this speaker
+    #[cfg(feature = "smallvec")]
+    pub styles: SmallVec<[Style; 8]>,
+    #[cfg(not(feature = "smallvec"))]
     pub styles: Vec<Style>,
+    
     /// Voice model version
     #[serde(default)]
+    #[cfg(feature = "compact_str")]
+    pub version: CompactString,
+    #[serde(default)]
+    #[cfg(not(feature = "compact_str"))]
     pub version: String,
 }
 
 /// Individual voice style within a speaker
-///
-/// Represents a specific emotional expression or speaking style for a voice character.
-/// Each style has a unique ID used for synthesis requests.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Style {
     /// Display name of the style (e.g., "ノーマル", "あまあま", "ツンツン")
+    #[cfg(feature = "compact_str")]
+    pub name: CompactString,
+    #[cfg(not(feature = "compact_str"))]
     pub name: String,
+    
     /// Unique style ID used for speech synthesis
     pub id: u32,
+    
     /// Optional style type classification
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    #[cfg(feature = "compact_str")]
+    pub style_type: Option<CompactString>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    #[cfg(not(feature = "compact_str"))]
     pub style_type: Option<String>,
 }
 
 /// Available voice model with metadata
-///
-/// Represents a discovered VVM file with its associated speakers and metadata.
-/// Used for dynamic voice resolution and model management.
 #[derive(Debug, Clone)]
 pub struct AvailableModel {
     /// Numeric model ID extracted from filename (e.g., 3 from "3.vvm")
@@ -75,149 +74,197 @@ pub struct AvailableModel {
     /// Full path to the VVM model file
     pub file_path: PathBuf,
     /// List of voice speakers contained in this model
+    #[cfg(feature = "smallvec")]
+    pub speakers: SmallVec<[Speaker; 4]>,
+    #[cfg(not(feature = "smallvec"))]
     pub speakers: Vec<Speaker>,
 }
 
 /// Scans for available voice models in the models directory
-///
-/// Dynamically discovers VVM files and extracts model metadata without hardcoded mappings.
-/// Uses functional programming patterns for efficient directory traversal and file processing.
-///
-/// # Returns
-///
-/// A vector of available models with their metadata, sorted by model ID
-///
-/// # Errors
-///
-/// Returns error if:
-/// - Models directory not found or inaccessible
-/// - No valid VVM files found in directory
-/// - File system errors during directory traversal
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use voicevox_cli::voice::scan_available_models;
-///
-/// let models = scan_available_models()?;
-/// for model in &models {
-///     println!("Model {}: {} speakers", model.model_id, model.speakers.len());
-/// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
 pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     use crate::paths::find_models_dir_client;
     
     let models_dir = find_models_dir_client()?;
+    
+    #[cfg(feature = "smallvec")]
+    let mut available_models = SmallVec::<[AvailableModel; 32]>::new();
+    #[cfg(not(feature = "smallvec"))]
     let mut available_models = Vec::new();
     
     let vvm_files = find_vvm_files(&models_dir)?;
     
-    for vvm_file in vvm_files {
-        if let Some(model_id) = extract_model_id_from_path(&vvm_file) {
-            available_models.push(AvailableModel {
-                model_id,
-                file_path: vvm_file,
-                speakers: Vec::new(),
-            });
-        }
+    let models_iter = vvm_files
+        .into_iter()
+        .filter_map(|vvm_file| {
+            extract_model_id_from_path(&vvm_file)
+                .map(|model_id| (model_id, vvm_file))
+        })
+        .map(|(model_id, file_path)| AvailableModel {
+            model_id,
+            file_path,
+            #[cfg(feature = "smallvec")]
+            speakers: SmallVec::new(),
+            #[cfg(not(feature = "smallvec"))]
+            speakers: Vec::new(),
+        });
+    
+    #[cfg(feature = "rayon")]
+    {
+        let mut models: Vec<_> = models_iter.collect();
+        models.par_sort_unstable_by_key(|m| m.model_id);
+        available_models.extend(models);
     }
     
-    available_models.sort_by_key(|m| m.model_id);
+    #[cfg(not(feature = "rayon"))]
+    {
+        available_models.extend(models_iter);
+        available_models.sort_unstable_by_key(|m| m.model_id);
+    }
     
-    Ok(available_models)
+    #[cfg(feature = "smallvec")]
+    let result = available_models.into_vec();
+    #[cfg(not(feature = "smallvec"))]
+    let result = available_models;
+    
+    Ok(result)
 }
 
 fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
-    let mut vvm_files = Vec::new();
-    
     if !dir.exists() {
-        return Ok(vvm_files);
+        return Ok(Vec::new());
     }
     
-    let entries = std::fs::read_dir(dir)?;
+    #[cfg(feature = "smallvec")]
+    let mut vvm_files = SmallVec::<[PathBuf; 16]>::new();
+    #[cfg(not(feature = "smallvec"))]
+    let mut vvm_files = Vec::new();
     
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
-        
-        if path.is_file() {
-            if let Some(extension) = path.extension() {
-                if extension == "vvm" {
-                    vvm_files.push(path);
-                }
-            }
-        } else if path.is_dir() {
-            vvm_files.extend(find_vvm_files(&path)?);
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| anyhow!("Failed to read directory {}: {}", dir.display(), e))?;
+    
+    let paths: Result<Vec<_>> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .map(|path| process_path_entry(&path))
+        .collect();
+    
+    let all_paths = paths?;
+    
+    for path_result in all_paths {
+        match path_result {
+            PathProcessResult::VvmFile(path) => vvm_files.push(path),
+            PathProcessResult::Directory(paths) => vvm_files.extend(paths),
+            PathProcessResult::Skip => continue,
         }
     }
     
-    Ok(vvm_files)
+    #[cfg(feature = "smallvec")]
+    let result = vvm_files.into_vec();
+    #[cfg(not(feature = "smallvec"))]
+    let result = vvm_files;
+    
+    Ok(result)
+}
+
+#[derive(Debug)]
+enum PathProcessResult {
+    VvmFile(PathBuf),
+    Directory(Vec<PathBuf>),
+    Skip,
+}
+
+fn process_path_entry(path: &PathBuf) -> Result<PathProcessResult> {
+    if path.is_file() {
+        let is_vvm = path
+            .extension()
+            .map(|ext| ext == "vvm")
+            .unwrap_or(false);
+            
+        if is_vvm {
+            Ok(PathProcessResult::VvmFile(path.clone()))
+        } else {
+            Ok(PathProcessResult::Skip)
+        }
+    } else if path.is_dir() {
+        find_vvm_files(path).map(PathProcessResult::Directory)
+    } else {
+        Ok(PathProcessResult::Skip)
+    }
 }
 
 fn extract_model_id_from_path(path: &PathBuf) -> Option<u32> {
     path.file_stem()
         .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
         .and_then(|stem| stem.parse::<u32>().ok())
+        .filter(|&id| id < 10000)
 }
 
 pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
     if voice_input == "?" {
-        println!("Available VOICEVOX voices:");
-        println!();
-        println!("  Use one of these options to discover voices:");
-        println!("    --list-models        - Show available VVM models");
-        println!("    --list-speakers      - Show all speaker details from loaded models");
-        println!("    --speaker-id N       - Use specific style ID directly");
-        println!("    --model N            - Use model N.vvm");
-        println!();
-        println!("  Examples:");
-        println!("    voicevox-say --speaker-id 3 \"text\"");
-        println!("    voicevox-say --model 3 \"text\"");
-        println!();
+        const HELP_TEXT: &str = r#"Available VOICEVOX voices:
+
+  Use one of these options to discover voices:
+    --list-models        - Show available VVM models
+    --list-speakers      - Show all speaker details from loaded models
+    --speaker-id N       - Use specific style ID directly
+    --model N            - Use model N.vvm
+
+  Examples:
+    voicevox-say --speaker-id 3 "text"
+    voicevox-say --model 3 "text"
+"#;
+        println!("{}", HELP_TEXT);
         std::process::exit(0);
     }
     
-    if let Ok(style_id) = voice_input.parse::<u32>() {
-        return Ok((style_id, format!("Style ID {}", style_id)));
-    }
-    
-    resolve_voice_with_core_integration(voice_input)
+    voice_input
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|&id| id > 0 && id < 1000)
+        .map(|style_id| (style_id, format!("Style ID {}", style_id)))
+        .map(Ok)
+        .unwrap_or_else(|| resolve_voice_with_core_integration(voice_input))
 }
 
+  
 fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
     let available_models = scan_available_models().map_err(|e| {
         anyhow!("Failed to scan available models: {}. Use --speaker-id for direct ID specification.", e)
     })?;
     
-    if available_models.is_empty() {
-        return Err(anyhow!(
+    (!available_models.is_empty())
+        .then_some(())
+        .ok_or_else(|| anyhow!(
             "No voice models available. Please download models first or use --speaker-id for direct ID specification."
-        ));
-    }
+        ))?;
     
-    if let Ok(model_id) = voice_input.parse::<u32>() {
-        if available_models.iter().any(|m| m.model_id == model_id) {
-            return Ok((model_id, format!("Model {} (Default Style)", model_id)));
-        }
-    }
-    
-    let model_suggestions = available_models
-        .iter()
-        .take(3)
-        .map(|m| format!("--model {}", m.model_id))
-        .collect::<Vec<_>>()
-        .join(", ");
-    
-    Err(anyhow!(
-        "Voice '{}' not found. Available options:\n  \
-        Use --speaker-id N for direct style ID\n  \
-        Use --model N for model selection (e.g., {})\n  \
-        Use --list-models to see all {} available models\n  \
-        Use --list-speakers for detailed speaker information",
-        voice_input,
-        model_suggestions,
-        available_models.len()
-    ))
+    voice_input
+        .parse::<u32>()
+        .ok()
+        .filter(|&model_id| available_models.iter().any(|m| m.model_id == model_id))
+        .map(|model_id| (model_id, format!("Model {} (Default Style)", model_id)))
+        .map(Ok)
+        .unwrap_or_else(|| {
+            let model_suggestions = available_models
+                .iter()
+                .take(3)
+                .map(|m| format!("--model {}", m.model_id))
+                .collect::<Vec<_>>()
+                .join(", ");
+            
+            Err(anyhow!(
+                "Voice '{}' not found. Available options:\n  \
+                Use --speaker-id N for direct style ID\n  \
+                Use --model N for model selection (e.g., {})\n  \
+                Use --list-models to see all {} available models\n  \
+                Use --list-speakers for detailed speaker information",
+                voice_input,
+                model_suggestions,
+                available_models.len()
+            ))
+        })
 }
 
 pub fn get_styles_for_model_from_core(model_id: u32) -> Result<Vec<Style>> {

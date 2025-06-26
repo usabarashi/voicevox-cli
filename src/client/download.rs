@@ -1,7 +1,7 @@
 //! Voice model download and management functionality
 
 use anyhow::{anyhow, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Launches VOICEVOX downloader for voice models with direct user interaction
 pub async fn launch_downloader_for_user() -> Result<()> {
@@ -63,8 +63,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
                 entry.path().is_file()
                     && entry
                         .file_name()
-                        .to_str()
-                        .map_or(false, |name| name.ends_with(".vvm"))
+                        .to_str().is_some_and(|name| name.ends_with(".vvm"))
                     || entry.path().is_dir() // Also check subdirectories
             })
             .collect::<Vec<_>>();
@@ -110,7 +109,7 @@ pub fn count_vvm_files_recursive(dir: &std::path::PathBuf) -> usize {
         .unwrap_or(0)
 }
 
-fn count_vvm_file(path: &std::path::PathBuf) -> usize {
+fn count_vvm_file(path: &Path) -> usize {
     path.file_name()
         .and_then(|name| name.to_str())
         .filter(|name| name.ends_with(".vvm"))
@@ -142,18 +141,15 @@ pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
 }
 
 fn process_cleanup_file(path: &std::path::PathBuf, unnecessary_extensions: &[&str]) {
-    path.file_name()
+    if let Some(name) = path.file_name()
         .and_then(|name| name.to_str())
         .filter(|name| {
             unnecessary_extensions
                 .iter()
                 .any(|&ext| name.ends_with(ext))
-        })
-        .map(|name| {
-            std::fs::remove_file(path)
+        }) { std::fs::remove_file(path)
                 .map(|_| println!("   Cleaned up: {}", name))
-                .unwrap_or_else(|e| eprintln!("Warning: Failed to remove {}: {}", name, e))
-        });
+                .unwrap_or_else(|e| eprintln!("Warning: Failed to remove {}: {}", name, e)) }
 }
 
 fn try_remove_empty_directory(path: &std::path::PathBuf) {
@@ -162,16 +158,14 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
         .unwrap_or(false);
 
     if is_empty {
-        path.file_name().and_then(|n| n.to_str()).map(|dir_name| {
-            std::fs::remove_dir(path)
+        if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) { std::fs::remove_dir(path)
                 .map(|_| println!("   Removed empty directory: {}", dir_name))
                 .unwrap_or_else(|e| {
                     eprintln!(
                         "Warning: Failed to remove empty directory {}: {}",
                         dir_name, e
                     )
-                })
-        });
+                }) }
     }
 }
 
@@ -188,7 +182,7 @@ pub async fn ensure_models_available() -> Result<()> {
     println!("Voice models are required for text-to-speech synthesis.");
     println!("This includes 26+ voice models (~200MB).");
     println!("Note: Core libraries and dictionary are already included in this build.");
-    println!("");
+    println!();
 
     // Interactive license acceptance
     print!("Would you like to download voice models now? [Y/n]: ");
@@ -203,7 +197,7 @@ pub async fn ensure_models_available() -> Result<()> {
         println!(
             "Note: This will require accepting VOICEVOX license terms for 26+ voice characters."
         );
-        println!("");
+        println!();
 
         // Launch downloader directly for user interaction
         match launch_downloader_for_user().await {

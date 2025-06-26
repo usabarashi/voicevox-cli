@@ -301,10 +301,8 @@ async fn main() -> Result<()> {
             get_socket_path()
         };
 
-        if !matches.get_flag("standalone") {
-            if let Ok(_) = list_speakers_daemon(&socket_path).await {
-                return Ok(());
-            }
+        if !matches.get_flag("standalone") && list_speakers_daemon(&socket_path).await.is_ok() {
+            return Ok(());
         }
 
         println!("Initializing VOICEVOX Core...");
@@ -346,7 +344,7 @@ async fn main() -> Result<()> {
     let output_file = matches.get_one::<String>("output-file");
     let force_standalone = matches.get_flag("standalone");
 
-    if rate < 0.5 || rate > 2.0 {
+    if !(0.5..=2.0).contains(&rate) {
         return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {}", rate));
     }
 
@@ -356,12 +354,8 @@ async fn main() -> Result<()> {
         context: None,
     };
 
-    if !force_standalone {
-        if let Err(_) = ensure_models_available().await {
-            if !quiet {
-                println!("Falling back to standalone mode...");
-            }
-        }
+    if !force_standalone && ensure_models_available().await.is_err() && !quiet {
+        println!("Falling back to standalone mode...");
     }
 
     if !force_standalone {
@@ -371,7 +365,7 @@ async fn main() -> Result<()> {
             get_socket_path()
         };
 
-        if let Ok(_) = try_daemon_with_retry(
+        if try_daemon_with_retry(
             &text,
             style_id,
             &voice_description,
@@ -381,6 +375,7 @@ async fn main() -> Result<()> {
             &socket_path,
         )
         .await
+        .is_ok()
         {
             return Ok(());
         }

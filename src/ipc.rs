@@ -10,6 +10,12 @@ use crate::voice::Speaker;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IpcConfig<const BUFFER_SIZE: usize = 65536, const MAX_TEXT_LENGTH: usize = 8192>;
 
+impl<const BUFFER_SIZE: usize, const MAX_TEXT_LENGTH: usize> Default for IpcConfig<BUFFER_SIZE, MAX_TEXT_LENGTH> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const BUFFER_SIZE: usize, const MAX_TEXT_LENGTH: usize>
     IpcConfig<BUFFER_SIZE, MAX_TEXT_LENGTH>
 {
@@ -128,7 +134,7 @@ impl<'a> SynthesizeOptions<'a> {
     }
 }
 
-impl<'a> Default for SynthesizeOptions<'a> {
+impl Default for SynthesizeOptions<'_> {
     fn default() -> Self {
         Self {
             rate: 1.0,

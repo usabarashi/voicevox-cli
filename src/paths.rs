@@ -131,7 +131,8 @@ fn has_direct_dic_files(dict_path: &PathBuf) -> bool {
     entries.filter_map(|e| e.ok()).any(|entry| {
         entry
             .file_name()
-            .to_str().is_some_and(|name| name.ends_with(".dic"))
+            .to_str()
+            .is_some_and(|name| name.ends_with(".dic"))
     })
 }
 

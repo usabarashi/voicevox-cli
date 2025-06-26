@@ -34,13 +34,21 @@ fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
     fs::write(temp_file, wav_data)?;
 
     // macOS standard afplay for playback (silent like say command)
-    if std::process::Command::new("afplay").arg(temp_file).output().is_ok() {
+    if std::process::Command::new("afplay")
+        .arg(temp_file)
+        .output()
+        .is_ok()
+    {
         let _ = fs::remove_file(temp_file); // Clean up
         return Ok(());
     }
 
     // sox fallback
-    if std::process::Command::new("play").arg(temp_file).output().is_ok() {
+    if std::process::Command::new("play")
+        .arg(temp_file)
+        .output()
+        .is_ok()
+    {
         let _ = fs::remove_file(temp_file); // Clean up
         return Ok(());
     }

@@ -208,27 +208,9 @@ async fn main() -> Result<()> {
                 .long("socket-path")
                 .value_name("PATH"),
         )
-        .arg(
-            Arg::new("models-dir")
-                .help("Specify custom models directory (standalone mode)")
-                .long("models-dir")
-                .value_name("PATH"),
-        )
-        .arg(
-            Arg::new("dict-dir")
-                .help("Specify custom OpenJTalk dictionary directory (standalone mode)")
-                .long("dict-dir")
-                .value_name("PATH"),
-        );
+;
 
     let matches = app.get_matches();
-
-    if let Some(models_dir) = matches.get_one::<String>("models-dir") {
-        std::env::set_var("VOICEVOX_MODELS_DIR", models_dir);
-    }
-    if let Some(dict_dir) = matches.get_one::<String>("dict-dir") {
-        std::env::set_var("VOICEVOX_DICT_DIR", dict_dir);
-    }
 
 
     if let Some(voice_name) = matches.get_one::<String>("voice") {

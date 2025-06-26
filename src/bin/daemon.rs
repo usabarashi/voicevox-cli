@@ -40,24 +40,6 @@ async fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("models-dir")
-                .help("Specify custom models directory")
-                .long("models-dir")
-                .value_name("PATH"),
-        )
-        .arg(
-            Arg::new("dict-dir")
-                .help("Specify custom OpenJTalk dictionary directory")
-                .long("dict-dir")
-                .value_name("PATH"),
-        )
-        .arg(
-            Arg::new("system-mode")
-                .help("Run as system-wide daemon (multi-user mode)")
-                .long("system-mode")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("start")
                 .help("Start the daemon (default behavior)")
                 .long("start")
@@ -84,22 +66,9 @@ async fn main() -> Result<()> {
     
     let matches = app.get_matches();
     
-    // Override environment variables if provided via CLI
-    if let Some(models_dir) = matches.get_one::<String>("models-dir") {
-        std::env::set_var("VOICEVOX_MODELS_DIR", models_dir);
-    }
-    if let Some(dict_dir) = matches.get_one::<String>("dict-dir") {
-        std::env::set_var("VOICEVOX_DICT_DIR", dict_dir);
-    }
-    
-    let system_mode = matches.get_flag("system-mode");
-    
     // Determine socket path
     let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
         PathBuf::from(custom_path)
-    } else if system_mode {
-        // System-wide socket path for multi-user access
-        PathBuf::from("/var/run/voicevox/daemon.sock")
     } else {
         get_socket_path()
     };
@@ -203,15 +172,9 @@ async fn main() -> Result<()> {
     
     // Display startup banner
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
-    if system_mode {
-        println!("Starting system-wide daemon (multi-user mode)...");
-        println!("Socket: {} (system-wide)", socket_path.display());
-        println!("Mode: All models (shared across users)");
-    } else {
-        println!("Starting user daemon...");
-        println!("Socket: {} (user-specific)", socket_path.display());
-        println!("Mode: All models (user-specific)");
-    }
+    println!("Starting user daemon...");
+    println!("Socket: {} (user-specific)", socket_path.display());
+    println!("Mode: All models (user-specific)");
     
     run_daemon(socket_path, foreground).await
 }

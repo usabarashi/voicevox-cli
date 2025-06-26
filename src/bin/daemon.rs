@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use tokio::net::UnixStream;
 use voicevox_cli::daemon::{check_and_prevent_duplicate, run_daemon};
 use voicevox_cli::paths::get_socket_path;
-extern crate users;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -191,7 +190,7 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
                 .args([
                     "-f",
                     "-u",
-                    &users::get_current_uid().to_string(),
+                    &unsafe { libc::getuid() }.to_string(),
                     "voicevox-daemon",
                 ])
                 .output();
@@ -265,7 +264,7 @@ async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
                 .args([
                     "-f",
                     "-u",
-                    &users::get_current_uid().to_string(),
+                    &unsafe { libc::getuid() }.to_string(),
                     "voicevox-daemon",
                 ])
                 .output();

@@ -23,11 +23,14 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Setup Nix cache
-        uses: cachix/cachix-action@v15
+        uses: actions/cache@v4
         with:
-          name: voicevox-cli
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-          skipPush: true
+          path: |
+            ~/.cache/nix
+            /nix/store
+          key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-
 
       - name: Check Nix flake
         run: nix flake check --show-trace
@@ -76,10 +79,14 @@ jobs:
 
       - name: Setup Nix cache
         if: matrix.method == 'nix'
-        uses: cachix/cachix-action@v15
+        uses: actions/cache@v4
         with:
-          name: voicevox-cli
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          path: |
+            ~/.cache/nix
+            /nix/store
+          key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-
 
       - name: Setup Rust toolchain (Cargo method)
         if: matrix.method == 'cargo'
@@ -164,10 +171,14 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Setup Nix cache
-        uses: cachix/cachix-action@v15
+        uses: actions/cache@v4
         with:
-          name: voicevox-cli
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          path: |
+            ~/.cache/nix
+            /nix/store
+          key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-
 
       - name: Build project
         run: nix build --show-trace

@@ -1,6 +1,6 @@
 # License Information
 
-This project consists of multiple components with different licenses:
+This project consists of multiple components with different licenses.
 
 ## CLI Tool (voicevox-cli)
 
@@ -26,54 +26,23 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## VOICEVOX Core
+## Third-Party Dependencies
 
-MIT License
+This project uses the following external libraries:
 
-Copyright (c) 2021 Hiroshiba Kazuyuki
+### VOICEVOX Core
+- **License**: MIT License
+- **Copyright**: 2021 Hiroshiba Kazuyuki
+- **Details**: https://github.com/VOICEVOX/voicevox_core/blob/main/LICENSE
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+### ONNX Runtime
+- **License**: MIT License
+- **Copyright**: Microsoft Corporation
+- **Details**: https://github.com/microsoft/onnxruntime/blob/main/LICENSE
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-## VOICEVOX ONNX Runtime
-
-Custom License Terms
-
-### Permissions
-
-1. Commercial and non-commercial use is permitted
-2. Can be embedded and redistributed in applications
-3. When using generated audio, follow each voice library's terms
-4. When allowing others to use generated audio, ensure they comply with items 3 and 4
-
-### Prohibitions
-
-- Reverse engineering, decompilation, and publishing such methods
-- Actions causing disadvantage to creators or third parties
-- Actions against public order and morals
-
-### Disclaimer
-
-The creators bear no responsibility for damages or disadvantages caused by this software.
-
-### Attribution Requirement
-
-**Credit to VOICEVOX is required when using this software.**
+### Rust Dependencies
+All Rust crate dependencies use standard open-source licenses (MIT/Apache-2.0).
+See individual crate documentation on [crates.io](https://crates.io) for specific details.
 
 ## Voice Libraries
 
@@ -84,20 +53,7 @@ Each voice character has specific terms of use:
 - **Attribution Required**: "Generated using VOICEVOX" or equivalent credit
 - **Character-Specific Terms**: Follow individual voice library terms
 - **Commercial Use**: Generally permitted with proper attribution
-- **Redistribution**: Generated audio can be used, but software redistribution has restrictions
-
-### Important Notes
-
-1. **Always Credit VOICEVOX**: When using generated audio, visible credit to VOICEVOX is mandatory
-2. **Check Character Terms**: Each voice character may have additional specific requirements
-3. **No Software Redistribution**: Do not redistribute VOICEVOX software itself without permission
-4. **Commercial Use**: Generally allowed for generated audio with proper attribution
-
-## Related Links
-
-- [VOICEVOX Official Terms](https://voicevox.hiroshiba.jp/term)
-- [VOICEVOX Core Repository](https://github.com/VOICEVOX/voicevox_core)
-- [Voice Library Specific Terms](https://voicevox.hiroshiba.jp/library)
+- **Details**: https://voicevox.hiroshiba.jp/term
 
 ## Summary for VOICEVOX CLI Users
 
@@ -107,7 +63,6 @@ Each voice character has specific terms of use:
 2. **Required**: Credit "Generated using VOICEVOX" in your work
 3. **Check**: Individual voice character terms for additional requirements
 4. **Prohibited**: Redistributing VOICEVOX software without permission
-5. **Prohibited**: Reverse engineering or circumventing license terms
 
 **Example Attribution:**
 ```
@@ -115,3 +70,9 @@ Audio generated using VOICEVOX CLI
 Voice: ずんだもん (Zundamon)
 https://voicevox.hiroshiba.jp/
 ```
+
+## Related Links
+
+- [VOICEVOX Official Terms](https://voicevox.hiroshiba.jp/term)
+- [VOICEVOX Core Repository](https://github.com/VOICEVOX/voicevox_core)
+- [Voice Library Specific Terms](https://voicevox.hiroshiba.jp/library)

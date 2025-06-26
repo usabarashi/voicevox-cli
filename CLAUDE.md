@@ -210,7 +210,7 @@ Runtime Download:                             │
 ├─────────────────┤    First-run Setup
 │ • 26+ Characters│    User Downloads
 │ • Zundamon      │    License Acceptance
-│ • Metan, etc.   │    (via voicevox-download)
+│ • Metan, etc.   │    (via voicevox-setup-models)
 │ • ~/.local/...  │
 └─────────────────┘
 
@@ -299,7 +299,7 @@ cargo build --release --features performance           # CompactString + SmallVe
 cargo build --release --features parallel              # Rayon parallelization for model loading
 cargo build --release --features zero_copy            # Zero-copy serialization with serde_zero_copy
 cargo build --release --features simd                 # SIMD optimizations for audio processing
-cargo build --release --features all_performance      # All performance features combined
+cargo build --release --features performance         # All performance features combined
 
 # Features
 cargo build --features dynamic_voicevox               # Dynamic library loading
@@ -433,7 +433,7 @@ sleep 3
 ./target/debug/voicevox-daemon --status
 
 # Performance testing
-cargo build --release --features "all_performance"
+cargo build --release --features "performance"
 time ./target/release/voicevox-daemon --start  # ~1.2s startup with parallel loading
 time ./target/release/voicevox-say "パフォーマンステスト"  # ~50ms synthesis
 
@@ -709,7 +709,6 @@ voicevox-say "初回起動テスト"
 
 # Manual setup
 voicevox-setup-models
-voicevox-download --output ~/.local/share/voicevox
 ```
 
 **Setup Features**:

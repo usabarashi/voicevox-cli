@@ -19,7 +19,7 @@ nix shell github:usabarashi/voicevox-cli
 
 # First usage (interactive setup)
 voicevox-say "こんにちは、ずんだもんなのだ"
-# ↳ Prompts for license acceptance, downloads models, synthesizes speech
+# Prompts for license acceptance, downloads models, synthesizes speech
 
 # Subsequent usage (instant)
 voicevox-say "その後の呼び出しは瞬時なのだ"
@@ -62,15 +62,15 @@ On first use, VOICEVOX CLI will detect missing voice components and offer to dow
 voicevox-say "こんにちは、ずんだもんなのだ"
 
 # You'll see:
-# 🎭 VOICEVOX CLI - First Run Setup
+# VOICEVOX CLI - First Run Setup
 # Voice models and dictionary are required for text-to-speech synthesis.
 #
 # Would you like to download voice models and dictionary now? [Y/n]: y
-# 🔄 Starting voice models and dictionary download...
+# Starting voice models and dictionary download...
 # Note: This will require accepting VOICEVOX license terms.
 #
-# 📦 Target directory: ~/.local/share/voicevox
-# 🔄 Launching VOICEVOX downloader...
+# Target directory: ~/.local/share/voicevox
+# Launching VOICEVOX downloader...
 #    Please follow the on-screen instructions to accept license terms.
 #    Press Enter when ready to continue...
 ```
@@ -94,9 +94,6 @@ If you prefer manual setup or need to reinstall models:
 ```bash
 # Download voice models
 voicevox-setup-models
-
-# Or use the downloader directly
-voicevox-download --output ~/.local/share/voicevox
 ```
 
 ## Usage

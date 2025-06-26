@@ -402,6 +402,8 @@ echo "標準入力からのテキスト" | ./target/release/voicevox-say
 
 ## Testing & Development
 
+### Local Development Testing
+
 ```bash
 # Start development environment
 # Note: With Nix builds, library paths are automatically configured
@@ -440,6 +442,57 @@ cargo build --release --features "performance"  # CompactString + SmallVec
 cargo build --release  # Standard collections
 # Expected: ~15-20% memory reduction with performance features
 ```
+
+### CI Task Runner (Local)
+
+Run the complete CI pipeline locally using Nix:
+
+```bash
+# Run all CI checks (matches GitHub Actions)
+nix run .#ci
+
+# Individual development commands
+nix develop --command cargo fmt        # Format code
+nix develop --command cargo clippy     # Static analysis
+nix develop --command cargo audit      # Security audit
+nix build                              # Build project
+```
+
+**CI Pipeline Components:**
+- **Nix Flake Check**: Validates flake.nix configuration
+- **Rust Toolchain**: Verifies rustc and cargo versions
+- **Code Formatting**: Ensures consistent code style with `cargo fmt`
+- **Static Analysis**: Runs `cargo clippy` with strict warnings
+- **Script Syntax**: Validates shell script syntax
+- **Security Audit**: Checks for known vulnerabilities with `cargo audit`
+
+### GitHub Actions CI
+
+**Workflow Structure:**
+- **Static Analysis**: Code quality and formatting checks
+- **Build & Test**: Multi-method build verification (Nix + Cargo fallback)
+- **Package Verification**: Binary validation and size checks
+- **Security Audit**: Dependency vulnerability scanning
+
+**Key Features:**
+- **Security-First**: All GitHub Actions pinned with SHA hashes
+- **Matrix Strategy**: Primary Nix builds with Cargo fallback
+- **Apple Silicon**: Native aarch64-apple-darwin support
+- **Efficient Caching**: Nix store and cargo cache optimization
+
+**Security Hardening:**
+```yaml
+# Version pinning with SHA hashes for supply chain security
+uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+uses: cachix/install-nix-action@ba6de5b2e1c5dd618c98a4e8c1689b26a1b5bee4 # v27
+uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+```
+
+**CI Environment Considerations:**
+- **No Daemon Testing**: GitHub Actions runners don't support VOICEVOX models
+- **Compilation Focus**: Validates build process and static analysis only
+- **Package Verification**: Confirms binary generation and static linking
+- **Timeout Handling**: No timeout commands used (macOS runner limitations)
 
 ## Rust Patterns
 

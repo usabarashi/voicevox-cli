@@ -86,7 +86,7 @@ async fn standalone_mode(
 
     if let Err(e) = core.load_all_models_no_download() {
         eprintln!("Error: Failed to load models: {}", e);
-        eprintln!("Please start voicevox-daemon to download VOICEVOX Core system automatically");
+        eprintln!("Please start voicevox-daemon to download voice models automatically");
         return Err(e);
     }
 
@@ -110,7 +110,7 @@ async fn standalone_mode(
 async fn main() -> Result<()> {
     let app = Command::new("voicevox-say")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("🫛 VOICEVOX Say - Convert text to audible speech using VOICEVOX")
+        .about("VOICEVOX Say - Convert text to audible speech using VOICEVOX")
         .arg(
             Arg::new("text")
                 .help("Specify the text to speak on the command line")
@@ -177,7 +177,7 @@ async fn main() -> Result<()> {
         )
         .arg(
             Arg::new("model")
-                .help("Specify voice model by VVM file number (e.g., --model 3 for 3.vvm)")
+                .help("Specify voice model by file number (e.g., --model 3 for 3.vvm)")
                 .long("model")
                 .short('m')
                 .value_name("MODEL_ID")
@@ -186,7 +186,7 @@ async fn main() -> Result<()> {
         )
         .arg(
             Arg::new("list-models")
-                .help("List all available VVM models and exit")
+                .help("List all available voice models and exit")
                 .long("list-models")
                 .action(clap::ArgAction::SetTrue),
         )
@@ -204,8 +204,9 @@ async fn main() -> Result<()> {
         )
         .arg(
             Arg::new("socket-path")
-                .help("Specify custom daemon socket path")
+                .help("Specify custom Unix socket path")
                 .long("socket-path")
+                .short('s')
                 .value_name("PATH"),
         );
 
@@ -218,15 +219,15 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("list-models") {
-        println!("Scanning for available VVM models...");
+        println!("Scanning for available voice models...");
         match scan_available_models() {
             Ok(models) => {
                 if models.is_empty() {
                     println!(
-                        "No VVM models found. Please download VOICEVOX Core system first with voicevox-daemon."
+                        "No voice models found. Please start voicevox-daemon to download voice models automatically."
                     );
                 } else {
-                    println!("Available VVM models:");
+                    println!("Available voice models:");
                     for model in &models {
                         println!("  Model {} ({})", model.model_id, model.file_path.display());
                         println!(
@@ -250,14 +251,14 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("status") {
-        println!("📊 VOICEVOX CLI Installation Status");
+        println!("VOICEVOX CLI Installation Status");
         println!("=====================================");
 
         println!("Application: v{}", env!("CARGO_PKG_VERSION"));
 
         match scan_available_models() {
             Ok(current_models) => {
-                println!("Voice Models: {} VVM files installed", current_models.len());
+                println!("Voice Models: {} files installed", current_models.len());
                 for model in &current_models {
                     if let Ok(metadata) = std::fs::metadata(&model.file_path) {
                         let size_kb = metadata.len() / 1024;
@@ -310,7 +311,7 @@ async fn main() -> Result<()> {
 
         if let Err(e) = core.load_all_models_no_download() {
             println!("Warning: Failed to load some models: {}", e);
-            println!("Please start voicevox-daemon to download VOICEVOX Core system automatically");
+            eprintln!("Please start voicevox-daemon to download voice models automatically");
         }
 
         println!("All available speakers and styles from loaded models:");

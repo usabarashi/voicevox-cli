@@ -157,82 +157,11 @@ User Command: voicevox-say "Hello"
 
 ### Static Linking Architecture
 
-**Integration**: Static linking priority with Nix builds:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 Static Linking Priority Architecture            │
-└─────────────────────────────────────────────────────────────────┘
-
-Build Time (Nix):                    Runtime:
-┌─────────────────┐                   ┌─────────────────┐
-│  flake.nix      │                   │ voicevox-daemon │
-│  Configuration  │                   │ voicevox-say    │
-└─────────────────┘                   └─────────────────┘
-         │                                    │
-         ▼                                    │
-┌─────────────────┐                           │
-│ Static Linking  │                           │
-│ Process         │                           │
-├─────────────────┤                           │
-│ ✓ VOICEVOX Core │──────────────────────────►│
-│ ✓ ONNX Runtime  │  Embedded at Build Time   │
-│ ✓ OpenJTalk     │                           │
-│ ✓ Rust API      │                           │
-└─────────────────┘                           │
-         │                                    │
-         ▼                                    │
-┌─────────────────┐                           │
-│ Binary Package  │                           │
-│ Package (~54MB) │                           │
-└─────────────────┘                           │
-                                              │
-Runtime Download:                             │
-┌─────────────────┐                           │
-│ Voice Models    │                           │
-│ (VVM Files)     │◄──────────────────────────┘
-├─────────────────┤    First-run Setup
-│ • 26+ Characters│    User Downloads
-│ • Zundamon      │    License Acceptance
-│ • Metan, etc.   │    (via voicevox-setup-models)
-│ • ~/.local/...  │
-└─────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                    Library Dependency Comparison                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│ Traditional Approach:          Static Linking Approach:         │
-│                                                                 │
-│ ┌─────────────────┐            ┌─────────────────┐              │
-│ │ voicevox-say    │            │ voicevox-say    │              │
-│ │ (Small binary)  │            │ (All embedded)  │              │
-│ └─────────────────┘            └─────────────────┘              │
-│          │                               │                      │
-│          ▼                               ▼                      │
-│ ┌─────────────────┐            ┌─────────────────┐              │
-│ │ Runtime Loading │            │ Instant Ready   │              │
-│ │ • DYLD_LIB_PATH │            │ • No setup      │              │
-│ │ • Library deps  │            │ • Pre-linked    │              │
-│ │ • Setup needed  │            │ • Zero config   │              │
-│ └─────────────────┘            └─────────────────┘              │
-│          │                                                      │
-│          ▼                                                      │
-│ ┌─────────────────┐                                             │
-│ │ External Libs   │                                             │
-│ │ • Download req  │                                             │
-│ │ • Path config   │                                             │
-│ │ • Version deps  │                                             │
-│ └─────────────────┘                                             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Static Linking Components**:
-- **VOICEVOX Core**: Official Rust crate with statically linked `libvoicevox_core.dylib`
-- **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib` with compatibility symlinks
-- **OpenJTalk Dictionary**: Build-time embedded dictionary via `env!()` macro (no runtime environment variables)
-- **Voice Models Only**: Runtime downloads limited to VVM files (~200MB, 26+ characters)
-- **Package Size**: ~54MB total package size
+**Components**:
+- **VOICEVOX Core**: Statically linked `libvoicevox_core.dylib`
+- **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib`
+- **OpenJTalk Dictionary**: Build-time embedded via `env!()` macro
+- **Package**: ~54MB total with 26+ voice models available for download
 
 ## Build Commands
 
@@ -259,11 +188,6 @@ ls -la result/bin/
 ./result/bin/voicevox-say --list-speakers
 ```
 
-**Nix Build Features:**
-- **Static Linking**: Core libraries embedded at build time
-- **Lightweight**: ~54MB total package size
-- **No Runtime Setup**: Libraries pre-configured
-- **Path Configuration**: DYLD_LIBRARY_PATH configured automatically
 
 ### Cargo (Production Ready)
 ```bash
@@ -278,19 +202,9 @@ cargo build --release --bin voicevox-say      # Primary CLI (client)
 # Development build
 cargo build --bin voicevox-daemon --bin voicevox-say
 
-# Performance features (production optimization)
-cargo build --release --features performance           # CompactString + SmallVec optimizations
-cargo build --release --features parallel              # Rayon parallelization for model loading
-cargo build --release --features zero_copy            # Zero-copy serialization with serde_zero_copy
-cargo build --release --features simd                 # SIMD optimizations for audio processing
-cargo build --release --features performance         # All performance features combined
-
-# Features
-cargo build --features dynamic_voicevox               # Dynamic library loading
-cargo build --features use_bindgen                    # Generate FFI bindings
-
-# Feature combinations
-cargo build --release --features "performance,parallel,zero_copy"  # Performance profile
+# Performance features
+cargo build --release --features performance  # All optimizations combined
+cargo build --release --features "performance,parallel,zero_copy"  # Custom profile
 ```
 
 ## Production Usage
@@ -346,75 +260,26 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start
 echo "標準入力からのテキスト" | ./target/release/voicevox-say
 ```
 
-## Voice Discovery (Dynamic Detection)
+## Voice Discovery
 
-### Dynamic Voice Management
 ```bash
-# Discover available models
+# List available models and speakers
 ./target/release/voicevox-say --list-models
-
-# Example output:
-# Available VVM models:
-#   Model 0 (/path/to/0.vvm)
-#   Model 3 (/path/to/3.vvm)
-#   Model 16 (/path/to/16.vvm)
-
-# Get detailed speaker information
 ./target/release/voicevox-say --list-speakers
-
-# Use model by ID
-./target/release/voicevox-say --model 3 "Text"
-
-# Use specific speaker style ID
-./target/release/voicevox-say --speaker-id 3 "Text"
-
-# Check installation status of voice models and dictionary
 ./target/release/voicevox-say --status
 ```
 
-### Voice Selection Methods
-```bash
-# Method 1: Direct speaker ID (most precise)
---speaker-id 3   # Use exact style ID from --list-speakers output
-
-# Method 2: Model selection (uses first available style)
---model 3        # Load 3.vvm model and use default style
-
-# Method 3: Dynamic name resolution (if speaker metadata available)
-# This requires VOICEVOX Core integration and loaded models
-```
 
 ## Testing & Development
 
-### Local Development Testing
-
 ```bash
-# Start development environment
-# Note: With Nix builds, library paths are automatically configured
-# For Cargo builds:
+# For Cargo builds, set library path:
 export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
 
 # Test daemon-client workflow
 ./target/debug/voicevox-daemon --foreground &
-sleep 3
 ./target/debug/voicevox-say "動作テストなのだ"
 ./target/debug/voicevox-daemon --stop
-
-# Test various voices dynamically
-./target/debug/voicevox-say --speaker-id 3 "スピーカーID 3のテスト"
-./target/debug/voicevox-say --model 3 "モデル3のテスト"
-./target/debug/voicevox-say --model 16 "モデル16のテスト"
-
-# Test file output
-./target/debug/voicevox-say "ファイル出力テスト" -o test.wav
-
-# Test information commands
-./target/debug/voicevox-say --list-speakers
-./target/debug/voicevox-say --list-models
-./target/debug/voicevox-say --status
-
-# Test daemon management
-./target/debug/voicevox-daemon --status
 
 # Performance testing
 cargo build --release --features "performance"
@@ -442,26 +307,7 @@ nix develop --command cargo audit      # Security audit
 nix build                              # Build project
 ```
 
-**CI Pipeline Components:**
-- **Nix Flake Check**: Validates flake.nix configuration
-- **Rust Toolchain**: Verifies rustc and cargo versions
-- **Code Formatting**: Ensures consistent code style with `cargo fmt`
-- **Static Analysis**: Runs `cargo clippy` with strict warnings
-- **Script Syntax**: Validates shell script syntax
-- **Security Audit**: Checks for known vulnerabilities with `cargo audit`
-
 ### GitHub Actions CI
 
-**Workflow Structure (.github/workflows/ci.yml):**
-
-**Jobs:**
-1. **Static Analysis**: Nix flake check, Rust formatting (cargo fmt), static analysis (clippy), script syntax validation
-2. **Build & Test**: Matrix strategy with Nix build (primary) and Cargo compilation check (fallback)
-3. **Package Verification**: Binary validation, static linking verification, package size checks
-4. **Security Audit**: Dependency vulnerability scanning (cargo audit), license compliance
-
-**Key Features:**
-- **Matrix Strategy**: Primary Nix builds with Cargo fallback for aarch64-apple-darwin
-- **Security-First**: SHA-pinned actions and modern toolchain (dtolnay/rust-toolchain)
-- **Efficient Caching**: Nix store caching with actions/cache@v4
-- **Compilation Focus**: No daemon testing in CI environment (VOICEVOX models unavailable)
+**Pipeline**: Static analysis, Nix build, package verification, security audit
+**Features**: SHA-pinned actions, matrix strategy (Nix primary, Cargo fallback), efficient caching

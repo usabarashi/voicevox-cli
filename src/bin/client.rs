@@ -9,8 +9,8 @@ use clap::{Arg, Command};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use voicevox_cli::client::*;
 use voicevox_cli::client::daemon_client::start_daemon_with_confirmation;
+use voicevox_cli::client::*;
 use voicevox_cli::core::VoicevoxCore;
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
@@ -207,11 +207,9 @@ async fn main() -> Result<()> {
                 .help("Specify custom daemon socket path")
                 .long("socket-path")
                 .value_name("PATH"),
-        )
-;
+        );
 
     let matches = app.get_matches();
-
 
     if let Some(voice_name) = matches.get_one::<String>("voice") {
         if voice_name == "?" {
@@ -251,7 +249,6 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-
     if matches.get_flag("status") {
         println!("📊 VOICEVOX CLI Installation Status");
         println!("=====================================");
@@ -275,11 +272,7 @@ async fn main() -> Result<()> {
                             size_kb
                         );
                     } else {
-                        println!(
-                            "  Model {} ({})",
-                            model.model_id,
-                            model.file_path.display()
-                        );
+                        println!("  Model {} ({})", model.model_id, model.file_path.display());
                     }
                 }
 
@@ -293,7 +286,6 @@ async fn main() -> Result<()> {
                         println!("  Install with: voicevox-setup-models");
                     }
                 }
-
             }
             Err(e) => {
                 eprintln!("Error scanning models: {}", e);
@@ -301,7 +293,6 @@ async fn main() -> Result<()> {
         }
         return Ok(());
     }
-
 
     if matches.get_flag("list-speakers") {
         let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
@@ -359,10 +350,10 @@ async fn main() -> Result<()> {
         return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {}", rate));
     }
 
-    let options = OwnedSynthesizeOptions { 
-        rate, 
+    let options = OwnedSynthesizeOptions {
+        rate,
         streaming,
-        context: None 
+        context: None,
     };
 
     if !force_standalone {

@@ -8,9 +8,9 @@ use anyhow::Result;
 use clap::{Arg, Command};
 use std::path::PathBuf;
 
+use tokio::net::UnixStream;
 use voicevox_cli::daemon::{check_and_prevent_duplicate, run_daemon};
 use voicevox_cli::paths::get_socket_path;
-use tokio::net::UnixStream;
 extern crate users;
 
 #[tokio::main]
@@ -63,39 +63,39 @@ async fn main() -> Result<()> {
                 .long("restart")
                 .action(clap::ArgAction::SetTrue),
         );
-    
+
     let matches = app.get_matches();
-    
+
     // Determine socket path
     let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
         PathBuf::from(custom_path)
     } else {
         get_socket_path()
     };
-    
+
     let foreground = matches.get_flag("foreground");
     let detach = matches.get_flag("detach");
     let start = matches.get_flag("start");
     let stop = matches.get_flag("stop");
     let status = matches.get_flag("status");
     let restart = matches.get_flag("restart");
-    
+
     // Handle daemon operations
     if stop {
         return handle_stop_daemon(&socket_path).await;
     }
-    
+
     if status {
         return handle_status_daemon(&socket_path).await;
     }
-    
+
     if restart {
         println!("🔄 Restarting daemon...");
         let _ = handle_stop_daemon(&socket_path).await; // Ignore errors if not running
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         // Continue to start logic below
     }
-    
+
     // Default behavior is start (if no operation specified or explicit --start)
     if !start && !restart {
         // If no operation flags are specified, show help for daemon operations
@@ -113,19 +113,19 @@ async fn main() -> Result<()> {
             return Ok(());
         }
     }
-    
+
     // Handle detach mode - fork process and exit parent
     if detach && !foreground {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
-        
+
         println!("Starting daemon in detached mode...");
-        
+
         // Prepare args for child process (without --detach)
         let mut args: Vec<String> = std::env::args().collect();
         args.retain(|arg| arg != "--detach" && arg != "-d");
         args.push("--foreground".to_string()); // Child runs in foreground
-        
+
         // Spawn detached child process
         let child = Command::new(&args[0])
             .args(&args[1..])
@@ -134,12 +134,12 @@ async fn main() -> Result<()> {
             .stderr(Stdio::null())
             .process_group(0) // Create new process group
             .spawn();
-            
+
         match child {
             Ok(mut child) => {
                 // Give child time to start
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                
+
                 // Check if child is still running
                 match child.try_wait() {
                     Ok(None) => {
@@ -163,58 +163,64 @@ async fn main() -> Result<()> {
             }
         }
     }
-    
+
     // Check for existing daemon process
     if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
         eprintln!("{}", e);
         std::process::exit(1);
     }
-    
+
     // Display startup banner
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
     println!("Starting user daemon...");
     println!("Socket: {} (user-specific)", socket_path.display());
     println!("Mode: All models (user-specific)");
-    
+
     run_daemon(socket_path, foreground).await
 }
 
 /// Handle daemon stop operation
 async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
     println!("🛑 Stopping VOICEVOX daemon...");
-    
+
     // Check if daemon is running
     match UnixStream::connect(socket_path).await {
         Ok(_) => {
             // Daemon is running, find and stop it
             let output = std::process::Command::new("pgrep")
-                .args(["-f", "-u", &users::get_current_uid().to_string(), "voicevox-daemon"])
+                .args([
+                    "-f",
+                    "-u",
+                    &users::get_current_uid().to_string(),
+                    "voicevox-daemon",
+                ])
                 .output();
-            
+
             match output {
                 Ok(output) if output.status.success() => {
                     let pids = String::from_utf8_lossy(&output.stdout);
                     let pids: Vec<&str> = pids.trim().lines().collect();
-                    
+
                     if pids.is_empty() {
                         println!("❌ No daemon process found");
                         return Ok(());
                     }
-                    
+
                     for pid in pids {
                         if let Ok(pid_num) = pid.parse::<u32>() {
                             let kill_result = std::process::Command::new("kill")
                                 .arg("-TERM")
                                 .arg(pid)
                                 .status();
-                                
+
                             match kill_result {
                                 Ok(status) if status.success() => {
                                     println!("✅ Daemon stopped (PID: {})", pid_num);
-                                    
+
                                     // Wait a moment then verify
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-                                    
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(1000))
+                                        .await;
+
                                     match UnixStream::connect(socket_path).await {
                                         Err(_) => println!("✅ Socket cleanup confirmed"),
                                         Ok(_) => println!("⚠️  Daemon may still be running"),
@@ -239,7 +245,7 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
             println!("   Socket: {}", socket_path.display());
         }
     }
-    
+
     Ok(())
 }
 
@@ -247,32 +253,37 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
 async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
     println!("📊 VOICEVOX Daemon Status");
     println!("========================");
-    
+
     // Check socket connectivity
     match UnixStream::connect(socket_path).await {
         Ok(_) => {
             println!("Status: ✅ Running and responsive");
             println!("Socket: {}", socket_path.display());
-            
+
             // Additional process information
             let output = std::process::Command::new("pgrep")
-                .args(["-f", "-u", &users::get_current_uid().to_string(), "voicevox-daemon"])
+                .args([
+                    "-f",
+                    "-u",
+                    &users::get_current_uid().to_string(),
+                    "voicevox-daemon",
+                ])
                 .output();
-                
+
             if let Ok(output) = output {
                 if output.status.success() {
                     let pids = String::from_utf8_lossy(&output.stdout);
                     let pids: Vec<&str> = pids.trim().lines().collect();
-                    
+
                     for pid in pids {
                         if let Ok(pid_num) = pid.parse::<u32>() {
                             println!("Process ID: {}", pid_num);
-                            
+
                             // Get memory usage if possible
                             let ps_output = std::process::Command::new("ps")
                                 .args(["-p", pid, "-o", "rss,pmem,time"])
                                 .output();
-                                
+
                             if let Ok(ps_output) = ps_output {
                                 if ps_output.status.success() {
                                     let info = String::from_utf8_lossy(&ps_output.stdout);
@@ -292,6 +303,6 @@ async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
             println!("Socket: {}", socket_path.display());
         }
     }
-    
+
     Ok(())
 }

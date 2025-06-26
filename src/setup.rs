@@ -13,7 +13,10 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
         .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
         .unwrap_or_else(|| PathBuf::from("./models"));
 
-    println!("📦 Installing models to: {} (user-specific)", target_dir.display());
+    println!(
+        "📦 Installing models to: {} (user-specific)",
+        target_dir.display()
+    );
     println!("   No sudo privileges required");
 
     // Try automatic setup with voicevox-auto-setup
@@ -22,7 +25,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
             let auto_setup = pkg_root.join("bin/voicevox-auto-setup");
             if auto_setup.exists() {
                 println!("🔄 Running automatic setup...");
-                
+
                 let status = std::process::Command::new(&auto_setup)
                     .arg(&target_dir)
                     .status();
@@ -33,7 +36,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
                         if is_valid_models_directory(&target_dir) {
                             return Ok(target_dir);
                         }
-                        
+
                         // Search subdirectories for VVM files
                         if let Ok(entries) = std::fs::read_dir(&target_dir) {
                             for entry in entries.filter_map(|e| e.ok()) {
@@ -60,7 +63,10 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
     // Fallback to manual instructions
     println!("");
     println!("📋 Manual Setup Required:");
-    println!("1. Run: voicevox-download --output {}", target_dir.display());
+    println!(
+        "1. Run: voicevox-download --output {}",
+        target_dir.display()
+    );
     println!("2. Accept the VOICEVOX license terms");
     println!("3. Try running voicevox-say again");
     println!("");
@@ -80,14 +86,14 @@ pub fn is_valid_models_directory(path: &PathBuf) -> bool {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.filter_map(|e| e.ok()) {
                 let entry_path = entry.path();
-                
+
                 // Check if it's a .vvm file
                 if let Some(file_name) = entry.file_name().to_str() {
                     if file_name.ends_with(".vvm") {
                         return true;
                     }
                 }
-                
+
                 // If it's a directory, search recursively
                 if entry_path.is_dir() {
                     if find_vvm_files_recursive(&entry_path) {
@@ -98,6 +104,6 @@ pub fn is_valid_models_directory(path: &PathBuf) -> bool {
         }
         false
     }
-    
+
     find_vvm_files_recursive(path)
 }

@@ -10,10 +10,15 @@ use crate::voice::Speaker;
 
 pub trait CoreSynthesis {
     type Error;
-    type Output<'a>: AsRef<[u8]> where Self: 'a;
-    type SpeakerData<'a>: AsRef<[Speaker]> where Self: 'a;
-    
-    fn synthesize<'a>(&'a self, text: &str, style_id: u32) -> Result<Self::Output<'a>, Self::Error>;
+    type Output<'a>: AsRef<[u8]>
+    where
+        Self: 'a;
+    type SpeakerData<'a>: AsRef<[Speaker]>
+    where
+        Self: 'a;
+
+    fn synthesize<'a>(&'a self, text: &str, style_id: u32)
+        -> Result<Self::Output<'a>, Self::Error>;
     fn get_speakers<'a>(&'a self) -> Result<Self::SpeakerData<'a>, Self::Error>;
 }
 
@@ -24,15 +29,15 @@ impl<const CPU_THREADS: usize, const BUFFER_SIZE: usize> CoreConfig<CPU_THREADS,
     pub const fn new() -> Self {
         Self
     }
-    
+
     pub const fn cpu_threads() -> usize {
         if CPU_THREADS == 0 {
-            0  // Auto-detect at runtime
+            0 // Auto-detect at runtime
         } else {
             CPU_THREADS
         }
     }
-    
+
     pub const fn buffer_size() -> usize {
         BUFFER_SIZE
     }
@@ -45,20 +50,20 @@ pub struct VoicevoxCore<Config = CoreConfig<0, 8192>> {
     config: Config,
 }
 
-impl<Config> VoicevoxCore<Config> 
-where 
+impl<Config> VoicevoxCore<Config>
+where
     Config: Clone + Send + Sync,
 {
     /// Creates a new VoicevoxCore instance with CPU-only acceleration
     pub fn with_config(config: Config) -> Result<Self> {
         let onnxruntime = Onnxruntime::init_once()
             .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {}", e))?;
-        
+
         let dict_path = find_openjtalk_dict()?;
-        
+
         let open_jtalk = OpenJtalk::new(dict_path)
             .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {}", e))?;
-        
+
         let synthesizer = Synthesizer::builder(&onnxruntime)
             .text_analyzer(open_jtalk)
             .acceleration_mode(AccelerationMode::Cpu)
@@ -66,7 +71,10 @@ where
             .build()
             .map_err(|e| anyhow!("Failed to create synthesizer: {}", e))?;
 
-        Ok(VoicevoxCore { synthesizer, config })
+        Ok(VoicevoxCore {
+            synthesizer,
+            config,
+        })
     }
 }
 
@@ -76,23 +84,33 @@ impl VoicevoxCore<CoreConfig<0, 8192>> {
     }
 }
 
-impl<Config> CoreSynthesis for VoicevoxCore<Config> 
-where 
+impl<Config> CoreSynthesis for VoicevoxCore<Config>
+where
     Config: Clone + Send + Sync,
 {
     type Error = anyhow::Error;
-    type Output<'a> = Vec<u8> where Self: 'a;
-    type SpeakerData<'a> = Vec<Speaker> where Self: 'a;
-    
-    fn synthesize<'a>(&'a self, text: &str, style_id: u32) -> Result<Self::Output<'a>, Self::Error> {
+    type Output<'a>
+        = Vec<u8>
+    where
+        Self: 'a;
+    type SpeakerData<'a>
+        = Vec<Speaker>
+    where
+        Self: 'a;
+
+    fn synthesize<'a>(
+        &'a self,
+        text: &str,
+        style_id: u32,
+    ) -> Result<Self::Output<'a>, Self::Error> {
         use voicevox_core::StyleId;
-        
+
         self.synthesizer
             .tts(text, StyleId::new(style_id))
             .perform()
             .map_err(|e| anyhow!("Speech synthesis failed: {}", e))
     }
-    
+
     fn get_speakers<'a>(&'a self) -> Result<Self::SpeakerData<'a>, Self::Error> {
         let speakers = self
             .synthesizer
@@ -133,8 +151,8 @@ where
     }
 }
 
-impl<Config> VoicevoxCore<Config> 
-where 
+impl<Config> VoicevoxCore<Config>
+where
     Config: Clone + Send + Sync,
 {
     /// Load all available VVM models, may trigger first-run setup
@@ -148,10 +166,10 @@ where
         let models_dir = find_models_dir_client()?;
         self.load_vvm_files_recursive(&models_dir)
     }
-    
+
     fn load_vvm_files_recursive(&self, dir: &PathBuf) -> Result<()> {
         let entries = std::fs::read_dir(dir)?;
-        
+
         let loaded_count = entries
             .filter_map(Result::ok)
             .map(|entry| entry.path())
@@ -162,7 +180,7 @@ where
             .then_some(())
             .ok_or_else(|| anyhow!("Failed to load any models"))
     }
-    
+
     fn process_entry_path(&self, path: &PathBuf) -> Result<u32> {
         match path {
             p if p.is_file() => self.try_load_vvm_file(p),
@@ -170,7 +188,7 @@ where
             _ => Ok(0),
         }
     }
-    
+
     fn count_loaded_models_in_dir(&self, dir: &PathBuf) -> Result<u32> {
         std::fs::read_dir(dir)
             .map_err(|e| anyhow!("Failed to read directory {}: {}", dir.display(), e))?
@@ -179,24 +197,25 @@ where
             .collect::<Result<Vec<_>>>()
             .map(|counts| counts.into_iter().sum())
     }
-    
+
     fn try_load_vvm_file(&self, file_path: &PathBuf) -> Result<u32> {
         file_path
             .file_name()
             .and_then(|f| f.to_str())
             .filter(|name| name.ends_with(".vvm"))
             .ok_or_else(|| anyhow!("Invalid VVM file path: {}", file_path.display()))?;
-            
+
         VoiceModelFile::open(file_path)
             .map_err(|e| anyhow!("Failed to open VVM file {}: {}", file_path.display(), e))
             .and_then(|model| {
                 self.synthesizer
                     .load_voice_model(&model)
-                    .map_err(|e| anyhow!("Failed to load voice model {}: {}", file_path.display(), e))
+                    .map_err(|e| {
+                        anyhow!("Failed to load voice model {}: {}", file_path.display(), e)
+                    })
                     .map(|_| 1)
             })
     }
-
 
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
         let models_dir = find_models_dir_client()?;
@@ -220,11 +239,11 @@ where
     /// Synthesize Japanese text to speech using the specified voice style
     pub fn synthesize(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
         use voicevox_core::StyleId;
-        
+
         if text.trim().is_empty() {
             return Err(anyhow!("Empty text provided for synthesis"));
         }
-        
+
         self.synthesizer
             .tts(text, StyleId::new(style_id))
             .perform()
@@ -252,7 +271,7 @@ where
                         style_type: Some(format!("{:?}", style.r#type)),
                     })
                     .collect();
-                    
+
                 Speaker {
                     #[cfg(feature = "compact_str")]
                     name: meta.name.clone().into(),

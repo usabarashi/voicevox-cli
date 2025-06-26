@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use futures_util::{SinkExt, StreamExt};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
@@ -6,7 +7,6 @@ use std::time::Duration;
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
-use futures_util::{SinkExt, StreamExt};
 
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
@@ -21,17 +21,22 @@ fn find_daemon_binary() -> PathBuf {
             return daemon_path;
         }
     }
-    
+
     // Try fallback paths
     let fallbacks = vec![
         PathBuf::from("./target/debug/voicevox-daemon"),
         PathBuf::from("./target/release/voicevox-daemon"),
         PathBuf::from("voicevox-daemon"), // In PATH
     ];
-    
+
     fallbacks
         .into_iter()
-        .find(|p| p.exists() || p.file_name().map(|f| f == "voicevox-daemon").unwrap_or(false))
+        .find(|p| {
+            p.exists()
+                || p.file_name()
+                    .map(|f| f == "voicevox-daemon")
+                    .unwrap_or(false)
+        })
         .unwrap_or_else(|| PathBuf::from("voicevox-daemon"))
 }
 
@@ -50,44 +55,43 @@ pub async fn daemon_mode(
         .await
         .map_err(|_| anyhow!("Daemon connection timeout"))?
         .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
-    
+
     let (reader, writer) = stream.into_split();
     let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
     let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
-    
+
     // Send synthesis request
     let request = OwnedRequest::Synthesize {
         text: Cow::Owned(text.to_string()),
         style_id,
         options,
     };
-    
-    let request_data = bincode::serialize(&request)
-        .map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
-    
+
+    let request_data =
+        bincode::serialize(&request).map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
+
     framed_writer
         .send(request_data.into())
         .await
         .map_err(|e| anyhow!("Failed to send request: {}", e))?;
-    
+
     // Receive response
     let response_frame = timeout(Duration::from_secs(30), framed_reader.next())
         .await
         .map_err(|_| anyhow!("Daemon response timeout"))?
         .ok_or_else(|| anyhow!("Connection closed by daemon"))?
         .map_err(|e| anyhow!("Failed to receive response: {}", e))?;
-    
+
     let response: OwnedResponse = bincode::deserialize(&response_frame)
         .map_err(|e| anyhow!("Failed to deserialize response: {}", e))?;
-    
+
     match response {
         OwnedResponse::SynthesizeResult { wav_data } => {
-            
             // Handle output
             if let Some(output_file) = output_file {
                 std::fs::write(output_file, &wav_data)?;
             }
-            
+
             // Play audio if not quiet and no output file (like macOS say command)
             if !quiet && output_file.is_none() {
                 if let Err(e) = crate::client::audio::play_audio_from_memory(&wav_data) {
@@ -95,7 +99,7 @@ pub async fn daemon_mode(
                     return Err(e);
                 }
             }
-            
+
             Ok(())
         }
         OwnedResponse::Error { message } => Err(anyhow!("Daemon error: {}", message)),
@@ -109,17 +113,17 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     let (reader, writer) = stream.into_split();
     let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
     let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
-    
+
     // Send list speakers request
     let request = DaemonRequest::ListSpeakers;
     let request_data = bincode::serialize(&request)?;
     framed_writer.send(request_data.into()).await?;
-    
+
     // Receive response
     if let Some(response_frame) = framed_reader.next().await {
         let response_frame = response_frame?;
         let response: OwnedResponse = bincode::deserialize(&response_frame)?;
-        
+
         match response {
             OwnedResponse::SpeakersList { speakers } => {
                 println!("All available speakers and styles from daemon:");
@@ -143,14 +147,14 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
             }
         }
     }
-    
+
     Err(anyhow!("Failed to get speakers from daemon"))
 }
 
 // Start daemon process if not already running (with user confirmation)
 pub async fn start_daemon_with_confirmation() -> Result<()> {
     let socket_path = get_socket_path();
-    
+
     // Check if daemon is already running
     match UnixStream::connect(&socket_path).await {
         Ok(_) => {
@@ -161,26 +165,30 @@ pub async fn start_daemon_with_confirmation() -> Result<()> {
             // Daemon not running, ask user for confirmation
         }
     }
-    
-    print!("VOICEVOX daemon is not running.
-Would you like to start the daemon automatically? [Y/n]: ");
+
+    print!(
+        "VOICEVOX daemon is not running.
+Would you like to start the daemon automatically? [Y/n]: "
+    );
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
-    
+
     if input.is_empty() || input == "y" || input == "yes" {
         start_daemon_automatically().await
     } else {
-        Err(anyhow!("Daemon startup declined by user. Use 'voicevox-daemon --start' to start manually."))
+        Err(anyhow!(
+            "Daemon startup declined by user. Use 'voicevox-daemon --start' to start manually."
+        ))
     }
 }
 
-// Start daemon process if not already running (automatic, no confirmation)  
+// Start daemon process if not already running (automatic, no confirmation)
 pub async fn start_daemon_if_needed() -> Result<()> {
     let socket_path = get_socket_path();
-    
+
     // Check if daemon is already running
     match UnixStream::connect(&socket_path).await {
         Ok(_) => {
@@ -191,7 +199,7 @@ pub async fn start_daemon_if_needed() -> Result<()> {
             // Daemon not running, try to start it
         }
     }
-    
+
     start_daemon_automatically().await
 }
 
@@ -199,20 +207,20 @@ pub async fn start_daemon_if_needed() -> Result<()> {
 async fn start_daemon_automatically() -> Result<()> {
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary();
-    
+
     println!("🔄 Starting VOICEVOX daemon automatically...");
-    
+
     // Start daemon with --start --detach for background operation
     let output = ProcessCommand::new(&daemon_path)
         .args(["--start", "--detach"])
         .output();
-    
+
     match output {
         Ok(output) => {
             if output.status.success() {
                 // Give daemon time to start
                 tokio::time::sleep(Duration::from_millis(2000)).await;
-                
+
                 // Verify daemon is running
                 match UnixStream::connect(&socket_path).await {
                     Ok(_) => {

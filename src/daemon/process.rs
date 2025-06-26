@@ -29,7 +29,7 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
     match process::Command::new("pgrep")
         .arg("-x")
         .arg("-u")
-        .arg(&format!("{}", unsafe { libc::getuid() }))
+        .arg(format!("{}", unsafe { libc::getuid() }))
         .arg("voicevox-daemon")
         .output()
     {

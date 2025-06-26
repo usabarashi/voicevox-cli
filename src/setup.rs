@@ -5,7 +5,7 @@ use std::path::PathBuf;
 pub fn attempt_first_run_setup() -> Result<PathBuf> {
     println!("🎭 VOICEVOX CLI - User Setup");
     println!("Setting up voice models for current user...");
-    println!("");
+    println!();
 
     // Primary target: user directory for user-specific setup
     let target_dir = std::env::var("HOME")
@@ -61,7 +61,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
     }
 
     // Fallback to manual instructions
-    println!("");
+    println!();
     println!("📋 Manual Setup Required:");
     println!(
         "1. Run: voicevox-download --output {}",
@@ -69,7 +69,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
     );
     println!("2. Accept the VOICEVOX license terms");
     println!("3. Try running voicevox-say again");
-    println!("");
+    println!();
     println!("License Summary:");
     println!("- VOICEVOX voice models are free for commercial/non-commercial use");
     println!("- Credit required: 'VOICEVOX:[Character Name]' in generated audio");
@@ -95,10 +95,8 @@ pub fn is_valid_models_directory(path: &PathBuf) -> bool {
                 }
 
                 // If it's a directory, search recursively
-                if entry_path.is_dir() {
-                    if find_vvm_files_recursive(&entry_path) {
-                        return true;
-                    }
+                if entry_path.is_dir() && find_vvm_files_recursive(&entry_path) {
+                    return true;
                 }
             }
         }

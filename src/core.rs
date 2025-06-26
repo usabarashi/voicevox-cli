@@ -19,11 +19,17 @@ pub trait CoreSynthesis {
 
     fn synthesize<'a>(&'a self, text: &str, style_id: u32)
         -> Result<Self::Output<'a>, Self::Error>;
-    fn get_speakers<'a>(&'a self) -> Result<Self::SpeakerData<'a>, Self::Error>;
+    fn get_speakers(&self) -> Result<Self::SpeakerData<'_>, Self::Error>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoreConfig<const CPU_THREADS: usize = 0, const BUFFER_SIZE: usize = 8192>;
+
+impl<const CPU_THREADS: usize, const BUFFER_SIZE: usize> Default for CoreConfig<CPU_THREADS, BUFFER_SIZE> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl<const CPU_THREADS: usize, const BUFFER_SIZE: usize> CoreConfig<CPU_THREADS, BUFFER_SIZE> {
     pub const fn new() -> Self {
@@ -64,7 +70,7 @@ where
         let open_jtalk = OpenJtalk::new(dict_path)
             .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {}", e))?;
 
-        let synthesizer = Synthesizer::builder(&onnxruntime)
+        let synthesizer = Synthesizer::builder(onnxruntime)
             .text_analyzer(open_jtalk)
             .acceleration_mode(AccelerationMode::Cpu)
             .cpu_num_threads(0) // Auto-detect CPU threads
@@ -111,7 +117,7 @@ where
             .map_err(|e| anyhow!("Speech synthesis failed: {}", e))
     }
 
-    fn get_speakers<'a>(&'a self) -> Result<Self::SpeakerData<'a>, Self::Error> {
+    fn get_speakers(&self) -> Result<Self::SpeakerData<'_>, Self::Error> {
         let speakers = self
             .synthesizer
             .metas()

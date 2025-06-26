@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -188,7 +188,7 @@ fn process_path_entry(path: &PathBuf) -> Result<PathProcessResult> {
     }
 }
 
-fn extract_model_id_from_path(path: &PathBuf) -> Option<u32> {
+fn extract_model_id_from_path(path: &Path) -> Option<u32> {
     path.file_stem()
         .and_then(|stem| stem.to_str())
         .filter(|stem| !stem.is_empty())
@@ -274,9 +274,9 @@ pub fn get_styles_for_model_from_core(model_id: u32) -> Result<Vec<Style>> {
                 let mut styles = Vec::new();
                 for speaker in speakers {
                     for style in speaker.styles {
-                        if style.id >= model_id * 10 && style.id < (model_id + 1) * 10 {
-                            styles.push(style);
-                        } else if model_id <= 30 && style.id == model_id {
+                        if (style.id >= model_id * 10 && style.id < (model_id + 1) * 10)
+                            || (model_id <= 30 && style.id == model_id)
+                        {
                             styles.push(style);
                         }
                     }

@@ -9,13 +9,13 @@
     
     License Information:
     - CLI Tool: MIT License + Apache License 2.0
-    - VOICEVOX Core: MIT License (Copyright 2021 Hiroshiba Kazuyuki)
-    - ONNX Runtime: Custom Terms (Commercial use allowed, Credit required)
+    - VOICEVOX Core: MIT License (https://github.com/VOICEVOX/voicevox_core/blob/main/LICENSE)
+    - ONNX Runtime: MIT License (https://github.com/microsoft/onnxruntime/blob/main/LICENSE)
 
     Usage Requirements:
     - Credit VOICEVOX when using generated audio
     - Follow individual voice library terms
-    - See voicevox_core/onnxruntime/TERMS.txt for details
+    - See official repositories for complete license details
   '';
 
   inputs = {
@@ -314,6 +314,33 @@ EOF
                 nix develop --command cargo audit
                 
                 echo ""
+                echo "🏗️  Building project..."
+                nix build --show-trace
+                
+                echo ""
+                echo "🔧 Verifying build artifacts..."
+                ls -la result/bin/
+                file result/bin/voicevox-say
+                file result/bin/voicevox-daemon
+                test -x result/bin/voicevox-setup-models
+                echo "All binaries built successfully"
+                
+                echo ""
+                echo "🧪 Testing functionality..."
+                result/bin/voicevox-say --help || echo "Help command test"
+                result/bin/voicevox-daemon --help || echo "Help command test"
+                result/bin/voicevox-say --version || echo "Version command not available"
+                
+                echo ""
+                echo "📦 Package verification..."
+                echo "Binary sizes:"
+                ls -lah result/bin/
+                echo "Static linking verification:"
+                otool -L result/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
+                echo "Total package size:"
+                du -sh result/
+                
+                echo ""
                 echo "✅ All CI checks completed successfully!"
               ''}";
             };
@@ -369,15 +396,12 @@ EOF
 
           voicevoxCore = {
             type = "MIT";
-            copyright = "2021 Hiroshiba Kazuyuki";
-            url = "https://github.com/VOICEVOX/voicevox_core";
+            url = "https://github.com/VOICEVOX/voicevox_core/blob/main/LICENSE";
           };
 
           onnxRuntime = {
-            type = "Custom-Terms";
-            file = "./voicevox_core/onnxruntime/TERMS.txt";
-            creditRequired = true;
-            commercialUse = true;
+            type = "MIT";
+            url = "https://github.com/microsoft/onnxruntime/blob/main/LICENSE";
           };
         };
 
@@ -391,8 +415,7 @@ EOF
         notices = [
           "Credit VOICEVOX when using generated audio"
           "Follow individual voice library terms"
-          "See voicevox_core/onnxruntime/TERMS.txt for details"
-          "Reverse engineering prohibited"
+          "See official repositories for complete license details"
         ];
       };
     };

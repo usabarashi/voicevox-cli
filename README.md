@@ -13,27 +13,22 @@ Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon
 
 ## Quick Start
 
+**Prerequisites**: [Nix package manager for macOS](https://nixos.org/download.html#nix-install-macos) must be installed.
+
 ```bash
-# Try with Nix (temporary shell)
+# Try temporarily
 nix shell github:usabarashi/voicevox-cli
+
+# Or install permanently
+nix profile install github:usabarashi/voicevox-cli
 
 # First usage (triggers interactive setup)
 voicevox-say "こんにちは、ずんだもんなのだ"
-
-# Subsequent usage (instant)
-voicevox-say "その後の呼び出しは瞬時なのだ"
 ```
 
 **Note**: First use will prompt for license acceptance and download voice models (~200MB).
 
 ## Installation
-
-### Permanent Installation
-
-```bash
-# Install permanently to your profile
-nix profile install github:usabarashi/voicevox-cli
-```
 
 ### Development
 
@@ -50,29 +45,14 @@ nix build
 nix run . -- "テストメッセージなのだ"
 ```
 
-**Note**: Voice models and related components are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once.
+**Note**: Voice models are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once. This project uses Nix's `nixos-unstable` channel for package dependencies, but is designed exclusively for macOS Apple Silicon (not NixOS).
 
-## Initial Setup
+### Manual Model Setup
 
-### Interactive First-Run Setup
-
-On first use, VOICEVOX CLI will detect missing components and guide you through setup:
+For manual setup or model reinstallation:
 
 ```bash
-voicevox-say "こんにちは、ずんだもんなのだ"
-```
-
-**Setup Process**:
-1. **License Review**: Terms for all 26+ voice characters
-2. **Download**: Voice models (~200MB) to `~/.local/share/voicevox/`
-3. **Ready**: Immediate voice synthesis capability
-
-### Manual Setup
-
-If you prefer manual setup or need to reinstall models:
-
-```bash
-# Download voice models
+# Download voice models manually
 voicevox-setup-models
 ```
 
@@ -86,7 +66,7 @@ voicevox-say "こんにちは、ずんだもんなのだ"
 
 # Voice selection by model or speaker ID
 voicevox-say --model 3 "モデル3の音声なのだ"
-voicevox-say --speaker-id 1 "スピーカーID1の音声なのだ"
+voicevox-say --speaker-id 3 "声を変えてみるのだ"
 
 # File output
 voicevox-say -o output.wav "保存するテキスト"
@@ -122,27 +102,24 @@ Voice characters (26+) are automatically detected from downloaded models:
 - **四国めたん** - Sweet and gentle character  
 - **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
 
-### Voice Commands
+### Voice Discovery
 
 ```bash
 # Discover available voices
 voicevox-say --list-models        # Show installed voice model files
 voicevox-say --list-speakers      # Show detailed voice information
 voicevox-say --status             # Check installation status
-
-# Use different voices
-voicevox-say --speaker-id 3 "声を変えてみるのだ"  # By speaker ID
-voicevox-say --model 3 "違うモデルで試すのだ"      # By model number
 ```
 
 ## System Requirements
 
 - **Platform**: macOS Apple Silicon (M1, M2, M3, etc.) only
+- **Package Manager**: [Nix package manager for macOS](https://nixos.org/download.html#nix-install-macos) required
 - **Audio**: WAV file output and system audio playback
-- **Storage**: Voice models stored in your user directory
+- **Storage**: Voice models stored in your user directory (`~/.local/share/voicevox/`)
 - **Network**: Required for initial voice model download
 
-**Note**: This version is designed specifically for Apple Silicon Macs. Intel Mac support is not included.
+**Important**: This version is designed exclusively for Apple Silicon Macs with Nix package manager. NixOS, Linux, Intel Mac, and Windows are not supported.
 
 ## Troubleshooting
 
@@ -161,7 +138,6 @@ voicevox-setup-models              # Reinstall voice models
 
 **Voice Synthesis Issues**:
 ```bash
-voicevox-daemon --status           # Check daemon status
 voicevox-daemon --restart          # Restart daemon
 ```
 
@@ -183,7 +159,7 @@ Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
 
 - [VOICEVOX](https://voicevox.hiroshiba.jp/)
 - [VOICEVOX Core](https://github.com/VOICEVOX/voicevox_core)
-- [Nix](https://nixos.org/)
+- [Nix Package Manager for macOS](https://nixos.org/download.html#nix-install-macos)
 
 ---
 

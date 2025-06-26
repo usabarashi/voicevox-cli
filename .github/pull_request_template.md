@@ -35,23 +35,27 @@
 <!-- Describe how you tested your changes -->
 
 ### Manual Testing
-- [ ] Tested on macOS (Apple Silicon)
-- [ ] Tested on macOS (Intel)
-- [ ] Tested voice synthesis functionality
-- [ ] Tested daemon-client communication
-- [ ] Tested CLI commands and options
+<!-- Only test functionality changes beyond what `nix run .#ci` covers -->
+- [ ] Tested feature-specific functionality (if applicable)
+- [ ] Tested voice synthesis with actual audio output (if voice-related changes)
+- [ ] Tested daemon-client communication (if daemon-related changes)
 
 ### Automated Testing
 - [ ] Added new tests for new functionality
 
 ### Voice Model Testing
-- [ ] Tested with Zundamon voice
-- [ ] Tested with other available voice models
-- [ ] Tested model installation/setup process
+<!-- Only if changes affect voice model handling -->
+- [ ] Tested with default voice (ずんだもん)
+- [ ] Tested model installation/setup process (if model-related changes)
+
+## Local CI Verification
+<!-- Required: macOS CI is manual-only to reduce costs -->
+- [ ] **`nix run .#ci` executed successfully** (includes build, tests, and verification)
 
 ## Build and Compatibility
-<!-- Check relevant build methods -->
-- [ ] Static linking verification passed
+<!-- Only check if `nix run .#ci` doesn't cover your changes -->
+- [ ] Special build requirements tested (if applicable)
+- [ ] Cross-platform compatibility verified (if applicable)
 
 ## Code Quality
 <!-- Ensure code quality standards -->
@@ -83,5 +87,10 @@
 - [ ] I have read the contributing guidelines
 - [ ] I have performed a self-review of my code
 - [ ] I have commented my code where necessary
+- [ ] **I have run `nix run .#ci` locally and all checks passed**
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] Any dependent changes have been merged and published
+
+---
+
+**Note**: Since macOS GitHub Actions CI is manual-only to reduce costs, please ensure you've run the complete local CI pipeline (`nix run .#ci`) before submitting your PR. This helps maintain code quality while minimizing CI expenses.

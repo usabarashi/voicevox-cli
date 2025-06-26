@@ -243,46 +243,13 @@ EOF
             meta = packageMeta;
           };
 
-          licenseAcceptor = pkgs.writeScriptBin "voicevox-auto-setup" ''
-            #!${pkgs.bash}/bin/bash
-            set -euo pipefail
-            
-            MODELS_DIR="$1"
-            
-            echo "🎭 VOICEVOX CLI - Voice Models Setup"
-            echo "Setting up voice models for current user..."
-            echo "Note: VOICEVOX Core libraries and ONNX Runtime are statically linked"
-            echo ""
-            echo "By using this Nix package, you agree to:"
-            echo "- Individual voice library terms for 26+ characters (credit required: 'VOICEVOX:[Character]')"
-            echo "- See: https://voicevox.hiroshiba.jp/ for details"
-            echo ""
-            echo "Target: $MODELS_DIR (user-specific)"
-            echo "Download size: ~200MB (voice models only)"
-            echo ""
-            
-            mkdir -p "$(dirname "$MODELS_DIR")"
-            mkdir -p "$MODELS_DIR"
-            
-            ${pkgs.expect}/bin/expect -c "
-              set timeout 300
-              spawn ${voicevoxResources}/bin/voicevox-download --only models --output $MODELS_DIR
-              expect {
-                \"*同意しますか*\" { send \"y\r\"; exp_continue }
-                \"*[y,n,r]*\" { send \"y\r\"; exp_continue }
-                \"*Press*\" { send \"q\r\"; exp_continue }
-                \"*を押して*\" { send \"q\r\"; exp_continue }
-                eof
-              }
-            " || {
-              echo "⚠️  Automatic download failed. You can manually run:"
-              echo "  voicevox-download --only models --output $MODELS_DIR"
-              exit 1
-            }
-            
-            echo "✅ Voice models setup completed!"
-            echo "   26+ voice characters ready for text-to-speech synthesis"
-            echo "   Static libraries (Core + ONNX Runtime) already available"
+          licenseAcceptor = pkgs.runCommand "voicevox-auto-setup" {} ''
+            mkdir -p $out/bin
+            substitute ${./scripts/voicevox-auto-setup.sh.template} $out/bin/voicevox-auto-setup \
+              --replace "@@BASH_PATH@@" "${pkgs.bash}/bin/bash" \
+              --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
+              --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
+            chmod +x $out/bin/voicevox-auto-setup
           '';
         in
         {

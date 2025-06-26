@@ -41,6 +41,7 @@ impl<const CPU_THREADS: usize, const BUFFER_SIZE: usize> CoreConfig<CPU_THREADS,
 /// VOICEVOX Core wrapper with static linking to libvoicevox_core.dylib
 pub struct VoicevoxCore<Config = CoreConfig<0, 8192>> {
     synthesizer: Synthesizer<OpenJtalk>,
+    #[allow(dead_code)]
     config: Config,
 }
 

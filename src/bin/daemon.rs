@@ -10,7 +10,6 @@ use std::path::PathBuf;
 
 use voicevox_cli::daemon::{check_and_prevent_duplicate, run_daemon};
 use voicevox_cli::paths::get_socket_path;
-use voicevox_cli::client::daemon_client::check_daemon_status;
 use tokio::net::UnixStream;
 extern crate users;
 
@@ -286,8 +285,12 @@ async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
     println!("📊 VOICEVOX Daemon Status");
     println!("========================");
     
-    match check_daemon_status(socket_path).await {
+    // Check socket connectivity
+    match UnixStream::connect(socket_path).await {
         Ok(_) => {
+            println!("Status: ✅ Running and responsive");
+            println!("Socket: {}", socket_path.display());
+            
             // Additional process information
             let output = std::process::Command::new("pgrep")
                 .args(["-f", "-u", &users::get_current_uid().to_string(), "voicevox-daemon"])

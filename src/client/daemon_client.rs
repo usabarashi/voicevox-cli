@@ -8,7 +8,7 @@ use tokio::time::timeout;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use futures_util::{SinkExt, StreamExt};
 
-use crate::ipc::{DaemonRequest, DaemonResponse, SynthesizeOptions, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
+use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
 use std::borrow::Cow;
 
@@ -101,45 +101,6 @@ pub async fn daemon_mode(
         OwnedResponse::Error { message } => Err(anyhow!("Daemon error: {}", message)),
         _ => Err(anyhow!("Unexpected response from daemon")),
     }
-}
-
-// Check daemon status
-pub async fn check_daemon_status(socket_path: &PathBuf) -> Result<()> {
-    match UnixStream::connect(socket_path).await {
-        Ok(stream) => {
-            let (reader, writer) = stream.into_split();
-            let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
-            let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
-            
-            // Send ping
-            let request = DaemonRequest::Ping;
-            let request_data = bincode::serialize(&request)?;
-            framed_writer.send(request_data.into()).await?;
-            
-            // Receive response
-            if let Some(response_frame) = framed_reader.next().await {
-                let response_frame = response_frame?;
-                let response: OwnedResponse = bincode::deserialize(&response_frame)?;
-                
-                match response {
-                    OwnedResponse::Pong => {
-                        println!("VOICEVOX daemon is running and responsive");
-                        println!("Socket: {}", socket_path.display());
-                        return Ok(());
-                    }
-                    _ => {
-                        eprintln!("Error: Daemon responded with unexpected message");
-                    }
-                }
-            }
-        }
-        Err(_) => {
-            println!("VOICEVOX daemon is not running");
-            println!("Expected socket: {}", socket_path.display());
-            println!("Start daemon with: voicevox-daemon");
-        }
-    }
-    Err(anyhow!("Daemon not available"))
 }
 
 // List speakers via daemon

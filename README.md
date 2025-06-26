@@ -239,10 +239,6 @@ voicevox-daemon --stop
 voicevox-daemon --start
 ```
 
-## Contributing
-
-Issues and Pull Requests are welcome!
-
 ## License
 
 This project includes multiple components with different licenses. See [LICENSE](LICENSE) for complete details.

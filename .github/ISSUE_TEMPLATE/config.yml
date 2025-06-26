@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: VOICEVOX Official Website
+    url: https://voicevox.hiroshiba.jp/
+    about: Official VOICEVOX website for voice models and updates
+  - name: Documentation
+    url: https://github.com/usabarashi/voicevox-cli/blob/main/README.md
+    about: Project documentation and usage instructions

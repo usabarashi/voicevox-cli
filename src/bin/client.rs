@@ -16,7 +16,7 @@ use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
 
-// Functional voice resolution using monadic composition
+// Resolve voice ID from command line arguments with fallback chain
 fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
     matches
         .get_one::<u32>("speaker-id")
@@ -336,7 +336,7 @@ async fn main() -> Result<()> {
         ));
     }
 
-    // Functional voice resolution with monadic composition
+    // Voice resolution: speaker-id → model → voice-name → default
     let (style_id, voice_description) = resolve_voice_from_args(&matches)?;
 
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);

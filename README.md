@@ -117,8 +117,8 @@ voicevox-say -o output.wav "保存するテキスト"
 # From stdin
 echo "パイプからの入力" | voicevox-say
 
-# Check system status and available updates
-voicevox-say --check-updates
+# Check information
+voicevox-say --status
 ```
 
 ### Voice Discovery
@@ -138,7 +138,7 @@ voicevox-say --speaker-id 3 "スピーカーID3の音声"
 ### Daemon Management
 
 ```bash
-# Start daemon manually
+# Start daemon (automatically detached)
 voicevox-daemon --start
 
 # Stop daemon
@@ -150,8 +150,11 @@ voicevox-daemon --status
 # Restart daemon
 voicevox-daemon --restart
 
-# Development mode (foreground with debugging output)
+# Start daemon in foreground (development mode)
 voicevox-daemon --foreground
+
+# Custom socket path
+voicevox-daemon --socket-path /custom/path/daemon.sock --start
 ```
 
 ## Voice Characters
@@ -167,6 +170,9 @@ voicevox-say --list-models
 
 # See detailed voice information
 voicevox-say --list-speakers
+
+# Check installation status
+voicevox-say --status
 ```
 
 **Use Different Voices:**
@@ -210,6 +216,9 @@ When you download voice models, you get 26+ characters including:
 # Check if voice models are installed
 voicevox-say --list-models
 
+# Check version information
+voicevox-say --status
+
 # Reinstall voice models if needed
 voicevox-setup-models
 ```
@@ -224,6 +233,10 @@ voicevox-say --list-speakers
 
 # Restart daemon if needed
 voicevox-daemon --restart
+
+# Or stop and start manually
+voicevox-daemon --stop
+voicevox-daemon --start
 ```
 
 ## Contributing

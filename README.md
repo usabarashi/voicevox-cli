@@ -17,13 +17,14 @@ Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon
 # Try with Nix (temporary shell)
 nix shell github:usabarashi/voicevox-cli
 
-# First usage (interactive setup)
+# First usage (triggers interactive setup)
 voicevox-say "こんにちは、ずんだもんなのだ"
-# Prompts for license acceptance, downloads models, synthesizes speech
 
 # Subsequent usage (instant)
 voicevox-say "その後の呼び出しは瞬時なのだ"
 ```
+
+**Note**: First use will prompt for license acceptance and download voice models (~200MB).
 
 ## Installation
 
@@ -55,37 +56,16 @@ nix run . -- "テストメッセージなのだ"
 
 ### Interactive First-Run Setup
 
-On first use, VOICEVOX CLI will detect missing voice components and offer to download them with proper license acceptance:
+On first use, VOICEVOX CLI will detect missing components and guide you through setup:
 
 ```bash
-# First time usage - interactive setup prompt will appear
 voicevox-say "こんにちは、ずんだもんなのだ"
-
-# You'll see:
-# VOICEVOX CLI - First Run Setup
-# Voice models and dictionary are required for text-to-speech synthesis.
-#
-# Would you like to download voice models and dictionary now? [Y/n]: y
-# Starting voice models and dictionary download...
-# Note: This will require accepting VOICEVOX license terms.
-#
-# Target directory: ~/.local/share/voicevox
-# Launching VOICEVOX downloader...
-#    Please follow the on-screen instructions to accept license terms.
-#    Press Enter when ready to continue...
 ```
 
-**License Review Process**:
-1. **License Display**: Review terms for all voice characters
-2. **Navigation**: Use arrow keys to scroll, 'q' to exit
-3. **Acceptance**: Type 'y' and press Enter to accept
-4. **Download**: Voice models downloaded automatically
-
-The setup process will:
-- Show VOICEVOX license terms for all voice characters
-- Require your confirmation before downloading
-- Download voice models and related components to your computer
-- Enable voice synthesis for immediate use
+**Setup Process**:
+1. **License Review**: Terms for all 26+ voice characters
+2. **Download**: Voice models (~200MB) to `~/.local/share/voicevox/`
+3. **Ready**: Immediate voice synthesis capability
 
 ### Manual Setup
 
@@ -118,77 +98,42 @@ echo "パイプからの入力" | voicevox-say
 voicevox-say --status
 ```
 
-### Voice Discovery
-
-```bash
-# List available VVM models
-voicevox-say --list-models
-
-# Detailed speaker information from loaded models
-voicevox-say --list-speakers
-
-# Use specific model or speaker ID
-voicevox-say --model 3 "モデル3の音声"
-voicevox-say --speaker-id 3 "スピーカーID3の音声"
-```
 
 ### Daemon Management
 
 ```bash
-# Start daemon (automatically detached)
-voicevox-daemon --start
+# Basic daemon control
+voicevox-daemon --start    # Start daemon (automatically detached)
+voicevox-daemon --stop     # Stop daemon
+voicevox-daemon --status   # Check daemon status
+voicevox-daemon --restart  # Restart daemon
 
-# Stop daemon
-voicevox-daemon --stop
-
-# Check daemon status
-voicevox-daemon --status
-
-# Restart daemon
-voicevox-daemon --restart
-
-# Start daemon in foreground (development mode)
-voicevox-daemon --foreground
-
-# Custom socket path
-voicevox-daemon --socket-path /custom/path/daemon.sock --start
+# Development options
+voicevox-daemon --foreground  # Run in foreground (development mode)
+voicevox-daemon --socket-path /custom/path/daemon.sock --start  # Custom socket
 ```
 
-## Voice Characters
+## Voice Management
 
 ### Available Voices
 
-Voice characters are automatically detected from your downloaded voice models.
-
-**Find Available Voices:**
-```bash
-# See available voice models
-voicevox-say --list-models
-
-# See detailed voice information
-voicevox-say --list-speakers
-
-# Check installation status
-voicevox-say --status
-```
-
-**Use Different Voices:**
-```bash
-# Use a specific voice (by speaker ID)
-voicevox-say --speaker-id 3 "声を変えてみるのだ"
-
-# Use a voice model (by model number)
-voicevox-say --model 3 "違うモデルで試すのだ"
-```
-
-### Popular Characters
-
-When you download voice models, you get 26+ characters including:
+Voice characters (26+) are automatically detected from downloaded models:
 - **ずんだもん** - Cheerful and energetic character
-- **四国めたん** - Sweet and gentle character
+- **四国めたん** - Sweet and gentle character  
 - **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
 
-**Note**: Use `--list-speakers` to see all available voices on your system.
+### Voice Commands
+
+```bash
+# Discover available voices
+voicevox-say --list-models        # Show installed voice model files
+voicevox-say --list-speakers      # Show detailed voice information
+voicevox-say --status             # Check installation status
+
+# Use different voices
+voicevox-say --speaker-id 3 "声を変えてみるのだ"  # By speaker ID
+voicevox-say --model 3 "違うモデルで試すのだ"      # By model number
+```
 
 ## System Requirements
 
@@ -208,32 +153,16 @@ When you download voice models, you get 26+ characters including:
 - Press 'q' to exit the license viewer
 - Type 'y' and press Enter to accept terms
 
-**Download Problems**:
+**Download/Model Issues**:
 ```bash
-# Check if voice models are installed
-voicevox-say --list-models
-
-# Check version information
-voicevox-say --status
-
-# Reinstall voice models if needed
-voicevox-setup-models
+voicevox-say --status              # Check installation status
+voicevox-setup-models              # Reinstall voice models
 ```
 
 **Voice Synthesis Issues**:
 ```bash
-# Check daemon status
-voicevox-daemon --status
-
-# List available voices
-voicevox-say --list-speakers
-
-# Restart daemon if needed
-voicevox-daemon --restart
-
-# Or stop and start manually
-voicevox-daemon --stop
-voicevox-daemon --start
+voicevox-daemon --status           # Check daemon status
+voicevox-daemon --restart          # Restart daemon
 ```
 
 ## License

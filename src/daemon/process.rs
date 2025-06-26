@@ -24,7 +24,7 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
             }
         }
     }
-    
+
     // Check for running daemon processes (user-specific)
     match process::Command::new("pgrep")
         .arg("-x")
@@ -42,7 +42,7 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
                     .filter(|line| !line.trim().is_empty())
                     .filter(|pid| pid.trim().parse::<u32>().unwrap_or(0) != current_pid)
                     .collect();
-                
+
                 if !other_pids.is_empty() {
                     return Err(anyhow!(
                         "VOICEVOX daemon process(es) already running for this user (PIDs: {}). Stop them first with 'voicevox-daemon --stop'",
@@ -56,6 +56,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
             println!("Could not check for existing processes (pgrep not available)");
         }
     }
-    
+
     Ok(())
 }

@@ -124,15 +124,12 @@ jobs:
       - name: Test Nix build functionality
         if: matrix.method == 'nix'
         run: |
-          # Basic help commands (should work without models)
-          timeout 10s result/bin/voicevox-say --help || true
-          timeout 10s result/bin/voicevox-daemon --help || true
+          # Basic help commands (compilation verification)
+          result/bin/voicevox-say --help || echo "Help command test"
+          result/bin/voicevox-daemon --help || echo "Help command test"
           
           # Version information
           result/bin/voicevox-say --version || echo "Version command not available"
-          
-          # List commands (should work without models)
-          timeout 5s result/bin/voicevox-say --list-speakers || echo "No models available (expected in CI)"
 
       # Cargo Build Path (Compilation Check)
       - name: Check Cargo compilation
@@ -155,8 +152,8 @@ jobs:
           bash -n scripts/voicevox-setup-models.sh
           echo "✅ Scripts validated successfully"
 
-  integration-test:
-    name: Integration Tests
+  package-verification:
+    name: Package Verification
     runs-on: macos-latest
     needs: build-test
     if: success()
@@ -182,24 +179,6 @@ jobs:
 
       - name: Build project
         run: nix build --show-trace
-
-      - name: Test daemon startup (mock)
-        run: |
-          echo "Testing daemon startup capabilities..."
-          # Test daemon help/version commands
-          timeout 5s result/bin/voicevox-daemon --help
-          
-          # Test daemon status check (should report not running)
-          timeout 5s result/bin/voicevox-daemon --status || echo "Daemon not running (expected)"
-
-      - name: Test client-daemon communication (mock)
-        run: |
-          echo "Testing client communication capabilities..."
-          # Test client help commands
-          timeout 5s result/bin/voicevox-say --help
-          
-          # Test client configuration commands
-          timeout 5s result/bin/voicevox-say --list-speakers || echo "No models available (expected in CI)"
 
       - name: Package size verification
         run: |

@@ -306,6 +306,14 @@ EOF
                 sed 's/@@[^@]*@@/placeholder/g' ${./.}/scripts/voicevox-auto-setup.sh.template | bash -n
                 
                 echo ""
+                echo "🔒 Running security audit..."
+                if ! nix develop --command cargo audit --version >/dev/null 2>&1; then
+                  echo "Installing cargo-audit..."
+                  nix develop --command cargo install cargo-audit
+                fi
+                nix develop --command cargo audit
+                
+                echo ""
                 echo "✅ All CI checks completed successfully!"
               ''}";
             };

@@ -43,7 +43,6 @@ voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", tag = "
 
 # System integration
 libc = "0.2"
-users = "0.11"
 
 # Optional 2025 performance dependencies
 rayon = { version = "1.10", optional = true }  # Data parallelism

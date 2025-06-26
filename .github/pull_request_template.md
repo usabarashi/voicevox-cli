@@ -31,31 +31,21 @@
 ### Documentation Changes
 - 
 
-## Testing
+## Testing and Verification
 <!-- Describe how you tested your changes -->
 
-### Manual Testing
-<!-- Only test functionality changes beyond what `nix run .#ci` covers -->
-- [ ] Tested feature-specific functionality (if applicable)
-- [ ] Tested voice synthesis with actual audio output (if voice-related changes)
-- [ ] Tested daemon-client communication (if daemon-related changes)
-
-### Automated Testing
-- [ ] Added new tests for new functionality
-
-### Voice Model Testing
-<!-- Only if changes affect voice model handling -->
-- [ ] Tested with default voice (ずんだもん)
-- [ ] Tested model installation/setup process (if model-related changes)
-
-## Local CI Verification
-<!-- Required: macOS CI is manual-only to reduce costs -->
+### Local CI Verification
+<!-- Recommended: Run local CI for faster feedback -->
 - [ ] **`nix run .#ci` executed successfully** (includes build, tests, and verification)
 
-## Build and Compatibility
-<!-- Only check if `nix run .#ci` doesn't cover your changes -->
-- [ ] Special build requirements tested (if applicable)
-- [ ] Cross-platform compatibility verified (if applicable)
+### Manual Testing
+<!-- Only test functionality beyond automated CI -->
+- [ ] Tested voice synthesis with actual audio output (if voice-related changes)
+- [ ] Tested daemon-client communication (if daemon-related changes)
+- [ ] Tested model installation/setup process (if model-related changes)
+
+### New Tests Added
+- [ ] Added new tests for new functionality (if applicable)
 
 ## Code Quality
 <!-- Ensure code quality standards -->
@@ -82,15 +72,12 @@
 ## Additional Notes
 <!-- Any additional information, screenshots, or context -->
 
-## Checklist
-<!-- Final checklist before submitting -->
-- [ ] I have read the contributing guidelines
+## Final Checklist
+<!-- Complete before submitting -->
 - [ ] I have performed a self-review of my code
 - [ ] I have commented my code where necessary
-- [ ] **I have run `nix run .#ci` locally and all checks passed**
-- [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] Any dependent changes have been merged and published
 
 ---
 
-**Note**: Since macOS GitHub Actions CI is manual-only to reduce costs, please ensure you've run the complete local CI pipeline (`nix run .#ci`) before submitting your PR. This helps maintain code quality while minimizing CI expenses.
+**Note**: Our comprehensive CI pipeline runs automatically on all PRs. Running `nix run .#ci` locally provides faster feedback and helps catch issues before pushing.

@@ -273,6 +273,42 @@ EOF
               type = "app";
               program = "${voicevox-cli}/bin/voicevox-daemon";
             };
+            
+            # CI Task Runner - All checks in one command
+            ci = {
+              type = "app";
+              program = "${pkgs.writeShellScript "ci" ''
+                set -euo pipefail
+                echo "🔍 Running Complete CI Pipeline..."
+                echo "=================================="
+                
+                # Static Analysis
+                echo ""
+                echo "📦 Checking Nix flake..."
+                nix flake check --show-trace
+                
+                echo ""
+                echo "🛠️  Verifying Rust toolchain..."
+                nix develop --command rustc --version
+                nix develop --command cargo --version
+                
+                echo ""
+                echo "📝 Checking code formatting..."
+                nix develop --command cargo fmt --check
+                
+                echo ""
+                echo "🧹 Running clippy analysis..."
+                nix develop --command cargo clippy --all-targets --all-features -- -D warnings
+                
+                echo ""
+                echo "📜 Checking script syntax..."
+                bash -n ${./.}/scripts/voicevox-setup-models.sh
+                sed 's/@@[^@]*@@/placeholder/g' ${./.}/scripts/voicevox-auto-setup.sh.template | bash -n
+                
+                echo ""
+                echo "✅ All CI checks completed successfully!"
+              ''}";
+            };
           };
 
           devShells.default = pkgs.mkShell {

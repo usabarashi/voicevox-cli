@@ -25,7 +25,9 @@ pub trait CoreSynthesis {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoreConfig<const CPU_THREADS: usize = 0, const BUFFER_SIZE: usize = 8192>;
 
-impl<const CPU_THREADS: usize, const BUFFER_SIZE: usize> Default for CoreConfig<CPU_THREADS, BUFFER_SIZE> {
+impl<const CPU_THREADS: usize, const BUFFER_SIZE: usize> Default
+    for CoreConfig<CPU_THREADS, BUFFER_SIZE>
+{
     fn default() -> Self {
         Self::new()
     }

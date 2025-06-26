@@ -63,7 +63,8 @@ pub async fn launch_downloader_for_user() -> Result<()> {
                 entry.path().is_file()
                     && entry
                         .file_name()
-                        .to_str().is_some_and(|name| name.ends_with(".vvm"))
+                        .to_str()
+                        .is_some_and(|name| name.ends_with(".vvm"))
                     || entry.path().is_dir() // Also check subdirectories
             })
             .collect::<Vec<_>>();
@@ -141,15 +142,19 @@ pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
 }
 
 fn process_cleanup_file(path: &std::path::PathBuf, unnecessary_extensions: &[&str]) {
-    if let Some(name) = path.file_name()
+    if let Some(name) = path
+        .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| {
             unnecessary_extensions
                 .iter()
                 .any(|&ext| name.ends_with(ext))
-        }) { std::fs::remove_file(path)
-                .map(|_| println!("   Cleaned up: {}", name))
-                .unwrap_or_else(|e| eprintln!("Warning: Failed to remove {}: {}", name, e)) }
+        })
+    {
+        std::fs::remove_file(path)
+            .map(|_| println!("   Cleaned up: {}", name))
+            .unwrap_or_else(|e| eprintln!("Warning: Failed to remove {}: {}", name, e))
+    }
 }
 
 fn try_remove_empty_directory(path: &std::path::PathBuf) {
@@ -158,14 +163,16 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
         .unwrap_or(false);
 
     if is_empty {
-        if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) { std::fs::remove_dir(path)
+        if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+            std::fs::remove_dir(path)
                 .map(|_| println!("   Removed empty directory: {}", dir_name))
                 .unwrap_or_else(|e| {
                     eprintln!(
                         "Warning: Failed to remove empty directory {}: {}",
                         dir_name, e
                     )
-                }) }
+                })
+        }
     }
 }
 

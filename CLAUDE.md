@@ -322,17 +322,17 @@ voicevox-daemon --stop
 # Check daemon status
 voicevox-daemon --status
 
-# Restart daemon
+# Restart daemon (stop then start)
 voicevox-daemon --restart
 
 # Development mode (foreground with output)
 voicevox-daemon --foreground
 
-# Custom socket path
-voicevox-daemon --socket-path /custom/path/daemon.sock
+# Run as detached background process
+voicevox-daemon --detach
 
-# Legacy manual stop (if needed)
-pkill -f -u $(id -u) voicevox-daemon
+# Custom socket path
+voicevox-daemon --socket-path /custom/path/daemon.sock --start
 ```
 
 ### Client Usage (macOS say Compatible)
@@ -353,6 +353,7 @@ pkill -f -u $(id -u) voicevox-daemon
 # Status and information (only commands that produce output)
 ./target/release/voicevox-say --list-speakers
 ./target/release/voicevox-say --list-models
+./target/release/voicevox-say --status
 
 # Force standalone mode
 ./target/release/voicevox-say --standalone "テストメッセージ"
@@ -383,8 +384,8 @@ echo "標準入力からのテキスト" | ./target/release/voicevox-say
 # Use specific speaker style ID
 ./target/release/voicevox-say --speaker-id 3 "Text"
 
-# Check what models are available for a specific voice ID
-./target/release/voicevox-say --check-updates
+# Check installation status of voice models and dictionary
+./target/release/voicevox-say --status
 ```
 
 ### Voice Selection Methods
@@ -411,7 +412,7 @@ export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/l
 ./target/debug/voicevox-daemon --foreground &
 sleep 3
 ./target/debug/voicevox-say "動作テストなのだ"
-pkill -f -u $(id -u) voicevox-daemon
+./target/debug/voicevox-daemon --stop
 
 # Test various voices dynamically
 ./target/debug/voicevox-say --speaker-id 3 "スピーカーID 3のテスト"
@@ -424,14 +425,14 @@ pkill -f -u $(id -u) voicevox-daemon
 # Test information commands
 ./target/debug/voicevox-say --list-speakers
 ./target/debug/voicevox-say --list-models
-./target/debug/voicevox-say --check-updates
+./target/debug/voicevox-say --status
 
 # Test daemon management
 ./target/debug/voicevox-daemon --status
 
 # Performance testing
 cargo build --release --features "all_performance"
-time ./target/release/voicevox-daemon &  # ~1.2s startup with parallel loading
+time ./target/release/voicevox-daemon --start  # ~1.2s startup with parallel loading
 time ./target/release/voicevox-say "パフォーマンステスト"  # ~50ms synthesis
 
 # Memory usage comparison

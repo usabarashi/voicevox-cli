@@ -27,17 +27,7 @@ voicevox-say "その後の呼び出しは瞬時なのだ"
 
 ## Installation
 
-### Try with Nix Shell (Recommended)
-
-```bash
-# Try in temporary shell environment (no permanent installation)
-nix shell github:usabarashi/voicevox-cli
-
-# First usage triggers interactive setup
-voicevox-say "こんにちは、ずんだもんなのだ"
-```
-
-### Permanent Installation (Optional)
+### Permanent Installation
 
 ```bash
 # Install permanently to your profile
@@ -59,7 +49,7 @@ nix build
 nix run . -- "テストメッセージなのだ"
 ```
 
-**Note**: Voice models and related components are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once. Using `nix shell` provides a temporary environment to try the tool without permanent installation.
+**Note**: Voice models and related components are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once.
 
 ## Initial Setup
 
@@ -127,8 +117,8 @@ voicevox-say -o output.wav "保存するテキスト"
 # From stdin
 echo "パイプからの入力" | voicevox-say
 
-# Daemon status check
-voicevox-say --daemon-status
+# Check system status and available updates
+voicevox-say --check-updates
 ```
 
 ### Voice Discovery
@@ -139,9 +129,6 @@ voicevox-say --list-models
 
 # Detailed speaker information from loaded models
 voicevox-say --list-speakers
-
-# Check system status and available updates
-voicevox-say --check-updates
 
 # Use specific model or speaker ID
 voicevox-say --model 3 "モデル3の音声"
@@ -229,10 +216,7 @@ voicevox-setup-models
 
 **Voice Synthesis Issues**:
 ```bash
-# Check system status
-voicevox-say --daemon-status
-
-# Check daemon status with voicevox-daemon
+# Check daemon status
 voicevox-daemon --status
 
 # List available voices

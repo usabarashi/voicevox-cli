@@ -81,3 +81,6 @@ incremental = true
 inherits = "release"
 debug = true            # Keep debug info for profiling
 strip = false          # Keep symbols for benchmarking tools
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(openjtalk_dict_path)'] }

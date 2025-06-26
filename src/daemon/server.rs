@@ -39,7 +39,7 @@ fn get_dynamic_voice_mapping() -> std::collections::HashMap<std::borrow::Cow<'st
 }
 
 use crate::core::VoicevoxCore;
-use crate::ipc::{DaemonRequest, DaemonResponse, OwnedRequest, OwnedResponse};
+use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 use std::borrow::Cow;
 use crate::voice::{resolve_voice_dynamic, scan_available_models};
 

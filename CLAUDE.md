@@ -351,7 +351,6 @@ pkill -f -u $(id -u) voicevox-daemon
 ./target/release/voicevox-say --model 3 "モデル3の音声なのだ"
 
 # Status and information (only commands that produce output)
-./target/release/voicevox-say --daemon-status
 ./target/release/voicevox-say --list-speakers
 ./target/release/voicevox-say --list-models
 
@@ -425,8 +424,10 @@ pkill -f -u $(id -u) voicevox-daemon
 # Test information commands
 ./target/debug/voicevox-say --list-speakers
 ./target/debug/voicevox-say --list-models
-./target/debug/voicevox-say --daemon-status
 ./target/debug/voicevox-say --check-updates
+
+# Test daemon management
+./target/debug/voicevox-daemon --status
 
 # Performance testing
 cargo build --release --features "all_performance"

@@ -228,12 +228,6 @@ async fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("daemon-status")
-                .help("Check daemon status and exit")
-                .long("daemon-status")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("socket-path")
                 .help("Specify custom daemon socket path")
                 .long("socket-path")
@@ -261,14 +255,6 @@ async fn main() -> Result<()> {
         std::env::set_var("VOICEVOX_DICT_DIR", dict_dir);
     }
 
-    if matches.get_flag("daemon-status") {
-        let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
-            PathBuf::from(custom_path)
-        } else {
-            get_socket_path()
-        };
-        return check_daemon_status(&socket_path).await;
-    }
 
     if let Some(voice_name) = matches.get_one::<String>("voice") {
         if voice_name == "?" {

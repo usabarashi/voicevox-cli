@@ -43,13 +43,14 @@ libc = "0.2"
 rayon = { version = "1.10", optional = true }
 smallvec = { version = "1.13", features = ["serde"], optional = true }
 compact_str = { version = "0.8", features = ["serde"], optional = true }
+mimalloc = { version = "0.1", default-features = false, optional = true }
 
 [features]
 default = []
 simd = ["rayon"]
 fast-strings = ["compact_str"]
 small-vectors = ["smallvec"]
-performance = ["simd", "fast-strings", "small-vectors"]
+performance = ["simd", "fast-strings", "small-vectors", "mimalloc"]
 
 [profile.release]
 lto = "fat"

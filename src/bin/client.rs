@@ -32,7 +32,7 @@ fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> 
                 .get_one::<String>("voice")
                 .map(|voice_name| resolve_voice_dynamic(voice_name))
         })
-        .unwrap_or_else(|| Ok((3, "Default (ずんだもん ノーマル)".to_string())))
+        .unwrap_or_else(|| Ok((3, "Default (Zundamon Normal)".to_string())))
 }
 
 async fn try_daemon_with_retry(
@@ -44,7 +44,8 @@ async fn try_daemon_with_retry(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    if daemon_mode(
+    // First attempt to connect to daemon
+    if let Err(e) = daemon_mode(
         text,
         style_id,
         voice_description,
@@ -54,13 +55,30 @@ async fn try_daemon_with_retry(
         socket_path,
     )
     .await
-    .is_ok()
     {
+        // Check if the error is due to missing models
+        let error_str = e.to_string();
+        let is_model_error = error_str.contains("voice model") || 
+                            error_str.contains("Voice models not found") ||
+                            error_str.contains("style");
+        
+        if is_model_error && voicevox_cli::paths::find_models_dir_client().is_err() {
+            // Models not found, offer to download
+            if !quiet {
+                println!("🎭 Voice models not found. Setting up VOICEVOX...");
+            }
+            ensure_models_available().await?;
+        }
+        // If not a model error, continue with normal flow
+    } else {
         return Ok(());
     }
 
+    // Try to start daemon if not running
     start_daemon_with_confirmation().await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
+    
+    // Retry daemon mode
     daemon_mode(
         text,
         style_id,
@@ -82,25 +100,32 @@ async fn standalone_mode(
     _rate: f32,
     _streaming: bool,
 ) -> Result<()> {
-    let core = VoicevoxCore::new()?;
-
-    if let Err(e) = core.load_all_models_no_download() {
-        eprintln!("Error: Failed to load models: {}", e);
-        eprintln!("Please start voicevox-daemon to download voice models automatically");
-        return Err(e);
+    // Check for models before initializing core
+    if voicevox_cli::paths::find_models_dir_client().is_err() {
+        if !quiet {
+            println!("🎭 Voice models not found. Setting up VOICEVOX...");
+        }
+        ensure_models_available().await?;
     }
+    
+    let core = VoicevoxCore::new()?;
+    core.load_all_models_no_download()
+        .map_err(|e| {
+            eprintln!("Error: Failed to load models: {}", e);
+            e
+        })?;
 
     let wav_data = core.synthesize(text, style_id)?;
 
-    if let Some(output_file) = output_file {
-        std::fs::write(output_file, &wav_data)?;
-    }
-
-    if !quiet && output_file.is_none() {
-        if let Err(e) = play_audio_from_memory(&wav_data) {
-            eprintln!("Error: Audio playback failed: {}", e);
-            return Err(e);
-        }
+    // Handle output
+    match output_file {
+        Some(file_path) => std::fs::write(file_path, &wav_data)?,
+        None if !quiet => play_audio_from_memory(&wav_data)
+            .map_err(|e| {
+                eprintln!("Error: Audio playback failed: {}", e);
+                e
+            })?,
+        _ => {} // quiet mode with no output file
     }
 
     Ok(())
@@ -220,33 +245,28 @@ async fn main() -> Result<()> {
 
     if matches.get_flag("list-models") {
         println!("Scanning for available voice models...");
-        match scan_available_models() {
-            Ok(models) => {
-                if models.is_empty() {
-                    println!(
-                        "No voice models found. Please start voicevox-daemon to download voice models automatically."
-                    );
-                } else {
-                    println!("Available voice models:");
-                    for model in &models {
-                        println!("  Model {} ({})", model.model_id, model.file_path.display());
-                        println!(
-                            "    Usage: --model {} or --speaker-id <STYLE_ID>",
-                            model.model_id
-                        );
-                    }
-                    println!();
-                    println!("Tips:");
-                    println!("  - Use --model N to load model N.vvm");
-                    println!("  - Use --speaker-id for direct style ID specification");
-                    println!("  - Use --list-speakers for detailed speaker information");
-                }
-            }
-            Err(e) => {
+        let models = scan_available_models()
+            .unwrap_or_else(|e| {
                 eprintln!("Error scanning models: {}", e);
                 std::process::exit(1);
-            }
+            });
+
+        if models.is_empty() {
+            println!("No voice models found. Please start voicevox-daemon to download voice models automatically.");
+            return Ok(());
         }
+
+        println!("Available voice models:");
+        for model in &models {
+            println!("  Model {} ({})", model.model_id, model.file_path.display());
+            println!("    Usage: --model {} or --speaker-id <STYLE_ID>", model.model_id);
+        }
+        
+        println!("\nTips:");
+        println!("  - Use --model N to load model N.vvm");
+        println!("  - Use --speaker-id for direct style ID specification");
+        println!("  - Use --list-speakers for detailed speaker information");
+        
         return Ok(());
     }
 
@@ -260,21 +280,20 @@ async fn main() -> Result<()> {
             Ok(current_models) => {
                 println!("Voice Models: {} files installed", current_models.len());
                 for model in &current_models {
-                    if let Ok(metadata) = std::fs::metadata(&model.file_path) {
-                        let size_kb = metadata.len() / 1024;
-                        println!(
-                            "  Model {}: {} ({} KB)",
-                            model.model_id,
-                            model
-                                .file_path
+                    let model_info = match std::fs::metadata(&model.file_path) {
+                        Ok(metadata) => {
+                            let size_kb = metadata.len() / 1024;
+                            let filename = model.file_path
                                 .file_name()
                                 .unwrap_or_default()
-                                .to_string_lossy(),
-                            size_kb
-                        );
-                    } else {
-                        println!("  Model {} ({})", model.model_id, model.file_path.display());
-                    }
+                                .to_string_lossy();
+                            format!("  Model {}: {} ({} KB)", model.model_id, filename, size_kb)
+                        }
+                        Err(_) => {
+                            format!("  Model {} ({})", model.model_id, model.file_path.display())
+                        }
+                    };
+                    println!("{}", model_info);
                 }
 
                 use voicevox_cli::paths::find_openjtalk_dict;
@@ -296,11 +315,10 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("list-speakers") {
-        let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
-            PathBuf::from(custom_path)
-        } else {
-            get_socket_path()
-        };
+        let socket_path = matches
+            .get_one::<String>("socket-path")
+            .map(PathBuf::from)
+            .unwrap_or_else(get_socket_path);
 
         if !matches.get_flag("standalone") && list_speakers_daemon(&socket_path).await.is_ok() {
             return Ok(());
@@ -357,11 +375,10 @@ async fn main() -> Result<()> {
 
     // Try daemon mode first, regardless of model availability
     if !force_standalone {
-        let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
-            PathBuf::from(custom_path)
-        } else {
-            get_socket_path()
-        };
+        let socket_path = matches
+            .get_one::<String>("socket-path")
+            .map(PathBuf::from)
+            .unwrap_or_else(get_socket_path);
 
         if try_daemon_with_retry(
             &text,

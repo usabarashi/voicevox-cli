@@ -67,7 +67,7 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
 
     // No download attempt
     Err(anyhow!(
-        "Voice models not found. Please start voicevox-daemon to download models automatically."
+        "Voice models not found in any of the expected locations."
     ))
 }
 

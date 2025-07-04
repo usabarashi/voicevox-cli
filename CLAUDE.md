@@ -233,10 +233,10 @@ voicevox-daemon --detach
 voicevox-daemon --socket-path /custom/path/daemon.sock --start
 ```
 
-**Note**: With lazy loading implementation, the daemon now:
-- Starts with only 3 popular models (Zundamon, Shikoku Metan, Kasukabe Tsumugi)
-- Loads other models on-demand when first used (~500ms delay)
-- Reduces memory from ~1.1GB to ~300MB at startup
+**Note**: The daemon now features:
+- **Smart Loading**: Only 3 models at startup (Metan, Zundamon, Tsumugi)
+- **On-Demand**: Other models load when first used
+- **Memory Efficient**: ~300MB at startup vs ~1.1GB for all models
 
 ### Client Usage (macOS say Compatible)
 ```bash
@@ -265,31 +265,23 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start
 echo "標準入力からのテキスト" | ./target/release/voicevox-say
 ```
 
-## Memory Management Implementation
+## Current Implementation
 
-### Phase 1: Basic Lazy Loading (Completed)
-- Loads only 3 popular models on startup (Zundamon, Metan, Tsumugi)
-- Other models loaded on-demand when requested
-- Reduces initial memory from ~1.1GB to ~310MB
+### Memory Management
+- **Lazy Loading**: Starts with only 3 models (Metan 0, Zundamon 1, Tsumugi 8)
+- **LRU Cache**: Maximum 5 models in memory, automatically unloads least-used models
+- **Favorites Protection**: Models 0, 1, 8 are never unloaded
+- **Real Memory Release**: Uses VOICEVOX Core's `unload_voice_model` API
 
-### Phase 2: LRU Cache with Model Unloading (Completed)
-- ModelCache struct with LRU tracking and usage statistics
-- Maximum 5 models loaded at once (configurable)
-- Favorites protection (models 3, 2, 8 never evicted)
-- **Real model unloading** using VOICEVOX Core's `unload_voice_model` API
-- Unit tests implemented and passing
+### First-Run Experience
+- **Automatic Setup**: Downloads models on first use if not found
+- **Seamless Integration**: Model download happens within normal command flow
+- **No Extra Commands**: Users don't need to run separate setup commands
 
-### Implementation Details
-- Added `unload_voice_model_by_path()` method to VoicevoxCore
-- Uses VOICEVOX Core's native `voicevox_synthesizer_unload_voice_model` function
-- Memory is actually freed when models are unloaded
-- LRU algorithm ensures most recently used models stay loaded
-
-### Phase 3: Configuration File Support (Completed)
-- Configuration file at `~/.config/voicevox/config.toml`
-- Customizable memory limits, preload models, and favorites
-- CLI options override configuration file settings
-- Example configuration can be generated with `--create-config`
+### Configuration Support
+- **Config File**: `~/.config/voicevox/config.toml` for persistent settings
+- **CLI Override**: Command-line options override config file
+- **Customizable**: Memory limits, preload models, favorites list
 
 ### Configuration Example
 ```toml
@@ -301,8 +293,8 @@ memory_limit_mb = 1024         # Informational only
 
 # Model Preferences
 [models]
-preload = [3, 2, 8, 1]         # Models to load on startup
-favorites = [3, 2, 8]          # Never unload these models
+preload = [0, 1, 8]            # Models to load on startup
+favorites = [0, 1, 8]          # Never unload these models
 predictive_preload = false     # Experimental feature
 
 # Daemon Settings

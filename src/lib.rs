@@ -21,6 +21,9 @@ pub mod client;
 /// Server-side functionality
 pub mod daemon;
 
+/// Configuration management
+pub mod config;
+
 pub use core::{CoreConfig, CoreSynthesis, VoicevoxCore};
 pub use ipc::{
     DaemonRequest, DaemonResponse, IpcConfig, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions,

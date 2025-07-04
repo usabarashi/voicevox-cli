@@ -11,7 +11,7 @@ pub mod server;
 pub mod process;
 
 pub use process::check_and_prevent_duplicate;
-pub use server::{handle_client, run_daemon, DaemonState};
+pub use server::{handle_client, run_daemon, run_daemon_with_config, DaemonState};
 
 #[cfg(test)]
 mod tests {

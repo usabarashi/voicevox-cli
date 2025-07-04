@@ -71,11 +71,15 @@ pub struct ModelCache {
 
 impl ModelCache {
     pub fn new(max_models: usize) -> Self {
+        Self::with_favorites(max_models, HashSet::from([3, 2, 8]))
+    }
+    
+    pub fn with_favorites(max_models: usize, favorites: HashSet<u32>) -> Self {
         Self {
             loaded_models: HashMap::new(),
             usage_stats: HashMap::new(),
             max_models,
-            favorites: HashSet::from([3, 2, 8]), // Default favorites: Zundamon, Metan, Tsumugi
+            favorites,
         }
     }
 
@@ -128,15 +132,39 @@ pub struct DaemonState {
 
 impl DaemonState {
     pub async fn new() -> Result<Self> {
+        // Load configuration
+        let config = crate::config::Config::load()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to load config, using defaults: {}", e);
+                crate::config::Config::default()
+            });
+        
+        Self::with_config(config).await
+    }
+    
+    pub async fn with_config(config: crate::config::Config) -> Result<Self> {
         let core = VoicevoxCore::new()?;
         let loaded_models = Arc::new(Mutex::new(HashSet::new()));
-        let model_cache = Arc::new(Mutex::new(ModelCache::new(5))); // Max 5 models
-
-        // Load only popular models on startup for faster initialization
-        let popular_models = vec![3, 2, 8]; // Zundamon, Shikoku Metan, Kasukabe Tsumugi
         
-        println!("Loading popular models for quick startup...");
-        for model_id in popular_models {
+        // Create model cache with configuration
+        let model_cache = if config.memory.enable_lru_cache {
+            Arc::new(Mutex::new(ModelCache::with_favorites(
+                config.memory.max_loaded_models,
+                config.models.favorites.clone(),
+            )))
+        } else {
+            // Disable LRU by setting very high limit
+            Arc::new(Mutex::new(ModelCache::with_favorites(
+                999,
+                config.models.favorites.clone(),
+            )))
+        };
+
+        // Load models specified in config
+        let preload_models = config.models.preload;
+        
+        println!("Loading {} models from configuration...", preload_models.len());
+        for model_id in preload_models {
             match core.load_specific_model(&model_id.to_string()) {
                 Ok(_) => {
                     loaded_models.lock().await.insert(model_id);
@@ -162,12 +190,30 @@ impl DaemonState {
 
     // Helper function to extract model_id from style_id
     fn get_model_id_from_style(style_id: u32) -> u32 {
-        // Most models follow the pattern where style_id = model_id * 10 + variant
-        // But some early models (0-30) have direct mapping
-        if style_id <= 30 {
-            style_id
-        } else {
-            style_id / 10
+        // Map style_id to model_id based on known patterns
+        match style_id {
+            // 四国めたん styles
+            0 | 2 | 4 | 6 | 36 | 37 => 0,
+            // ずんだもん styles
+            1 | 3 | 5 | 7 | 22 | 38 | 75 | 76 => 1,
+            // 春日部つむぎ
+            8 => 8,
+            // 雨晴はう
+            10 => 10,
+            // 波音リツ
+            9 | 65 => 9,
+            // 玄野武宏
+            11 | 39 | 40 | 41 => 11,
+            // 白上虎太郎
+            12 | 32 | 33 | 34 | 35 => 12,
+            // 青山龍星
+            13 | 84 | 85 | 86 => 13,
+            // 冥鳴ひまり
+            14 => 14,
+            // 九州そら
+            16 | 15 | 17 | 18 | 19 => 16,
+            // Default: assume direct mapping for others
+            _ => style_id,
         }
     }
 
@@ -184,7 +230,7 @@ impl DaemonState {
                     
                     // Actually unload the model using the new method
                     let models_dir = crate::paths::find_models_dir_client()
-                        .unwrap_or_else(|_| std::path::PathBuf::from("~/.local/share/voicevox/models"));
+                        .unwrap_or_else(|_| std::path::PathBuf::from("~/.local/share/voicevox/models/vvms"));
                     let model_path = models_dir.join(format!("{}.vvm", lru_model));
                     match self.core.unload_voice_model_by_path(model_path.to_str().unwrap_or("")) {
                         Ok(_) => {
@@ -400,6 +446,11 @@ pub async fn handle_client(stream: UnixStream, state: Arc<Mutex<DaemonState>>) -
 }
 
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
+    let config = crate::config::Config::default();
+    run_daemon_with_config(socket_path, foreground, config).await
+}
+
+pub async fn run_daemon_with_config(socket_path: PathBuf, foreground: bool, config: crate::config::Config) -> Result<()> {
     // Remove existing socket file if it exists
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
@@ -410,8 +461,8 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     println!("VOICEVOX daemon started successfully");
     println!("Listening on: {}", socket_path.display());
 
-    // Initialize daemon state
-    let state = Arc::new(Mutex::new(DaemonState::new().await?));
+    // Initialize daemon state with config
+    let state = Arc::new(Mutex::new(DaemonState::with_config(config).await?));
 
     if !foreground {
         println!("Running in background mode. Use Ctrl+C to stop gracefully.");

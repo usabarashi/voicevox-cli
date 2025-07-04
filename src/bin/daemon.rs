@@ -9,7 +9,7 @@ use clap::{Arg, Command};
 use std::path::PathBuf;
 
 use tokio::net::UnixStream;
-use voicevox_cli::daemon::{check_and_prevent_duplicate, run_daemon};
+use voicevox_cli::daemon::{check_and_prevent_duplicate, run_daemon_with_config};
 use voicevox_cli::paths::get_socket_path;
 
 #[tokio::main]
@@ -61,6 +61,31 @@ async fn main() -> Result<()> {
                 .help("Restart the daemon (stop then start)")
                 .long("restart")
                 .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("config")
+                .help("Path to configuration file")
+                .long("config")
+                .short('c')
+                .value_name("FILE"),
+        )
+        .arg(
+            Arg::new("max-models")
+                .help("Override maximum number of loaded models")
+                .long("max-models")
+                .value_name("NUM"),
+        )
+        .arg(
+            Arg::new("no-lru")
+                .help("Disable LRU cache management")
+                .long("no-lru")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("create-config")
+                .help("Create example configuration file")
+                .long("create-config")
+                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
@@ -78,6 +103,13 @@ async fn main() -> Result<()> {
     let stop = matches.get_flag("stop");
     let status = matches.get_flag("status");
     let restart = matches.get_flag("restart");
+    let create_config = matches.get_flag("create-config");
+    
+    // Handle create-config
+    if create_config {
+        return voicevox_cli::config::Config::create_example()
+            .map_err(|e| anyhow::anyhow!("Failed to create example config: {}", e));
+    }
 
     // Handle daemon operations
     if stop {
@@ -169,13 +201,47 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
 
+    // Load configuration with CLI overrides
+    let mut config = if let Some(config_path) = matches.get_one::<String>("config") {
+        match std::fs::read_to_string(config_path) {
+            Ok(content) => toml::from_str(&content)
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to parse config file: {}", e);
+                    voicevox_cli::config::Config::default()
+                }),
+            Err(e) => {
+                eprintln!("Failed to read config file: {}", e);
+                voicevox_cli::config::Config::default()
+            }
+        }
+    } else {
+        voicevox_cli::config::Config::load()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to load config, using defaults: {}", e);
+                voicevox_cli::config::Config::default()
+            })
+    };
+    
+    // Apply CLI overrides
+    if let Some(max_models) = matches.get_one::<String>("max-models") {
+        if let Ok(num) = max_models.parse::<usize>() {
+            config.memory.max_loaded_models = num;
+        }
+    }
+    
+    if matches.get_flag("no-lru") {
+        config.memory.enable_lru_cache = false;
+    }
+
     // Display startup banner
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
     println!("Starting user daemon...");
     println!("Socket: {} (user-specific)", socket_path.display());
-    println!("Mode: All models (user-specific)");
+    println!("Mode: {} models max, LRU: {}", 
+             config.memory.max_loaded_models,
+             if config.memory.enable_lru_cache { "enabled" } else { "disabled" });
 
-    run_daemon(socket_path, foreground).await
+    run_daemon_with_config(socket_path, foreground, config).await
 }
 
 /// Handle daemon stop operation

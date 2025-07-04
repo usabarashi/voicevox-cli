@@ -355,10 +355,7 @@ async fn main() -> Result<()> {
         context: None,
     };
 
-    if !force_standalone && ensure_models_available().await.is_err() && !quiet {
-        println!("Falling back to standalone mode...");
-    }
-
+    // Try daemon mode first, regardless of model availability
     if !force_standalone {
         let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
             PathBuf::from(custom_path)

@@ -285,6 +285,45 @@ echo "標準入力からのテキスト" | ./target/release/voicevox-say
 - Memory is actually freed when models are unloaded
 - LRU algorithm ensures most recently used models stay loaded
 
+### Phase 3: Configuration File Support (Completed)
+- Configuration file at `~/.config/voicevox/config.toml`
+- Customizable memory limits, preload models, and favorites
+- CLI options override configuration file settings
+- Example configuration can be generated with `--create-config`
+
+### Configuration Example
+```toml
+# Memory Management
+[memory]
+max_loaded_models = 5          # Maximum models in memory
+enable_lru_cache = true        # Enable automatic unloading
+memory_limit_mb = 1024         # Informational only
+
+# Model Preferences
+[models]
+preload = [3, 2, 8, 1]         # Models to load on startup
+favorites = [3, 2, 8]          # Never unload these models
+predictive_preload = false     # Experimental feature
+
+# Daemon Settings
+[daemon]
+socket_path = "/custom/path"   # Optional custom socket
+startup_timeout = 10           # Seconds to wait
+debug = false                  # Enable debug logging
+```
+
+### CLI Configuration Options
+```bash
+# Create example configuration
+voicevox-daemon --create-config
+
+# Use custom config file
+voicevox-daemon --config /path/to/config.toml
+
+# Override specific settings
+voicevox-daemon --max-models 10 --no-lru
+```
+
 ## Testing & Development
 
 ### Quick Test Procedure (Recommended)

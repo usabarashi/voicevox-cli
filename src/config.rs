@@ -204,7 +204,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.memory.max_loaded_models, 5);
         assert!(config.memory.enable_lru_cache);
-        assert_eq!(config.models.preload, vec![3, 2, 8]);
+        assert_eq!(config.models.preload, vec![0, 1, 8]);
         assert_eq!(config.models.favorites.len(), 3);
     }
     

@@ -45,7 +45,7 @@ async fn try_daemon_with_retry(
     socket_path: &PathBuf,
 ) -> Result<()> {
     // First attempt to connect to daemon
-    if let Err(e) = daemon_mode(
+    let initial_result = daemon_mode(
         text,
         style_id,
         voice_description,
@@ -54,30 +54,27 @@ async fn try_daemon_with_retry(
         quiet,
         socket_path,
     )
-    .await
-    {
-        // Check if the error is due to missing models
-        let error_str = e.to_string();
-        let is_model_error = error_str.contains("voice model") || 
-                            error_str.contains("Voice models not found") ||
-                            error_str.contains("style");
-        
-        if is_model_error && voicevox_cli::paths::find_models_dir_client().is_err() {
-            // Models not found, offer to download
-            if !quiet {
-                println!("🎭 Voice models not found. Setting up VOICEVOX...");
+    .await;
+
+    match initial_result {
+        Ok(_) => return Ok(()),
+        Err(_) => {
+            // Check if models exist before doing anything else
+            if voicevox_cli::paths::find_models_dir_client().is_err() {
+                // Models not found, this is likely first run
+                if !quiet {
+                    println!("🎭 Voice models not found. Setting up VOICEVOX...");
+                }
+                ensure_models_available().await?;
             }
-            ensure_models_available().await?;
+            // Continue to daemon start regardless of error type
         }
-        // If not a model error, continue with normal flow
-    } else {
-        return Ok(());
     }
 
     // Try to start daemon if not running
     start_daemon_with_confirmation().await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
-    
+
     // Retry daemon mode
     daemon_mode(
         text,
@@ -107,24 +104,22 @@ async fn standalone_mode(
         }
         ensure_models_available().await?;
     }
-    
+
     let core = VoicevoxCore::new()?;
-    core.load_all_models_no_download()
-        .map_err(|e| {
-            eprintln!("Error: Failed to load models: {}", e);
-            e
-        })?;
+    core.load_all_models_no_download().map_err(|e| {
+        eprintln!("Error: Failed to load models: {}", e);
+        e
+    })?;
 
     let wav_data = core.synthesize(text, style_id)?;
 
     // Handle output
     match output_file {
         Some(file_path) => std::fs::write(file_path, &wav_data)?,
-        None if !quiet => play_audio_from_memory(&wav_data)
-            .map_err(|e| {
-                eprintln!("Error: Audio playback failed: {}", e);
-                e
-            })?,
+        None if !quiet => play_audio_from_memory(&wav_data).map_err(|e| {
+            eprintln!("Error: Audio playback failed: {}", e);
+            e
+        })?,
         _ => {} // quiet mode with no output file
     }
 
@@ -245,11 +240,10 @@ async fn main() -> Result<()> {
 
     if matches.get_flag("list-models") {
         println!("Scanning for available voice models...");
-        let models = scan_available_models()
-            .unwrap_or_else(|e| {
-                eprintln!("Error scanning models: {}", e);
-                std::process::exit(1);
-            });
+        let models = scan_available_models().unwrap_or_else(|e| {
+            eprintln!("Error scanning models: {}", e);
+            std::process::exit(1);
+        });
 
         if models.is_empty() {
             println!("No voice models found. Please start voicevox-daemon to download voice models automatically.");
@@ -259,14 +253,17 @@ async fn main() -> Result<()> {
         println!("Available voice models:");
         for model in &models {
             println!("  Model {} ({})", model.model_id, model.file_path.display());
-            println!("    Usage: --model {} or --speaker-id <STYLE_ID>", model.model_id);
+            println!(
+                "    Usage: --model {} or --speaker-id <STYLE_ID>",
+                model.model_id
+            );
         }
-        
+
         println!("\nTips:");
         println!("  - Use --model N to load model N.vvm");
         println!("  - Use --speaker-id for direct style ID specification");
         println!("  - Use --list-speakers for detailed speaker information");
-        
+
         return Ok(());
     }
 
@@ -283,7 +280,8 @@ async fn main() -> Result<()> {
                     let model_info = match std::fs::metadata(&model.file_path) {
                         Ok(metadata) => {
                             let size_kb = metadata.len() / 1024;
-                            let filename = model.file_path
+                            let filename = model
+                                .file_path
                                 .file_name()
                                 .unwrap_or_default()
                                 .to_string_lossy();

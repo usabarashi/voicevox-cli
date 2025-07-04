@@ -1,5 +1,5 @@
 //! Configuration management for VOICEVOX CLI
-//! 
+//!
 //! Provides configuration file support for memory management and model preferences
 
 use anyhow::Result;
@@ -8,15 +8,15 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// Main configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Memory management settings
     pub memory: MemoryConfig,
-    
+
     /// Model preferences
     pub models: ModelConfig,
-    
+
     /// Daemon settings
     pub daemon: DaemonConfig,
 }
@@ -27,10 +27,10 @@ pub struct Config {
 pub struct MemoryConfig {
     /// Maximum number of models to keep in memory
     pub max_loaded_models: usize,
-    
+
     /// Enable LRU cache management
     pub enable_lru_cache: bool,
-    
+
     /// Memory limit in MB (informational only)
     pub memory_limit_mb: Option<usize>,
 }
@@ -41,10 +41,10 @@ pub struct MemoryConfig {
 pub struct ModelConfig {
     /// Models to preload on startup
     pub preload: Vec<u32>,
-    
+
     /// Models that should never be unloaded (favorites)
     pub favorites: HashSet<u32>,
-    
+
     /// Enable predictive preloading based on usage patterns
     pub predictive_preload: bool,
 }
@@ -55,22 +55,12 @@ pub struct ModelConfig {
 pub struct DaemonConfig {
     /// Socket path for IPC
     pub socket_path: Option<PathBuf>,
-    
+
     /// Auto-start timeout in seconds
     pub startup_timeout: u64,
-    
+
     /// Enable debug logging
     pub debug: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            memory: MemoryConfig::default(),
-            models: ModelConfig::default(),
-            daemon: DaemonConfig::default(),
-        }
-    }
 }
 
 impl Default for MemoryConfig {
@@ -107,7 +97,7 @@ impl Config {
     /// Load configuration from file
     pub fn load() -> Result<Self> {
         let config_path = Self::config_path()?;
-        
+
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;
             let config: Config = toml::from_str(&content)?;
@@ -116,30 +106,30 @@ impl Config {
             Ok(Config::default())
         }
     }
-    
+
     /// Save configuration to file
     pub fn save(&self) -> Result<()> {
         let config_path = Self::config_path()?;
-        
+
         // Ensure config directory exists
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         let content = toml::to_string_pretty(self)?;
         std::fs::write(&config_path, content)?;
-        
+
         Ok(())
     }
-    
+
     /// Get the configuration file path
     pub fn config_path() -> Result<PathBuf> {
         let config_dir = dirs::config_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
-        
+
         Ok(config_dir.join("voicevox").join("config.toml"))
     }
-    
+
     /// Create example configuration file
     pub fn create_example() -> Result<()> {
         let example = Config {
@@ -159,15 +149,15 @@ impl Config {
                 debug: false,
             },
         };
-        
+
         let config_path = Self::config_path()?;
         let example_path = config_path.with_file_name("config.example.toml");
-        
+
         // Ensure directory exists
         if let Some(parent) = example_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         let content = toml::to_string_pretty(&example)?;
         let content_with_comments = format!(
             "# VOICEVOX CLI Configuration File\n\
@@ -187,10 +177,13 @@ impl Config {
              # debug: Enable debug logging\n",
             content
         );
-        
+
         std::fs::write(&example_path, content_with_comments)?;
-        println!("Example configuration created at: {}", example_path.display());
-        
+        println!(
+            "Example configuration created at: {}",
+            example_path.display()
+        );
+
         Ok(())
     }
 }
@@ -198,7 +191,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_default_config() {
         let config = Config::default();
@@ -207,14 +200,17 @@ mod tests {
         assert_eq!(config.models.preload, vec![0, 1, 8]);
         assert_eq!(config.models.favorites.len(), 3);
     }
-    
+
     #[test]
     fn test_config_serialization() {
         let config = Config::default();
         let serialized = toml::to_string(&config).unwrap();
         let deserialized: Config = toml::from_str(&serialized).unwrap();
-        
-        assert_eq!(config.memory.max_loaded_models, deserialized.memory.max_loaded_models);
+
+        assert_eq!(
+            config.memory.max_loaded_models,
+            deserialized.memory.max_loaded_models
+        );
         assert_eq!(config.models.preload, deserialized.models.preload);
     }
 }

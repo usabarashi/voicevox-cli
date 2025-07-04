@@ -123,12 +123,14 @@ impl ModelCache {
 pub struct DaemonState {
     core: VoicevoxCore,
     loaded_models: Arc<Mutex<HashSet<u32>>>,
+    model_cache: Arc<Mutex<ModelCache>>,
 }
 
 impl DaemonState {
     pub async fn new() -> Result<Self> {
         let core = VoicevoxCore::new()?;
         let loaded_models = Arc::new(Mutex::new(HashSet::new()));
+        let model_cache = Arc::new(Mutex::new(ModelCache::new(5))); // Max 5 models
 
         // Load only popular models on startup for faster initialization
         let popular_models = vec![3, 2, 8]; // Zundamon, Shikoku Metan, Kasukabe Tsumugi
@@ -138,6 +140,7 @@ impl DaemonState {
             match core.load_specific_model(&model_id.to_string()) {
                 Ok(_) => {
                     loaded_models.lock().await.insert(model_id);
+                    model_cache.lock().await.add_model(model_id);
                     println!("  ✓ Loaded model {}", model_id);
                 }
                 Err(e) => {
@@ -150,7 +153,11 @@ impl DaemonState {
             eprintln!("Warning: No models could be loaded. Please run 'voicevox-say' first to download models.");
         }
 
-        Ok(DaemonState { core, loaded_models })
+        Ok(DaemonState { 
+            core, 
+            loaded_models,
+            model_cache,
+        })
     }
 
     // Helper function to extract model_id from style_id
@@ -164,16 +171,46 @@ impl DaemonState {
         }
     }
 
-    // Ensure a model is loaded before use
+    // Ensure a model is loaded before use with memory management
     async fn ensure_model_loaded(&self, model_id: u32) -> Result<()> {
         let mut loaded = self.loaded_models.lock().await;
+        let mut cache = self.model_cache.lock().await;
         
         if !loaded.contains(&model_id) {
+            // Check if we need to evict a model
+            if cache.should_evict() {
+                if let Some(lru_model) = cache.get_lru_model() {
+                    println!("Memory limit reached. Evicting model {} (LRU)", lru_model);
+                    
+                    // Actually unload the model using the new method
+                    let models_dir = crate::paths::find_models_dir_client()
+                        .unwrap_or_else(|_| std::path::PathBuf::from("~/.local/share/voicevox/models"));
+                    let model_path = models_dir.join(format!("{}.vvm", lru_model));
+                    match self.core.unload_voice_model_by_path(model_path.to_str().unwrap_or("")) {
+                        Ok(_) => {
+                            loaded.remove(&lru_model);
+                            cache.remove_model(lru_model);
+                            println!("  ✓ Model {} unloaded successfully", lru_model);
+                        }
+                        Err(e) => {
+                            eprintln!("  ✗ Failed to unload model {}: {}", lru_model, e);
+                            // Continue anyway - remove from tracking
+                            loaded.remove(&lru_model);
+                            cache.remove_model(lru_model);
+                        }
+                    }
+                }
+            }
+            
             println!("Dynamically loading model {} on demand...", model_id);
             self.core.load_specific_model(&model_id.to_string())?;
             loaded.insert(model_id);
+            cache.add_model(model_id);
             println!("  ✓ Model {} loaded successfully", model_id);
         }
+        
+        // Mark model as used
+        cache.mark_used(model_id);
         
         Ok(())
     }

@@ -244,6 +244,26 @@ where
             })
     }
 
+    /// Get the voice model ID from loaded model's metadata
+    fn get_voice_model_id(&self, model_path: &str) -> Result<voicevox_core::VoiceModelId> {
+        let model = VoiceModelFile::open(model_path)
+            .map_err(|e| anyhow!("Failed to open model file: {}", e))?;
+        
+        // Get the voice model ID from the model's metadata
+        let model_id = model.id().clone();
+        Ok(model_id)
+    }
+
+    /// Unload a voice model by its numeric ID
+    /// Note: This requires knowing the actual VoiceModelId, which is typically obtained when loading
+    pub fn unload_voice_model_by_path(&self, model_path: &str) -> Result<()> {
+        let voice_model_id = self.get_voice_model_id(model_path)?;
+        
+        self.synthesizer
+            .unload_voice_model(voice_model_id)
+            .map_err(|e| anyhow!("Failed to unload model: {}", e))
+    }
+
     /// Synthesize Japanese text to speech using the specified voice style
     pub fn synthesize(&self, text: &str, style_id: u32) -> Result<Vec<u8>> {
         use voicevox_core::StyleId;

@@ -265,6 +265,26 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start
 echo "標準入力からのテキスト" | ./target/release/voicevox-say
 ```
 
+## Memory Management Implementation
+
+### Phase 1: Basic Lazy Loading (Completed)
+- Loads only 3 popular models on startup (Zundamon, Metan, Tsumugi)
+- Other models loaded on-demand when requested
+- Reduces initial memory from ~1.1GB to ~310MB
+
+### Phase 2: LRU Cache with Model Unloading (Completed)
+- ModelCache struct with LRU tracking and usage statistics
+- Maximum 5 models loaded at once (configurable)
+- Favorites protection (models 3, 2, 8 never evicted)
+- **Real model unloading** using VOICEVOX Core's `unload_voice_model` API
+- Unit tests implemented and passing
+
+### Implementation Details
+- Added `unload_voice_model_by_path()` method to VoicevoxCore
+- Uses VOICEVOX Core's native `voicevox_synthesizer_unload_voice_model` function
+- Memory is actually freed when models are unloaded
+- LRU algorithm ensures most recently used models stay loaded
+
 ## Testing & Development
 
 ### Quick Test Procedure (Recommended)

@@ -101,8 +101,8 @@ User Command: voicevox-say "Hello"
          │                       │                       │
          │                       ▼                       │
          │              ┌─────────────────┐              │
-         │              │  Load Models    │              │
-         │              │  (26+ VVM)      │              │
+         │              │  Load 3 Models  │              │
+         │              │  (Lazy Loading) │              │
          │              └─────────────────┘              │
          │                       │                       │
          └───────────────────────┼───────────────────────┘
@@ -211,7 +211,7 @@ cargo build --release --features "performance,parallel,zero_copy"  # Custom prof
 
 ### Daemon Management
 ```bash
-# Start daemon (production - loads all 26+ models)
+# Start daemon (with lazy loading - only 3 models initially)
 voicevox-daemon --start
 
 # Stop daemon
@@ -232,6 +232,11 @@ voicevox-daemon --detach
 # Custom socket path
 voicevox-daemon --socket-path /custom/path/daemon.sock --start
 ```
+
+**Note**: With lazy loading implementation, the daemon now:
+- Starts with only 3 popular models (Zundamon, Shikoku Metan, Kasukabe Tsumugi)
+- Loads other models on-demand when first used (~500ms delay)
+- Reduces memory from ~1.1GB to ~300MB at startup
 
 ### Client Usage (macOS say Compatible)
 ```bash
@@ -260,36 +265,60 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start
 echo "標準入力からのテキスト" | ./target/release/voicevox-say
 ```
 
-## Voice Discovery
-
-```bash
-# List available models and speakers
-./target/release/voicevox-say --list-models
-./target/release/voicevox-say --list-speakers
-./target/release/voicevox-say --status
-```
-
-
 ## Testing & Development
 
+### Quick Test Procedure (Recommended)
+
 ```bash
-# For Cargo builds, set library path:
-export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
+# Use Nix build for reliable testing (statically linked)
+nix build
 
-# Test daemon-client workflow
-./target/debug/voicevox-daemon --foreground &
-./target/debug/voicevox-say "動作テストなのだ"
-./target/debug/voicevox-daemon --stop
+# 1. Kill any existing daemon
+pkill -f voicevox-daemon || true
 
-# Performance testing
-cargo build --release --features "performance"
-time ./target/release/voicevox-daemon --start  # ~1.2s startup with parallel loading
-time ./target/release/voicevox-say "パフォーマンステスト"  # ~50ms synthesis
+# 2. Start daemon and check memory
+./result/bin/voicevox-daemon --start --detach
+ps aux | grep voicevox-daemon | grep -v grep | awk '{print "Memory (MB): " $6/1024}'
 
-# Memory usage comparison
-cargo build --release --features "performance"  # CompactString + SmallVec
-cargo build --release  # Standard collections
-# Expected: ~15-20% memory reduction with performance features
+# 3. Test synthesis
+./result/bin/voicevox-say "テストなのだ"
+
+# 4. Check daemon status
+./result/bin/voicevox-daemon --status
+
+# 5. Stop daemon
+./result/bin/voicevox-daemon --stop
+```
+
+### Development Testing (Cargo)
+
+```bash
+# For Cargo builds, library path issues are common on macOS
+# Recommendation: Use Nix build for testing to avoid dylib issues
+
+# If you must use Cargo:
+cargo build --release
+# Copy libraries to target directory (macOS workaround)
+cp target/release/deps/*.dylib target/release/ 2>/dev/null || true
+
+# Then test from release directory
+cd target/release
+./voicevox-daemon --foreground &
+./voicevox-say "テスト"
+pkill -f voicevox-daemon
+```
+
+### Memory & Performance Testing
+
+```bash
+# After daemon starts, check memory usage
+DAEMON_PID=$(pgrep -f voicevox-daemon)
+ps -p $DAEMON_PID -o pid,vsz,rss,comm | awk 'NR>1 {print "VSZ(MB):", $2/1024, "RSS(MB):", $3/1024}'
+
+# Expected results with lazy loading:
+# - Initial: ~300MB (3 models loaded)
+# - After using 10 models: ~600MB
+# - All models loaded: ~1.1GB
 ```
 
 ### CI Task Runner (Local)

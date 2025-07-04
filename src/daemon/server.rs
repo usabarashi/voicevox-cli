@@ -53,22 +53,64 @@ use crate::core::VoicevoxCore;
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 use crate::voice::{resolve_voice_dynamic, scan_available_models};
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 pub struct DaemonState {
     core: VoicevoxCore,
+    loaded_models: Arc<Mutex<HashSet<u32>>>,
 }
 
 impl DaemonState {
     pub async fn new() -> Result<Self> {
         let core = VoicevoxCore::new()?;
+        let loaded_models = Arc::new(Mutex::new(HashSet::new()));
 
-        // Load all models for daemon (no download attempt)
-        if let Err(e) = core.load_all_models_no_download() {
-            eprintln!("Warning: Failed to load some models: {}", e);
-            eprintln!("Please run 'voicevox-say' first to download models.");
+        // Load only popular models on startup for faster initialization
+        let popular_models = vec![3, 2, 8]; // Zundamon, Shikoku Metan, Kasukabe Tsumugi
+        
+        println!("Loading popular models for quick startup...");
+        for model_id in popular_models {
+            match core.load_specific_model(&model_id.to_string()) {
+                Ok(_) => {
+                    loaded_models.lock().await.insert(model_id);
+                    println!("  ✓ Loaded model {}", model_id);
+                }
+                Err(e) => {
+                    eprintln!("  ✗ Failed to load model {}: {}", model_id, e);
+                }
+            }
         }
 
-        Ok(DaemonState { core })
+        if loaded_models.lock().await.is_empty() {
+            eprintln!("Warning: No models could be loaded. Please run 'voicevox-say' first to download models.");
+        }
+
+        Ok(DaemonState { core, loaded_models })
+    }
+
+    // Helper function to extract model_id from style_id
+    fn get_model_id_from_style(style_id: u32) -> u32 {
+        // Most models follow the pattern where style_id = model_id * 10 + variant
+        // But some early models (0-30) have direct mapping
+        if style_id <= 30 {
+            style_id
+        } else {
+            style_id / 10
+        }
+    }
+
+    // Ensure a model is loaded before use
+    async fn ensure_model_loaded(&self, model_id: u32) -> Result<()> {
+        let mut loaded = self.loaded_models.lock().await;
+        
+        if !loaded.contains(&model_id) {
+            println!("Dynamically loading model {} on demand...", model_id);
+            self.core.load_specific_model(&model_id.to_string())?;
+            loaded.insert(model_id);
+            println!("  ✓ Model {} loaded successfully", model_id);
+        }
+        
+        Ok(())
     }
 
     pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
@@ -79,14 +121,33 @@ impl DaemonState {
                 text,
                 style_id,
                 options: _,
-            } => match self.core.synthesize(&text, style_id) {
-                Ok(wav_data) => OwnedResponse::SynthesizeResult {
-                    wav_data: Cow::Owned(wav_data),
-                },
-                Err(e) => {
-                    eprintln!("Synthesis failed: {}", e);
-                    OwnedResponse::Error {
-                        message: Cow::Owned(format!("Synthesis failed: {}", e)),
+            } => {
+                // Ensure the required model is loaded
+                let model_id = Self::get_model_id_from_style(style_id);
+                
+                match self.ensure_model_loaded(model_id).await {
+                    Ok(_) => {
+                        // Model is loaded, proceed with synthesis
+                        match self.core.synthesize(&text, style_id) {
+                            Ok(wav_data) => OwnedResponse::SynthesizeResult {
+                                wav_data: Cow::Owned(wav_data),
+                            },
+                            Err(e) => {
+                                eprintln!("Synthesis failed: {}", e);
+                                OwnedResponse::Error {
+                                    message: Cow::Owned(format!("Synthesis failed: {}", e)),
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to load model {}: {}", model_id, e);
+                        OwnedResponse::Error {
+                            message: Cow::Owned(format!(
+                                "Failed to load model {} for synthesis: {}",
+                                model_id, e
+                            )),
+                        }
                     }
                 }
             },
@@ -105,18 +166,48 @@ impl DaemonState {
 
             OwnedRequest::LoadModel { model_name } => {
                 println!("Loading model: {}", model_name);
-                match self.core.load_specific_model(&model_name) {
-                    Ok(_) => {
-                        println!("Model loaded successfully: {}", model_name);
-                        OwnedResponse::Success
+                
+                // Try to parse model_id from model_name
+                if let Ok(model_id) = model_name.parse::<u32>() {
+                    // Check if already loaded
+                    let mut loaded = self.loaded_models.lock().await;
+                    if loaded.contains(&model_id) {
+                        println!("Model {} already loaded", model_name);
+                        return OwnedResponse::Success;
                     }
-                    Err(e) => {
-                        println!("Failed to load model {}: {}", model_name, e);
-                        OwnedResponse::Error {
-                            message: Cow::Owned(format!(
-                                "Failed to load model {}: {}",
-                                model_name, e
-                            )),
+                    
+                    // Load the model
+                    match self.core.load_specific_model(&model_name) {
+                        Ok(_) => {
+                            loaded.insert(model_id);
+                            println!("Model loaded successfully: {}", model_name);
+                            OwnedResponse::Success
+                        }
+                        Err(e) => {
+                            println!("Failed to load model {}: {}", model_name, e);
+                            OwnedResponse::Error {
+                                message: Cow::Owned(format!(
+                                    "Failed to load model {}: {}",
+                                    model_name, e
+                                )),
+                            }
+                        }
+                    }
+                } else {
+                    // Non-numeric model name, just try to load it
+                    match self.core.load_specific_model(&model_name) {
+                        Ok(_) => {
+                            println!("Model loaded successfully: {}", model_name);
+                            OwnedResponse::Success
+                        }
+                        Err(e) => {
+                            println!("Failed to load model {}: {}", model_name, e);
+                            OwnedResponse::Error {
+                                message: Cow::Owned(format!(
+                                    "Failed to load model {}: {}",
+                                    model_name, e
+                                )),
+                            }
                         }
                     }
                 }

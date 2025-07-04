@@ -74,8 +74,8 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
 fn build_models_search_paths() -> Vec<PathBuf> {
     let env_paths = [
         ("VOICEVOX_MODELS_DIR", ""),
-        ("HOME", ".local/share/voicevox/models/vvms"),  // Check vvms first
-        ("HOME", ".local/share/voicevox/models"),       // Then parent directory
+        ("HOME", ".local/share/voicevox/models/vvms"), // Check vvms first
+        ("HOME", ".local/share/voicevox/models"),      // Then parent directory
         ("XDG_DATA_HOME", "voicevox/models/vvms"),
         ("XDG_DATA_HOME", "voicevox/models"),
         ("HOME", ".voicevox/models"), // Legacy

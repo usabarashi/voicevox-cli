@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
     let status = matches.get_flag("status");
     let restart = matches.get_flag("restart");
     let create_config = matches.get_flag("create-config");
-    
+
     // Handle create-config
     if create_config {
         return voicevox_cli::config::Config::create_example()
@@ -204,31 +204,29 @@ async fn main() -> Result<()> {
     // Load configuration with CLI overrides
     let mut config = if let Some(config_path) = matches.get_one::<String>("config") {
         match std::fs::read_to_string(config_path) {
-            Ok(content) => toml::from_str(&content)
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to parse config file: {}", e);
-                    voicevox_cli::config::Config::default()
-                }),
+            Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
+                eprintln!("Failed to parse config file: {}", e);
+                voicevox_cli::config::Config::default()
+            }),
             Err(e) => {
                 eprintln!("Failed to read config file: {}", e);
                 voicevox_cli::config::Config::default()
             }
         }
     } else {
-        voicevox_cli::config::Config::load()
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to load config, using defaults: {}", e);
-                voicevox_cli::config::Config::default()
-            })
+        voicevox_cli::config::Config::load().unwrap_or_else(|e| {
+            eprintln!("Failed to load config, using defaults: {}", e);
+            voicevox_cli::config::Config::default()
+        })
     };
-    
+
     // Apply CLI overrides
     if let Some(max_models) = matches.get_one::<String>("max-models") {
         if let Ok(num) = max_models.parse::<usize>() {
             config.memory.max_loaded_models = num;
         }
     }
-    
+
     if matches.get_flag("no-lru") {
         config.memory.enable_lru_cache = false;
     }
@@ -237,9 +235,15 @@ async fn main() -> Result<()> {
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
     println!("Starting user daemon...");
     println!("Socket: {} (user-specific)", socket_path.display());
-    println!("Mode: {} models max, LRU: {}", 
-             config.memory.max_loaded_models,
-             if config.memory.enable_lru_cache { "enabled" } else { "disabled" });
+    println!(
+        "Mode: {} models max, LRU: {}",
+        config.memory.max_loaded_models,
+        if config.memory.enable_lru_cache {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
 
     run_daemon_with_config(socket_path, foreground, config).await
 }

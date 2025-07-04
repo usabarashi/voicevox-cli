@@ -73,7 +73,7 @@ impl ModelCache {
     pub fn new(max_models: usize) -> Self {
         Self::with_favorites(max_models, HashSet::from([3, 2, 8]))
     }
-    
+
     pub fn with_favorites(max_models: usize, favorites: HashSet<u32>) -> Self {
         Self {
             loaded_models: HashMap::new(),
@@ -133,19 +133,18 @@ pub struct DaemonState {
 impl DaemonState {
     pub async fn new() -> Result<Self> {
         // Load configuration
-        let config = crate::config::Config::load()
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to load config, using defaults: {}", e);
-                crate::config::Config::default()
-            });
-        
+        let config = crate::config::Config::load().unwrap_or_else(|e| {
+            eprintln!("Failed to load config, using defaults: {}", e);
+            crate::config::Config::default()
+        });
+
         Self::with_config(config).await
     }
-    
+
     pub async fn with_config(config: crate::config::Config) -> Result<Self> {
         let core = VoicevoxCore::new()?;
         let loaded_models = Arc::new(Mutex::new(HashSet::new()));
-        
+
         // Create model cache with configuration
         let model_cache = if config.memory.enable_lru_cache {
             Arc::new(Mutex::new(ModelCache::with_favorites(
@@ -162,8 +161,11 @@ impl DaemonState {
 
         // Load models specified in config
         let preload_models = config.models.preload;
-        
-        println!("Loading {} models from configuration...", preload_models.len());
+
+        println!(
+            "Loading {} models from configuration...",
+            preload_models.len()
+        );
         for model_id in preload_models {
             match core.load_specific_model(&model_id.to_string()) {
                 Ok(_) => {
@@ -181,8 +183,8 @@ impl DaemonState {
             eprintln!("Warning: No models could be loaded. Please run 'voicevox-say' first to download models.");
         }
 
-        Ok(DaemonState { 
-            core, 
+        Ok(DaemonState {
+            core,
             loaded_models,
             model_cache,
         })
@@ -211,7 +213,7 @@ impl DaemonState {
             // 冥鳴ひまり
             14 => 14,
             // 九州そら
-            16 | 15 | 17 | 18 | 19 => 16,
+            15..=19 => 16,
             // Default: assume direct mapping for others
             _ => style_id,
         }
@@ -221,18 +223,22 @@ impl DaemonState {
     async fn ensure_model_loaded(&self, model_id: u32) -> Result<()> {
         let mut loaded = self.loaded_models.lock().await;
         let mut cache = self.model_cache.lock().await;
-        
+
         if !loaded.contains(&model_id) {
             // Check if we need to evict a model
             if cache.should_evict() {
                 if let Some(lru_model) = cache.get_lru_model() {
                     println!("Memory limit reached. Evicting model {} (LRU)", lru_model);
-                    
+
                     // Actually unload the model using the new method
-                    let models_dir = crate::paths::find_models_dir_client()
-                        .unwrap_or_else(|_| std::path::PathBuf::from("~/.local/share/voicevox/models/vvms"));
+                    let models_dir = crate::paths::find_models_dir_client().unwrap_or_else(|_| {
+                        std::path::PathBuf::from("~/.local/share/voicevox/models/vvms")
+                    });
                     let model_path = models_dir.join(format!("{}.vvm", lru_model));
-                    match self.core.unload_voice_model_by_path(model_path.to_str().unwrap_or("")) {
+                    match self
+                        .core
+                        .unload_voice_model_by_path(model_path.to_str().unwrap_or(""))
+                    {
                         Ok(_) => {
                             loaded.remove(&lru_model);
                             cache.remove_model(lru_model);
@@ -247,17 +253,17 @@ impl DaemonState {
                     }
                 }
             }
-            
+
             println!("Dynamically loading model {} on demand...", model_id);
             self.core.load_specific_model(&model_id.to_string())?;
             loaded.insert(model_id);
             cache.add_model(model_id);
             println!("  ✓ Model {} loaded successfully", model_id);
         }
-        
+
         // Mark model as used
         cache.mark_used(model_id);
-        
+
         Ok(())
     }
 
@@ -272,7 +278,7 @@ impl DaemonState {
             } => {
                 // Ensure the required model is loaded
                 let model_id = Self::get_model_id_from_style(style_id);
-                
+
                 match self.ensure_model_loaded(model_id).await {
                     Ok(_) => {
                         // Model is loaded, proceed with synthesis
@@ -298,7 +304,7 @@ impl DaemonState {
                         }
                     }
                 }
-            },
+            }
 
             OwnedRequest::ListSpeakers => match self.core.get_speakers() {
                 Ok(speakers) => OwnedResponse::SpeakersList {
@@ -314,7 +320,7 @@ impl DaemonState {
 
             OwnedRequest::LoadModel { model_name } => {
                 println!("Loading model: {}", model_name);
-                
+
                 // Try to parse model_id from model_name
                 if let Ok(model_id) = model_name.parse::<u32>() {
                     // Use the same logic as ensure_model_loaded
@@ -450,7 +456,11 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     run_daemon_with_config(socket_path, foreground, config).await
 }
 
-pub async fn run_daemon_with_config(socket_path: PathBuf, foreground: bool, config: crate::config::Config) -> Result<()> {
+pub async fn run_daemon_with_config(
+    socket_path: PathBuf,
+    foreground: bool,
+    config: crate::config::Config,
+) -> Result<()> {
     // Remove existing socket file if it exists
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;

@@ -53,7 +53,72 @@ use crate::core::VoicevoxCore;
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 use crate::voice::{resolve_voice_dynamic, scan_available_models};
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
+
+// Model cache with LRU-style tracking and usage statistics
+#[derive(Debug, Clone)]
+pub struct ModelCache {
+    // Model ID -> Last used time
+    pub loaded_models: HashMap<u32, Instant>,
+    // Model ID -> Usage count
+    pub usage_stats: HashMap<u32, usize>,
+    // Maximum number of models to keep loaded
+    pub max_models: usize,
+    // Models that should never be unloaded (favorites)
+    pub favorites: HashSet<u32>,
+}
+
+impl ModelCache {
+    pub fn new(max_models: usize) -> Self {
+        Self {
+            loaded_models: HashMap::new(),
+            usage_stats: HashMap::new(),
+            max_models,
+            favorites: HashSet::from([3, 2, 8]), // Default favorites: Zundamon, Metan, Tsumugi
+        }
+    }
+
+    pub fn is_loaded(&self, model_id: u32) -> bool {
+        self.loaded_models.contains_key(&model_id)
+    }
+
+    pub fn mark_used(&mut self, model_id: u32) {
+        self.loaded_models.insert(model_id, Instant::now());
+        *self.usage_stats.entry(model_id).or_insert(0) += 1;
+    }
+
+    pub fn add_model(&mut self, model_id: u32) {
+        self.loaded_models.insert(model_id, Instant::now());
+        self.usage_stats.entry(model_id).or_insert(0);
+    }
+
+    // Get the least recently used model that's not a favorite
+    pub fn get_lru_model(&self) -> Option<u32> {
+        self.loaded_models
+            .iter()
+            .filter(|(id, _)| !self.favorites.contains(id))
+            .min_by_key(|(_, time)| *time)
+            .map(|(id, _)| *id)
+    }
+
+    pub fn should_evict(&self) -> bool {
+        self.loaded_models.len() >= self.max_models
+    }
+
+    pub fn remove_model(&mut self, model_id: u32) {
+        self.loaded_models.remove(&model_id);
+    }
+
+    pub fn get_stats(&self) -> String {
+        format!(
+            "Loaded: {} models, Max: {}, Stats: {:?}",
+            self.loaded_models.len(),
+            self.max_models,
+            self.usage_stats
+        )
+    }
+}
 
 pub struct DaemonState {
     core: VoicevoxCore,
@@ -169,18 +234,10 @@ impl DaemonState {
                 
                 // Try to parse model_id from model_name
                 if let Ok(model_id) = model_name.parse::<u32>() {
-                    // Check if already loaded
-                    let mut loaded = self.loaded_models.lock().await;
-                    if loaded.contains(&model_id) {
-                        println!("Model {} already loaded", model_name);
-                        return OwnedResponse::Success;
-                    }
-                    
-                    // Load the model
-                    match self.core.load_specific_model(&model_name) {
+                    // Use the same logic as ensure_model_loaded
+                    match self.ensure_model_loaded(model_id).await {
                         Ok(_) => {
-                            loaded.insert(model_id);
-                            println!("Model loaded successfully: {}", model_name);
+                            println!("Model {} ready for use", model_name);
                             OwnedResponse::Success
                         }
                         Err(e) => {

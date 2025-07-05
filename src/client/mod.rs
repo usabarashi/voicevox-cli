@@ -1,6 +1,8 @@
 pub mod audio;
 pub mod daemon_client;
 pub mod download;
+#[cfg(unix)]
+pub mod fd_receive;
 pub mod input;
 
 pub use audio::play_audio_from_memory;

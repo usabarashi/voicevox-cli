@@ -51,16 +51,25 @@ pub async fn daemon_mode(
     socket_path: &PathBuf,
 ) -> Result<()> {
     // Connect to daemon with timeout
-    let stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
+    let mut stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
         .await
         .map_err(|_| anyhow!("Daemon connection timeout"))?
         .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
 
-    let (reader, writer) = stream.into_split();
-    let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
-    let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
+    // Enable zero-copy if supported
+    #[cfg(unix)]
+    let mut options = options;
+    #[cfg(unix)]
+    {
+        if crate::client::fd_receive::supports_zero_copy() {
+            println!("DEBUG: Enabling zero-copy mode in client");
+            options.zero_copy = true;
+        }
+    }
+    #[cfg(not(unix))]
+    let options = options;
 
-    // Send synthesis request
+    // Send request
     let request = OwnedRequest::Synthesize {
         text: Cow::Owned(text.to_string()),
         style_id,
@@ -70,17 +79,27 @@ pub async fn daemon_mode(
     let request_data =
         bincode::serialize(&request).map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
 
-    framed_writer
-        .send(request_data.into())
-        .await
-        .map_err(|e| anyhow!("Failed to send request: {}", e))?;
+    // Send using split temporarily
+    {
+        let (_reader, writer) = stream.split();
+        let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
+        framed_writer
+            .send(request_data.into())
+            .await
+            .map_err(|e| anyhow!("Failed to send request: {}", e))?;
+    }
 
     // Receive response
-    let response_frame = timeout(Duration::from_secs(30), framed_reader.next())
-        .await
-        .map_err(|_| anyhow!("Daemon response timeout"))?
-        .ok_or_else(|| anyhow!("Connection closed by daemon"))?
-        .map_err(|e| anyhow!("Failed to receive response: {}", e))?;
+    let response_frame = {
+        let (reader, _writer) = stream.split();
+        let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
+
+        timeout(Duration::from_secs(30), framed_reader.next())
+            .await
+            .map_err(|_| anyhow!("Daemon response timeout"))?
+            .ok_or_else(|| anyhow!("Connection closed by daemon"))?
+            .map_err(|e| anyhow!("Failed to receive response: {}", e))?
+    };
 
     let response: OwnedResponse = bincode::deserialize(&response_frame)
         .map_err(|e| anyhow!("Failed to deserialize response: {}", e))?;
@@ -101,6 +120,61 @@ pub async fn daemon_mode(
             }
 
             Ok(())
+        }
+        #[cfg(unix)]
+        OwnedResponse::SynthesizeResultFd { size, format: _ } => {
+            println!("DEBUG: Received FD response, waiting for FD...");
+
+            // Small delay to ensure server sends FD
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+            // Try to receive FD using stream's try_io
+            let result = stream.try_io(tokio::io::Interest::READABLE, || {
+                use crate::daemon::fd_passing::receive_fd;
+                use std::os::unix::io::AsRawFd;
+
+                let socket_fd = stream.as_raw_fd();
+                let mut metadata_buf = vec![0u8; 16];
+                match receive_fd(socket_fd, &mut metadata_buf) {
+                    Ok((fd, size)) => Ok((fd, size)),
+                    Err(e) => {
+                        eprintln!("FD receive error: {}", e);
+                        Err(std::io::Error::other(e.to_string()))
+                    }
+                }
+            });
+
+            match result {
+                Ok((received_fd, _)) => {
+                    println!("DEBUG: Successfully received FD: {}", received_fd);
+
+                    // Create audio buffer from received FD
+                    use crate::client::fd_receive::ReceivedAudioBuffer;
+                    let audio_buffer = unsafe { ReceivedAudioBuffer::from_fd(received_fd, size)? };
+
+                    // Get audio data
+                    let wav_data = audio_buffer.to_vec();
+
+                    // Handle output
+                    if let Some(output_file) = output_file {
+                        std::fs::write(output_file, &wav_data)?;
+                    }
+
+                    // Play audio if not quiet and no output file
+                    if !quiet && output_file.is_none() {
+                        if let Err(e) = crate::client::audio::play_audio_from_memory(&wav_data) {
+                            eprintln!("Error: Audio playback failed: {}", e);
+                            return Err(e);
+                        }
+                    }
+
+                    Ok(())
+                }
+                _ => {
+                    eprintln!("Failed to receive audio FD via try_io");
+                    Err(anyhow!("Failed to receive audio file descriptor"))
+                }
+            }
         }
         OwnedResponse::Error { message } => Err(anyhow!("Daemon error: {}", message)),
         _ => Err(anyhow!("Unexpected response from daemon")),

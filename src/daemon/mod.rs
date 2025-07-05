@@ -10,8 +10,18 @@ pub mod server;
 /// Process management and duplicate prevention
 pub mod process;
 
+/// Zero-copy audio streaming support
+pub mod streaming;
+
+/// File descriptor passing for zero-copy transfer
+pub mod fd_passing;
+
+/// FD passing server with stream reuse pattern
+pub mod fd_server;
+
 pub use process::check_and_prevent_duplicate;
 pub use server::{handle_client, run_daemon, run_daemon_with_config, DaemonState};
+pub use streaming::SharedAudioBuffer;
 
 #[cfg(test)]
 mod tests {

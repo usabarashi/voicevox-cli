@@ -61,18 +61,23 @@ The tool uses a **daemon-client architecture** for performance, with pre-loaded 
 │ ├── paths.rs            # XDG-compliant path discovery          │
 │ ├── setup.rs            # First-run setup utilities             │
 │ ├── ipc.rs              # Inter-process communication           │
+│ ├── config.rs           # Configuration file support            │
+│ ├── memory_pool.rs      # Memory pool for buffer reuse         │
 │ │                                                               │
 │ ├── client/             # Client-side functionality (multi)     │
 │ │   ├── mod.rs          # Module exports                        │
 │ │   ├── download.rs     # Model download management             │
 │ │   ├── daemon_client.rs# Daemon communication                  │
 │ │   ├── audio.rs        # Audio playback                        │
-│ │   └── input.rs        # Input handling                        │
+│ │   ├── input.rs        # Input handling                        │
+│ │   └── fd_receive.rs   # Zero-copy file descriptor reception   │
 │ │                                                               │
 │ └── daemon/             # Server-side functionality (multi)     │
 │     ├── mod.rs          # Module exports                        │
 │     ├── server.rs       # Background server implementation      │
-│     └── process.rs      # Process management                    │
+│     ├── process.rs      # Process management                    │
+│     ├── fd_passing.rs   # Zero-copy file descriptor passing     │
+│     └── fd_server.rs    # FD-enabled server implementation      │
 │                                                                 │
 │ Static Resources (Build-time):                                  │
 │ ├── voicevox_core/      # Statically linked libraries           │
@@ -282,6 +287,12 @@ echo "標準入力からのテキスト" | ./target/release/voicevox-say
 - **Config File**: `~/.config/voicevox/config.toml` for persistent settings
 - **CLI Override**: Command-line options override config file
 - **Customizable**: Memory limits, preload models, favorites list
+
+### Zero-Copy Memory Transfer
+- **File Descriptor Passing**: Uses Unix domain socket SCM_RIGHTS for zero-copy audio transfer
+- **Memory-Mapped Files**: Audio data shared via anonymous memory files (memfd_create/tempfile)
+- **Protocol Negotiation**: Automatic fallback to regular transfer if zero-copy unavailable
+- **Stream Reuse Pattern**: Works around Tokio's ownership constraints for FD passing
 
 ### Configuration Example
 ```toml

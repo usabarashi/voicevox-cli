@@ -369,6 +369,7 @@ async fn main() -> Result<()> {
         rate,
         streaming,
         context: None,
+        zero_copy: false,
     };
 
     // Try daemon mode first, regardless of model availability

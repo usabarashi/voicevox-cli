@@ -132,12 +132,21 @@ jobs:
           # Version information
           result/bin/voicevox-say --version || echo "Version command not available"
       
+      - name: Prepare artifacts for upload
+        if: matrix.method == 'nix'
+        run: |
+          # Copy actual files from symlink to avoid issues
+          mkdir -p build-artifacts/bin
+          cp -L result/bin/* build-artifacts/bin/
+          echo "Prepared artifacts:"
+          ls -la build-artifacts/bin/
+      
       - name: Upload build artifacts
         if: matrix.method == 'nix'
         uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
         with:
           name: nix-build-result
-          path: result
+          path: build-artifacts
           retention-days: 1
 
       # Cargo Build Path (Compilation Check)
@@ -177,21 +186,40 @@ jobs:
         run: |
           echo "Verifying package characteristics..."
           
+          # Downloaded artifacts are in nix-build-result/
+          RESULT_PATH="nix-build-result"
+          
           # Check binary sizes (should be reasonable)
-          ls -lah result/bin/
+          ls -lah ${RESULT_PATH}/bin/
           
           # Verify static linking worked
-          otool -L result/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
+          otool -L ${RESULT_PATH}/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
           
           # Check total package size
-          du -sh result/
+          du -sh ${RESULT_PATH}/
           echo "✅ macOS package verification completed"
+      
+      - name: Client functionality test
+        run: |
+          echo "Testing from client perspective..."
+          
+          # Test executables are runnable
+          nix-build-result/bin/voicevox-say --help
+          nix-build-result/bin/voicevox-daemon --help
+          
+          # Test version information
+          nix-build-result/bin/voicevox-say --version || echo "Version not implemented"
+          
+          # Test list speakers (should work without models)
+          nix-build-result/bin/voicevox-say --list-speakers || echo "List speakers may require models"
+          
+          echo "✅ Client functionality tests completed"
           
       - name: Archive macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: voicevox-cli-macos-${{ github.sha }}
-          path: result/bin/
+          path: nix-build-result/bin/
           retention-days: 7
 
   macos-security-audit:

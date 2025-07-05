@@ -62,7 +62,7 @@ The tool uses a **daemon-client architecture** for performance, with pre-loaded 
 │ ├── setup.rs            # First-run setup utilities             │
 │ ├── ipc.rs              # Inter-process communication           │
 │ ├── config.rs           # Configuration file support            │
-│ ├── memory_pool.rs      # Memory pool for buffer reuse         │
+│ ├── memory_pool.rs      # Memory pool for buffer reuse          │
 │ │                                                               │
 │ ├── client/             # Client-side functionality (multi)     │
 │ │   ├── mod.rs          # Module exports                        │

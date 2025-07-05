@@ -33,15 +33,15 @@ voicevox-say "こんにちは、ずんだもんなのだ"
 ### Development
 
 ```bash
-# Clone and build
+# Clone repository
 git clone https://github.com/usabarashi/voicevox-cli
 cd voicevox-cli
 
-# Nix development
+# Enter development shell
 nix develop
-nix build
 
-# Test directly
+# Build and test
+nix build
 nix run . -- "テストメッセージなのだ"
 ```
 

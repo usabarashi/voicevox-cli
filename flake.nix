@@ -177,33 +177,20 @@
 
           doCheck = false;
 
-          nativeBuildInputs =
-            with pkgs;
-            [
-              pkg-config
-              cmake
-              git
-              autoconf
-              automake
-              libtool
-              gnumake
-            ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
-            ];
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            cmake
+            git
+            autoconf
+            automake
+            libtool
+            gnumake
+          ];
 
-          buildInputs =
-            [
-              voicevoxResources
-              openJTalkStaticLibs
-            ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
-            ];
+          buildInputs = [
+            voicevoxResources
+            openJTalkStaticLibs
+          ];
 
           preBuild = ''
 
@@ -269,10 +256,18 @@
         '';
 
         # Binary release package (pre-built from GitHub Releases)
+        #
+        # Release process (single commit):
+        # 1. Build locally: nix build
+        # 2. Create archive: tar -czf voicevox-cli-v0.1.0-aarch64-darwin.tar.gz -C result/bin .
+        # 3. Calculate hash: nix-prefetch-url --unpack "file://$(pwd)/voicevox-cli-v0.1.0-aarch64-darwin.tar.gz"
+        # 4. Update releaseVersion and releaseHash below
+        # 5. Commit, tag, and push: git commit -am "Release v0.1.0" && git tag v0.1.0 && git push origin main v0.1.0
+        # 6. GitHub Actions will create release with the same archive
         voicevox-cli-binary =
           let
             releaseVersion = "0.1.0";
-            releaseHash = ""; # Update with: scripts/update-release-hash.sh
+            releaseHash = "07c7jh25j1wm5mcz745ls1ai6i1l2pcs3lc4v98svwjy04qq83dv"; # build from source
           in
           if releaseHash == "" then
             voicevox-cli-source

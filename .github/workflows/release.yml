@@ -120,15 +120,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update flake.nix hash (informational)
+      - name: Show flake.nix update instructions
         run: |
           VERSION=${{ steps.get_version.outputs.VERSION }}
           ARCHIVE_NAME="voicevox-cli-${VERSION}-aarch64-darwin.tar.gz"
           
-          echo "To update flake.nix with this release, use the following hash:"
+          # Compute the hash
+          HASH=$(nix-prefetch-url --unpack "file://$(pwd)/${ARCHIVE_NAME}" 2>/dev/null)
+          
+          echo "========================================"
+          echo "📦 Release Hash for flake.nix"
+          echo "========================================"
           echo ""
-          echo "version = \"${VERSION#v}\";"
-          echo "sha256 = \"$(nix-prefetch-url --unpack "file://$(pwd)/${ARCHIVE_NAME}" 2>/dev/null)\";"
+          echo "To update flake.nix after this release:"
           echo ""
-          echo "Or run:"
-          echo "nix-prefetch-url --unpack \"https://github.com/${{ github.repository }}/releases/download/${VERSION}/${ARCHIVE_NAME}\""
+          echo "1. Run this command to verify the hash:"
+          echo "   nix-prefetch-url --unpack \"https://github.com/${{ github.repository }}/releases/download/${VERSION}/${ARCHIVE_NAME}\""
+          echo ""
+          echo "2. Update flake.nix with:"
+          echo "   releaseVersion = \"${VERSION#v}\";"
+          echo "   releaseHash = \"${HASH}\";"
+          echo ""
+          echo "========================================"

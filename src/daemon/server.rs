@@ -464,80 +464,89 @@ impl DaemonState {
     }
 }
 
-pub async fn handle_client(stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Result<()> {
-    // For FD passing, we need direct access to the socket FD
-    // We'll use the standard library stream for FD operations
+pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Result<()> {
+    println!("New client connected (FD-enabled handler)");
 
-    let (reader, writer) = stream.into_split();
-    let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
-    let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
+    loop {
+        // Read request using framed codec
+        let request = {
+            let (reader, _writer) = stream.split();
+            let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
 
-    println!("New client connected");
-
-    while let Some(frame) = framed_reader.next().await {
-        match frame {
-            Ok(data) => {
-                // Deserialize request
-                match bincode::deserialize::<DaemonRequest>(&data) {
-                    Ok(request) => {
-                        // Handle request
-                        let response = {
-                            let state = state.lock().await;
-                            state.handle_request(request).await
-                        };
-
-                        // Check if we need to send FD after response
-                        #[cfg(unix)]
-                        let pending_fd = match &response {
-                            OwnedResponse::SynthesizeResultFd { .. } => {
-                                state.lock().await.pending_fd.lock().await.take()
-                            }
-                            _ => None,
-                        };
-
-                        // Serialize and send response
-                        match bincode::serialize(&response) {
-                            Ok(response_data) => {
-                                if let Err(e) = framed_writer.send(response_data.into()).await {
-                                    println!("Failed to send response: {}", e);
-                                    break;
-                                }
-
-                                // Send FD if we have one
-                                #[cfg(unix)]
-                                if let Some(fd) = pending_fd {
-                                    // For now, we'll skip FD passing due to Tokio ownership issues
-                                    // The fallback mechanism ensures functionality
-                                    eprintln!("FD passing disabled due to Tokio stream ownership");
-
-                                    // Close the FD since we can't send it
-                                    unsafe {
-                                        libc::close(fd);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                println!("Failed to serialize response: {}", e);
-                                break;
-                            }
-                        }
-                    }
+            match framed_reader.next().await {
+                Some(Ok(data)) => match bincode::deserialize::<DaemonRequest>(&data) {
+                    Ok(req) => req,
                     Err(e) => {
                         println!("Failed to deserialize request: {}", e);
-                        let error_response = OwnedResponse::Error {
-                            message: Cow::Owned(format!("Failed to deserialize request: {}", e)),
-                        };
+                        break;
+                    }
+                },
+                _ => break,
+            }
+        };
 
-                        if let Ok(error_data) = bincode::serialize(&error_response) {
-                            let _ = framed_writer.send(error_data.into()).await;
-                        }
+        // Handle request
+        let response = {
+            let state = state.lock().await;
+            state.handle_request(request).await
+        };
+
+        // Check if we need FD passing
+        #[cfg(unix)]
+        let needs_fd = matches!(response, OwnedResponse::SynthesizeResultFd { .. });
+        #[cfg(not(unix))]
+        let needs_fd = false;
+
+        // Send response
+        {
+            let (_reader, writer) = stream.split();
+            let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
+
+            match bincode::serialize(&response) {
+                Ok(response_data) => {
+                    if let Err(e) = framed_writer.send(response_data.into()).await {
+                        println!("Failed to send response: {}", e);
                         break;
                     }
                 }
+                Err(e) => {
+                    println!("Failed to serialize response: {}", e);
+                    break;
+                }
             }
-            Err(e) => {
-                println!("Frame error: {}", e);
-                break;
+        }
+
+        // Now handle FD passing if needed - stream is available again
+        #[cfg(unix)]
+        if needs_fd {
+            if let Some(fd) = state.lock().await.take_pending_fd().await {
+                // Small delay to ensure response is received
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+                // Use the stream directly for FD passing
+                let result = stream.try_io(tokio::io::Interest::WRITABLE, || {
+                    use crate::daemon::fd_passing::send_fd;
+                    use std::os::unix::io::AsRawFd;
+                    let socket_fd = stream.as_raw_fd();
+                    println!("DEBUG: Sending FD {} via socket {}", fd, socket_fd);
+                    match send_fd(socket_fd, fd, b"audio") {
+                        Ok(_) => Ok(()),
+                        Err(e) => {
+                            eprintln!("FD send error: {}", e);
+                            Err(std::io::Error::other(e.to_string()))
+                        }
+                    }
+                });
+
+                match result {
+                    Ok(_) => println!("✅ Successfully sent audio FD"),
+                    Err(e) => eprintln!("❌ Failed to send FD: {}", e),
+                }
+
+                // Close the FD
+                unsafe {
+                    libc::close(fd);
+                }
             }
         }
     }

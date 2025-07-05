@@ -9,7 +9,7 @@ use clap::{Arg, Command};
 use std::path::PathBuf;
 
 use tokio::net::UnixStream;
-use voicevox_cli::daemon::{check_and_prevent_duplicate, run_daemon_with_config};
+use voicevox_cli::daemon::check_and_prevent_duplicate;
 use voicevox_cli::paths::get_socket_path;
 
 #[tokio::main]
@@ -245,7 +245,8 @@ async fn main() -> Result<()> {
         }
     );
 
-    run_daemon_with_config(socket_path, foreground, config).await
+    // Use the FD-passing enabled server v2
+    voicevox_cli::daemon::fd_server::run_daemon_fd(socket_path, foreground).await
 }
 
 /// Handle daemon stop operation

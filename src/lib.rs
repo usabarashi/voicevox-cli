@@ -28,6 +28,9 @@ pub mod daemon;
 /// Configuration management
 pub mod config;
 
+/// Memory pool for efficient buffer management
+pub mod memory_pool;
+
 pub use core::{CoreConfig, CoreSynthesis, VoicevoxCore};
 pub use ipc::{
     DaemonRequest, DaemonResponse, IpcConfig, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions,

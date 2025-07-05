@@ -39,7 +39,7 @@ jobs:
             nix-${{ runner.os }}-
 
       - name: Build with Nix
-        run: nix build --show-trace
+        run: nix build .#voicevox-cli-source --show-trace
 
       - name: Verify build artifacts
         run: |

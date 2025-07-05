@@ -128,7 +128,7 @@ jobs:
         if: matrix.method == 'nix'
         run: |
           echo "Building VOICEVOX CLI with Nix (static linking)..."
-          nix build --show-trace
+          nix build .#voicevox-cli-source --show-trace
           
       - name: Verify Nix build artifacts
         if: matrix.method == 'nix'

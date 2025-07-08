@@ -11,11 +11,14 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     name: Build and Release for macOS Apple Silicon
     runs-on: macos-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
@@ -24,29 +27,16 @@ jobs:
 
       - name: Install Nix
         uses: cachix/install-nix-action@08dcb3a5e62fa31e2da3d490afc4176ef55ecd72 # v31
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Setup Nix cache
-        uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/nix
-            /nix/store
           key: nix-release-${{ runner.os }}-${{ hashFiles('flake.lock') }}
           restore-keys: |
             nix-release-${{ runner.os }}-
-            nix-${{ runner.os }}-
 
-      - name: Build with Nix
-        run: nix build --show-trace
-
-      - name: Verify build artifacts
-        run: |
-          ls -la result/bin/
-          file result/bin/voicevox-say
-          file result/bin/voicevox-daemon
-          test -x result/bin/voicevox-setup-models
 
       - name: Get version
         id: get_version
@@ -62,56 +52,22 @@ jobs:
         run: |
           VERSION=${{ steps.get_version.outputs.VERSION }}
           ARCHIVE_NAME="voicevox-cli-${VERSION}-aarch64-darwin.tar.gz"
-          
-          cd result/bin
-          tar -czf "../../${ARCHIVE_NAME}" \
-            voicevox-say \
-            voicevox-daemon \
-            voicevox-setup-models \
-            voicevox-download
-          cd ../..
-          
-          sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          # Build with Nix
+          nix build --show-trace
           
-          if [ -z "$PREVIOUS_TAG" ]; then
-            echo "This is the first release!" > CHANGELOG.md
-          else
-            echo "## What's Changed" > CHANGELOG.md
-            echo "" >> CHANGELOG.md
-            git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..HEAD >> CHANGELOG.md
-          fi
+          # Create tarball from build result
+          tar -czf "${ARCHIVE_NAME}" -C result/bin .
           
-          echo "" >> CHANGELOG.md
-          echo "## Installation" >> CHANGELOG.md
-          echo "" >> CHANGELOG.md
-          echo "### Using Nix (Recommended)" >> CHANGELOG.md
-          echo '```bash' >> CHANGELOG.md
-          echo "# Temporary use" >> CHANGELOG.md
-          echo "nix shell github:usabarashi/voicevox-cli" >> CHANGELOG.md
-          echo "" >> CHANGELOG.md
-          echo "# Permanent installation" >> CHANGELOG.md
-          echo "nix profile install github:usabarashi/voicevox-cli" >> CHANGELOG.md
-          echo '```' >> CHANGELOG.md
-          echo "" >> CHANGELOG.md
-          echo "### Manual Download" >> CHANGELOG.md
-          echo "Download the tarball from this release and extract:" >> CHANGELOG.md
-          echo '```bash' >> CHANGELOG.md
-          echo "tar -xzf voicevox-cli-*.tar.gz" >> CHANGELOG.md
-          echo "chmod +x voicevox-*" >> CHANGELOG.md
-          echo "./voicevox-say \"こんにちは\"" >> CHANGELOG.md
-          echo '```' >> CHANGELOG.md
+          # Calculate hash
+          shasum -a 256 "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974 # v2.3.2
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.VERSION }}
           name: VOICEVOX CLI ${{ steps.get_version.outputs.VERSION }}
-          body_path: CHANGELOG.md
+          body: "Release ${{ steps.get_version.outputs.VERSION }}"
           draft: false
           prerelease: false
           files: |
@@ -119,16 +75,3 @@ jobs:
             voicevox-cli-*.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update flake.nix hash (informational)
-        run: |
-          VERSION=${{ steps.get_version.outputs.VERSION }}
-          ARCHIVE_NAME="voicevox-cli-${VERSION}-aarch64-darwin.tar.gz"
-          
-          echo "To update flake.nix with this release, use the following hash:"
-          echo ""
-          echo "version = \"${VERSION#v}\";"
-          echo "sha256 = \"$(nix-prefetch-url --unpack "file://$(pwd)/${ARCHIVE_NAME}" 2>/dev/null)\";"
-          echo ""
-          echo "Or run:"
-          echo "nix-prefetch-url --unpack \"https://github.com/${{ github.repository }}/releases/download/${VERSION}/${ARCHIVE_NAME}\""

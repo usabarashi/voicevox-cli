@@ -164,7 +164,21 @@
           pname = "voicevox-cli";
           version = "0.1.0";
 
-          src = ./.;
+          src = pkgs.lib.cleanSourceWith {
+            src = ./.;
+            filter =
+              path: type:
+              let
+                baseName = baseNameOf path;
+              in
+              !(
+                # Exclude temporary directories
+                (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
+                ||
+                  # Exclude other temporary files
+                  (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+              );
+          };
 
           cargoLock = {
             lockFile = ./Cargo.lock;
@@ -177,33 +191,20 @@
 
           doCheck = false;
 
-          nativeBuildInputs =
-            with pkgs;
-            [
-              pkg-config
-              cmake
-              git
-              autoconf
-              automake
-              libtool
-              gnumake
-            ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
-            ];
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            cmake
+            git
+            autoconf
+            automake
+            libtool
+            gnumake
+          ];
 
-          buildInputs =
-            [
-              voicevoxResources
-              openJTalkStaticLibs
-            ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk_11_0.frameworks.AudioUnit
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreAudio
-              pkgs.darwin.apple_sdk_11_0.frameworks.CoreServices
-            ];
+          buildInputs = [
+            voicevoxResources
+            openJTalkStaticLibs
+          ];
 
           preBuild = ''
 
@@ -215,6 +216,7 @@
             export OPENJTALK_SKIP_BUILD="1"
             export OPENJTALK_NO_BUILD="1"
 
+            # ONNX Runtime configuration
             export ORT_STRATEGY="system"
             export ORT_USE_SYSTEM_LIB="1"
             export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
@@ -230,9 +232,6 @@
             export VOICEVOX_CORE_LIB_DIR="${voicevoxResources}/voicevox_core/lib"
             export VOICEVOX_CORE_INCLUDE_DIR="${voicevoxResources}/voicevox_core/include"
 
-            export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
-            export ORT_STRATEGY="system"
-            export ORT_USE_SYSTEM_LIB="1"
 
             export PKG_CONFIG_PATH="${openJTalkStaticLibs}/lib/pkgconfig:${voicevoxResources}/voicevox_core/lib/pkgconfig:$PKG_CONFIG_PATH"
 
@@ -268,53 +267,12 @@
           chmod +x $out/bin/voicevox-auto-setup
         '';
 
-        # Binary release package (pre-built from GitHub Releases)
-        voicevox-cli-binary =
-          let
-            releaseVersion = "0.1.0";
-            releaseHash = ""; # Update with: scripts/update-release-hash.sh
-          in
-          if releaseHash == "" then
-            voicevox-cli-source
-          else
-            pkgs.stdenv.mkDerivation rec {
-              pname = "voicevox-cli";
-              version = releaseVersion;
-
-              src = pkgs.fetchzip {
-                url = "https://github.com/usabarashi/voicevox-cli/releases/download/v${version}/voicevox-cli-v${version}-aarch64-darwin.tar.gz";
-                sha256 = releaseHash;
-              };
-
-              installPhase = ''
-                runHook preInstall
-
-                mkdir -p $out/bin
-
-                for bin in voicevox-say voicevox-daemon voicevox-setup-models voicevox-download; do
-                  if [ -f "$bin" ]; then
-                    install -m755 "$bin" "$out/bin/"
-                  fi
-                done
-
-                runHook postInstall
-              '';
-
-              meta = packageMeta // {
-                description = packageMeta.description + " (pre-built binary)";
-              };
-            };
-
-        # Alias for source build (current implementation)
-        voicevox-cli-source = voicevox-cli;
       in
       {
         packages = {
-          default = voicevox-cli-binary;
-          voicevox-cli = voicevox-cli-binary;
-          voicevox-cli-binary = voicevox-cli-binary;
-          voicevox-cli-source = voicevox-cli-source;
-          voicevox-say = voicevox-cli-binary;
+          default = voicevox-cli;
+          voicevox-cli = voicevox-cli;
+          voicevox-say = voicevox-cli;
           voicevoxResources = voicevoxResources;
         };
 
@@ -436,6 +394,16 @@
       }
     )
     // {
+      # Example usage for other projects:
+      # {
+      #   inputs.voicevox-cli.url = "github:usabarashi/voicevox-cli";
+      #
+      #   # In your system or home-manager configuration:
+      #   environment.systemPackages = [
+      #     voicevox-cli.packages.aarch64-darwin.default
+      #   ];
+      # }
+
       overlays.default = final: prev: {
         voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;
@@ -443,41 +411,9 @@
 
       overlays.voicevox-cli = self.overlays.default;
 
-      meta = {
-        description = "VOICEVOX CLI for Apple Silicon - Dynamic voice detection system";
-        homepage = "https://github.com/usabarashi/voicevox-cli";
-        maintainers = [ "usabarashi" ];
-        platforms = [ "aarch64-darwin" ];
-
-        license = {
-          cli = [
-            "MIT"
-            "Apache-2.0"
-          ];
-
-          voicevoxCore = {
-            type = "MIT";
-            url = "https://github.com/VOICEVOX/voicevox_core/blob/main/LICENSE";
-          };
-
-          onnxRuntime = {
-            type = "MIT";
-            url = "https://github.com/microsoft/onnxruntime/blob/main/LICENSE";
-          };
-        };
-
-        attribution = {
-          required = true;
-          text = "Audio generated using VOICEVOX";
-          voicevoxProject = "https://voicevox.hiroshiba.jp/";
-          coreProject = "https://github.com/VOICEVOX/voicevox_core";
-        };
-
-        notices = [
-          "Credit VOICEVOX when using generated audio"
-          "Follow individual voice library terms"
-          "See official repositories for complete license details"
-        ];
-      };
+      # Project metadata (not a standard flake output)
+      # This information is available via:
+      # - Individual package meta attributes
+      # - README.md and LICENSE files
     };
 }

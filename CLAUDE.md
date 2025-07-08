@@ -14,7 +14,6 @@ The tool uses a **daemon-client architecture** for performance, with pre-loaded 
 - **Performance Architecture**: CompactString, SmallVec, rayon parallelization, and SIMD optimizations
 - **Functional Programming Design**: Immutable data structures, monadic composition, and declarative processing
 - **macOS Integration**: Complete compatibility with macOS `say` command interface
-- **Static Linking Priority**: VOICEVOX Core, ONNX Runtime, and OpenJTalk statically linked for minimal dependencies
 
 ## Architecture
 
@@ -124,12 +123,6 @@ User Command: voicevox-say "Hello"
                     └─────────────────┘     └─────────────────┘
 ```
 
-### Daemon-Client Architecture
-
-**Production Architecture**: The system now uses a high-performance daemon-client model instead of standalone execution:
-
-- **`voicevox-daemon`**: Background process with pre-loaded VOICEVOX models
-- **`voicevox-say`**: Lightweight client that communicates with daemon via Unix sockets
 
 ### Core Components
 
@@ -155,10 +148,6 @@ User Command: voicevox-say "Hello"
   - `server.rs`: Background server implementation with async IPC
   - `process.rs`: Process management and duplicate prevention
 
-**External Resources**:
-- **`voicevox_core/`**: VOICEVOX Core runtime libraries (`libvoicevox_core.dylib`) and headers
-- **`models/*.vvm`**: VOICEVOX voice model files (26+ models supported)
-- **`dict/`**: OpenJTalk dictionary for Japanese text processing
 
 ### Static Linking Architecture
 
@@ -167,6 +156,36 @@ User Command: voicevox-say "Hello"
 - **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib`
 - **OpenJTalk Dictionary**: Build-time embedded via `env!()` macro
 - **Package**: ~54MB total with 26+ voice models available for download
+
+## Build Reproducibility
+
+**IMPORTANT**: Local builds and GitHub Actions builds MUST produce identical release archives with matching SHA256 hashes. This ensures binary reproducibility across build environments.
+
+**Implementation**: Both local and CI builds use the same `tar` command from Nix development shell to ensure consistent archive creation.
+
+**Installation Default**: Users install pre-built binaries from GitHub Releases by default. Source builds are available but not required for typical usage.
+
+**Hash Calculation for Release**:
+```bash
+# 1. Build reproducible archive
+nix build .#voicevox-cli-archive
+
+# 2. Calculate hash
+nix hash file result  # → sha256-XXX...
+
+# 3. Update outputHash in voicevox-cli-archive-verified in flake.nix
+# 4. Verify reproducibility locally
+nix build .#voicevox-cli-archive-verified  # Will fail if hash doesn't match
+
+# 5. Commit and push
+# 6. GitHub Actions creates identical archive
+```
+
+**Reproducibility Verification**:
+The `voicevox-cli-archive-verified` derivation ensures build reproducibility:
+- Uses fixed-output derivation with expected hash
+- Build fails if produced archive doesn't match expected hash
+- Guarantees identical archives between local and CI builds
 
 ## Build Commands
 
@@ -238,10 +257,6 @@ voicevox-daemon --detach
 voicevox-daemon --socket-path /custom/path/daemon.sock --start
 ```
 
-**Note**: The daemon now features:
-- **Smart Loading**: Only 3 models at startup (Metan, Zundamon, Tsumugi)
-- **On-Demand**: Other models load when first used
-- **Memory Efficient**: ~300MB at startup vs ~1.1GB for all models
 
 ### Client Usage (macOS say Compatible)
 ```bash
@@ -370,18 +385,6 @@ cd target/release
 pkill -f voicevox-daemon
 ```
 
-### Memory & Performance Testing
-
-```bash
-# After daemon starts, check memory usage
-DAEMON_PID=$(pgrep -f voicevox-daemon)
-ps -p $DAEMON_PID -o pid,vsz,rss,comm | awk 'NR>1 {print "VSZ(MB):", $2/1024, "RSS(MB):", $3/1024}'
-
-# Expected results with lazy loading:
-# - Initial: ~300MB (3 models loaded)
-# - After using 10 models: ~600MB
-# - All models loaded: ~1.1GB
-```
 
 ### CI Task Runner (Local)
 

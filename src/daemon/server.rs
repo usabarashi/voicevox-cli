@@ -297,7 +297,6 @@ impl DaemonState {
                                 // Check if client supports zero-copy
                                 #[cfg(unix)]
                                 if options.zero_copy {
-                                    println!("DEBUG: Client requested zero-copy mode");
                                     // Create anonymous buffer and write WAV data
                                     use super::fd_passing::AnonymousBuffer;
 
@@ -306,10 +305,6 @@ impl DaemonState {
                                             if buffer.write_all(&wav_data).is_ok() {
                                                 // Store the FD for later sending
                                                 let fd = buffer.into_fd();
-                                                println!(
-                                                    "DEBUG: Created anonymous buffer with FD {}",
-                                                    fd
-                                                );
                                                 self.pending_fd.lock().await.replace(fd);
 
                                                 // Send metadata response
@@ -318,20 +313,13 @@ impl DaemonState {
                                                     format: crate::ipc::AudioFormat::default(),
                                                 }
                                             } else {
-                                                println!(
-                                                    "DEBUG: Failed to write to anonymous buffer"
-                                                );
                                                 // Fallback to regular response
                                                 OwnedResponse::SynthesizeResult {
                                                     wav_data: Cow::Owned(wav_data),
                                                 }
                                             }
                                         }
-                                        Err(e) => {
-                                            println!(
-                                                "DEBUG: Failed to create anonymous buffer: {}",
-                                                e
-                                            );
+                                        Err(_e) => {
                                             // Fallback to regular response
                                             OwnedResponse::SynthesizeResult {
                                                 wav_data: Cow::Owned(wav_data),
@@ -339,7 +327,6 @@ impl DaemonState {
                                         }
                                     }
                                 } else {
-                                    println!("DEBUG: Client using regular mode (zero_copy=false)");
                                     // Regular response
                                     OwnedResponse::SynthesizeResult {
                                         wav_data: Cow::Owned(wav_data),
@@ -528,7 +515,6 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
                     use crate::daemon::fd_passing::send_fd;
                     use std::os::unix::io::AsRawFd;
                     let socket_fd = stream.as_raw_fd();
-                    println!("DEBUG: Sending FD {} via socket {}", fd, socket_fd);
                     match send_fd(socket_fd, fd, b"audio") {
                         Ok(_) => Ok(()),
                         Err(e) => {

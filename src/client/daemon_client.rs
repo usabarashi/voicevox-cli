@@ -62,7 +62,6 @@ pub async fn daemon_mode(
     #[cfg(unix)]
     {
         if crate::client::fd_receive::supports_zero_copy() {
-            println!("DEBUG: Enabling zero-copy mode in client");
             options.zero_copy = true;
         }
     }
@@ -123,8 +122,6 @@ pub async fn daemon_mode(
         }
         #[cfg(unix)]
         OwnedResponse::SynthesizeResultFd { size, format: _ } => {
-            println!("DEBUG: Received FD response, waiting for FD...");
-
             // Small delay to ensure server sends FD
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
@@ -146,8 +143,6 @@ pub async fn daemon_mode(
 
             match result {
                 Ok((received_fd, _)) => {
-                    println!("DEBUG: Successfully received FD: {}", received_fd);
-
                     // Create audio buffer from received FD
                     use crate::client::fd_receive::ReceivedAudioBuffer;
                     let audio_buffer = unsafe { ReceivedAudioBuffer::from_fd(received_fd, size)? };

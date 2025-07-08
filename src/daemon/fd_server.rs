@@ -77,7 +77,6 @@ pub async fn handle_client_fd(
                 let result = stream.try_io(tokio::io::Interest::WRITABLE, || {
                     use crate::daemon::fd_passing::send_fd;
                     let socket_fd = stream.as_raw_fd();
-                    println!("DEBUG: Sending FD {} via socket {}", fd, socket_fd);
                     match send_fd(socket_fd, fd, b"audio") {
                         Ok(_) => Ok(()),
                         Err(e) => {

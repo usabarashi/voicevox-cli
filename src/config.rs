@@ -112,9 +112,7 @@ impl Config {
         let config_path = Self::config_path()?;
 
         // Ensure config directory exists
-        if let Some(parent) = config_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        crate::paths::ensure_parent_dir(&config_path)?;
 
         let content = toml::to_string_pretty(self)?;
         std::fs::write(&config_path, content)?;
@@ -154,9 +152,7 @@ impl Config {
         let example_path = config_path.with_file_name("config.example.toml");
 
         // Ensure directory exists
-        if let Some(parent) = example_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        crate::paths::ensure_parent_dir(&example_path)?;
 
         let content = toml::to_string_pretty(&example)?;
         let content_with_comments = format!(

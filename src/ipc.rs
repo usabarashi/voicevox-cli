@@ -228,6 +228,11 @@ pub enum DaemonResponse<'a> {
     SpeakersList {
         speakers: Cow<'a, [Speaker]>,
     },
+    /// Enhanced speakers list with model ID mapping
+    SpeakersListWithModels {
+        speakers: Cow<'a, [Speaker]>,
+        style_to_model: HashMap<u32, u32>,
+    },
     VoiceMapping {
         mapping: HashMap<Cow<'a, str>, (u32, Cow<'a, str>)>,
     },
@@ -265,6 +270,16 @@ impl<'a> DaemonResponse<'a> {
     pub fn speakers_list_borrowed(speakers: &'a [Speaker]) -> Self {
         Self::SpeakersList {
             speakers: Cow::Borrowed(speakers),
+        }
+    }
+
+    pub fn speakers_list_with_models_owned(
+        speakers: Vec<Speaker>,
+        style_to_model: HashMap<u32, u32>,
+    ) -> Self {
+        Self::SpeakersListWithModels {
+            speakers: Cow::Owned(speakers),
+            style_to_model,
         }
     }
 

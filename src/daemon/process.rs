@@ -59,3 +59,33 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
 
     Ok(())
 }
+
+/// Find daemon processes for the current user
+pub fn find_daemon_processes() -> Result<Vec<u32>> {
+    match process::Command::new("pgrep")
+        .arg("-f")
+        .arg("-u")
+        .arg(unsafe { libc::getuid() }.to_string())
+        .arg("voicevox-daemon")
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() && !output.stdout.is_empty() {
+                let pids = String::from_utf8_lossy(&output.stdout);
+                let current_pid = process::id();
+
+                let pids: Vec<u32> = pids
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .filter_map(|pid| pid.trim().parse::<u32>().ok())
+                    .filter(|&pid| pid != current_pid)
+                    .collect();
+
+                Ok(pids)
+            } else {
+                Ok(vec![])
+            }
+        }
+        Err(_) => Ok(vec![]), // pgrep not available
+    }
+}

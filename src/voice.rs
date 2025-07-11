@@ -344,3 +344,123 @@ pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
         None
     }
 }
+
+/// Build style-to-model mapping by scanning all available models dynamically
+pub async fn build_style_to_model_map_async(
+    core: &crate::core::VoicevoxCore,
+) -> Result<(std::collections::HashMap<u32, u32>, Vec<Speaker>)> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut style_map = HashMap::new();
+    let models_dir = crate::paths::find_models_dir()?;
+
+    // First, get the initial state (no models loaded)
+    let initial_speakers = core.get_speakers().unwrap_or_default();
+    let initial_style_ids: HashSet<u32> = initial_speakers
+        .iter()
+        .flat_map(|s| s.styles.iter().map(|style| style.id))
+        .collect();
+
+    // Process each model file in sorted order
+    let mut model_files: Vec<_> = std::fs::read_dir(&models_dir)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("vvm"))
+        .collect();
+    model_files.sort();
+
+    // Keep track of cumulative style IDs
+    let mut cumulative_style_ids = initial_style_ids.clone();
+
+    for path in &model_files {
+        // Extract model ID from filename (e.g., "1.vvm" -> 1)
+        let model_id = match path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            Some(id) => id,
+            None => continue,
+        };
+
+        println!("  Scanning model {}.vvm...", model_id);
+
+        // Temporarily load the model to get its metadata
+        match core.load_specific_model(&model_id.to_string()) {
+            Ok(_) => {
+                // Get speakers after loading this model
+                if let Ok(current_speakers) = core.get_speakers() {
+                    // Find new style IDs that this model introduced
+                    for speaker in current_speakers {
+                        for style in speaker.styles {
+                            if !cumulative_style_ids.contains(&style.id) {
+                                style_map.insert(style.id, model_id);
+                                cumulative_style_ids.insert(style.id);
+                            }
+                        }
+                    }
+                }
+
+                // Unload the model to save memory
+                if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+                    eprintln!(
+                        "  ✗ Failed to unload model {} after mapping: {}",
+                        model_id, e
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("  ✗ Failed to load model {} for mapping: {}", model_id, e);
+            }
+        }
+    }
+
+    // For any styles in the initial set, try to infer their model
+    for style_id in initial_style_ids {
+        // Default mapping for unmapped styles
+        style_map.entry(style_id).or_insert(style_id);
+    }
+
+    // Load all models to get complete speaker list
+    println!("  Loading all models to get complete speaker list...");
+    let mut all_speakers = Vec::new();
+
+    // Re-load all models to get the complete speaker list
+    for path in &model_files {
+        let model_id = match path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            Some(id) => id,
+            None => continue,
+        };
+
+        if let Err(e) = core.load_specific_model(&model_id.to_string()) {
+            eprintln!(
+                "  ✗ Failed to reload model {} for speakers: {}",
+                model_id, e
+            );
+        }
+    }
+
+    // Get all speakers after loading all models
+    if let Ok(speakers) = core.get_speakers() {
+        all_speakers = speakers;
+    }
+
+    // Unload all models except the preloaded ones
+    for path in &model_files {
+        if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+            eprintln!("  ✗ Failed to unload model after speaker collection: {}", e);
+        }
+    }
+
+    println!(
+        "  ✓ Built style-to-model mapping with {} entries",
+        style_map.len()
+    );
+    println!("  ✓ Collected {} speakers", all_speakers.len());
+
+    Ok((style_map, all_speakers))
+}

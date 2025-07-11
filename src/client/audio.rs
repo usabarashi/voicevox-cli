@@ -33,13 +33,21 @@ fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
     let temp_file = "/tmp/voicevox_say_temp.wav";
     fs::write(temp_file, wav_data)?;
 
+    // Auto-cleanup guard
+    struct TempFileCleanup<'a>(&'a str);
+    impl Drop for TempFileCleanup<'_> {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(self.0);
+        }
+    }
+    let _cleanup = TempFileCleanup(temp_file);
+
     // macOS standard afplay for playback (silent like say command)
     if std::process::Command::new("afplay")
         .arg(temp_file)
         .output()
         .is_ok()
     {
-        let _ = fs::remove_file(temp_file); // Clean up
         return Ok(());
     }
 
@@ -49,12 +57,9 @@ fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
         .output()
         .is_ok()
     {
-        let _ = fs::remove_file(temp_file); // Clean up
         return Ok(());
     }
 
-    // Clean up temp file even if playback failed
-    let _ = fs::remove_file(temp_file);
     Err(anyhow!(
         "No audio player found. Install sox or use -o to save file"
     ))

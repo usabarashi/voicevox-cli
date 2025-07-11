@@ -4,16 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is VOICEVOX CLI (`voicevox-cli`) - a command-line text-to-speech synthesis tool using VOICEVOX Core 0.16.0. It provides a macOS `say` command-compatible interface for Japanese TTS with various character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
-
-The tool uses a **daemon-client architecture** for performance, with pre-loaded voice models in a background daemon process for instant synthesis. It's specifically designed for macOS with CPU-only processing and maintains complete compatibility with macOS `say` command behavior (silent operation on success, errors to stderr only).
+VOICEVOX CLI (`voicevox-cli`) - a command-line text-to-speech tool using VOICEVOX Core 0.16.0. Provides macOS `say` command-compatible interface for Japanese TTS with character voices like ずんだもん (Zundamon), 四国めたん (Shikoku Metan), etc.
 
 **Key Features:**
-- **Dynamic Voice Detection**: Zero hardcoded voice mappings - adapts to available models
-- **Rust Patterns**: GATs, const generics, zero-copy serialization, and type-level programming
-- **Performance Architecture**: CompactString, SmallVec, rayon parallelization, and SIMD optimizations
-- **Functional Programming Design**: Immutable data structures, monadic composition, and declarative processing
-- **macOS Integration**: Complete compatibility with macOS `say` command interface
+- **Daemon-Client Architecture**: Background daemon with pre-loaded models for instant synthesis
+- **Dynamic Voice Detection**: No hardcoded mappings - discovers voices from available VVM files
+- **macOS Integration**: Silent operation on success, errors to stderr only
+- **CPU-Only Processing**: Optimized for macOS without GPU dependencies
 
 ## Architecture
 
@@ -126,66 +123,17 @@ User Command: voicevox-say "Hello"
 
 ### Core Components
 
-**Library & Binaries**:
-- **`src/lib.rs`**: Shared library with VoicevoxCore and IPC protocols
-- **`src/bin/daemon.rs`**: Background daemon process with model management
-- **`src/bin/client.rs`**: Lightweight CLI client (primary interface) with functional voice resolution
+**Binaries**:
+- `voicevox-daemon`: Background service with model management
+- `voicevox-say`: CLI client (macOS `say` compatible)
 
-**Single-File Modules** (Rust 2018+ Pattern):
-- **`src/core.rs`**: VOICEVOX Core wrapper with functional programming patterns
-- **`src/voice.rs`**: Dynamic voice detection and resolution system
-- **`src/paths.rs`**: Functional path discovery and XDG compliance
-- **`src/setup.rs`**: First-run setup and model management utilities
-- **`src/ipc.rs`**: Inter-process communication protocols and data structures
+**Key Modules**:
+- `core.rs`: VOICEVOX Core wrapper
+- `voice.rs`: Dynamic voice detection and style-to-model mapping
+- `ipc.rs`: Unix socket communication protocol
+- `server.rs`: Daemon implementation with LRU cache
+- `daemon_client.rs`: Client-side daemon communication
 
-**Multi-File Modules**:
-- **`src/client/`**: Client-side functionality (daemon client, download management)
-  - `download.rs`: Model download with interactive license acceptance
-  - `daemon_client.rs`: Unix socket communication with daemon
-  - `audio.rs`: Audio playback and WAV file handling
-  - `input.rs`: stdin and argument processing
-- **`src/daemon/`**: Server-side functionality (model loading, synthesis)
-  - `server.rs`: Background server implementation with async IPC
-  - `process.rs`: Process management and duplicate prevention
-
-
-### Static Linking Architecture
-
-**Components**:
-- **VOICEVOX Core**: Statically linked `libvoicevox_core.dylib`
-- **ONNX Runtime**: Statically linked `libvoicevox_onnxruntime.dylib`
-- **OpenJTalk Dictionary**: Build-time embedded via `env!()` macro
-- **Package**: ~54MB total with 26+ voice models available for download
-
-## Build Reproducibility
-
-**IMPORTANT**: Local builds and GitHub Actions builds MUST produce identical release archives with matching SHA256 hashes. This ensures binary reproducibility across build environments.
-
-**Implementation**: Both local and CI builds use the same `tar` command from Nix development shell to ensure consistent archive creation.
-
-**Installation Default**: Users install pre-built binaries from GitHub Releases by default. Source builds are available but not required for typical usage.
-
-**Hash Calculation for Release**:
-```bash
-# 1. Build reproducible archive
-nix build .#voicevox-cli-archive
-
-# 2. Calculate hash
-nix hash file result  # → sha256-XXX...
-
-# 3. Update outputHash in voicevox-cli-archive-verified in flake.nix
-# 4. Verify reproducibility locally
-nix build .#voicevox-cli-archive-verified  # Will fail if hash doesn't match
-
-# 5. Commit and push
-# 6. GitHub Actions creates identical archive
-```
-
-**Reproducibility Verification**:
-The `voicevox-cli-archive-verified` derivation ensures build reproducibility:
-- Uses fixed-output derivation with expected hash
-- Build fails if produced archive doesn't match expected hash
-- Guarantees identical archives between local and CI builds
 
 ## Build Commands
 
@@ -213,22 +161,14 @@ ls -la result/bin/
 ```
 
 
-### Cargo (Production Ready)
+### Cargo
 ```bash
-# Build all binaries (daemon + client)
+# Build all binaries
 export DYLD_LIBRARY_PATH=./voicevox_core/c_api/lib:./voicevox_core/onnxruntime/lib
 cargo build --release
 
-# Build specific binaries
-cargo build --release --bin voicevox-daemon   # Background service
-cargo build --release --bin voicevox-say      # Primary CLI (client)
-
 # Development build
-cargo build --bin voicevox-daemon --bin voicevox-say
-
-# Performance features
-cargo build --release --features performance  # All optimizations combined
-cargo build --release --features "performance,parallel,zero_copy"  # Custom profile
+cargo build
 ```
 
 ## Production Usage
@@ -258,40 +198,39 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start
 ```
 
 
-### Client Usage (macOS say Compatible)
+### Client Usage
 ```bash
-# Basic usage (completely silent like macOS say)
-./target/release/voicevox-say "こんにちはなのだ"
+# Basic usage (silent like macOS say)
+voicevox-say "こんにちはなのだ"
 
-# Save to file (silent)
-./target/release/voicevox-say "テスト" -o output.wav
+# Save to file
+voicevox-say "テスト" -o output.wav
 
 # Different voices
-./target/release/voicevox-say --speaker-id 3 "ずんだもんの声なのだ"
-./target/release/voicevox-say --speaker-id 2 "四国めたんの声です"
+voicevox-say --speaker-id 3 "ずんだもんの声なのだ"
+voicevox-say --model 1 "モデル1の音声"
 
-# Voice selection by model
-./target/release/voicevox-say --model 3 "モデル3の音声なのだ"
-
-# Status and information (only commands that produce output)
-./target/release/voicevox-say --list-speakers
-./target/release/voicevox-say --list-models
-./target/release/voicevox-say --status
-
-# Force standalone mode
-./target/release/voicevox-say --standalone "テストメッセージ"
+# List available speakers
+voicevox-say --list-speakers
 
 # Read from stdin
-echo "標準入力からのテキスト" | ./target/release/voicevox-say
+echo "テキスト" | voicevox-say
 ```
 
 ## Current Implementation
 
-### Memory Management
-- **Lazy Loading**: Starts with only 3 models (Metan 0, Zundamon 1, Tsumugi 8)
+### Voice Model Management
+- **Dynamic Voice Detection**: No hardcoded voice mappings - automatically discovers style-to-model relationships at startup
+- **Lazy Loading**: Starts with only 3 models (Metan 0, Zundamon 1, Tsumugi 8) for fast startup
+- **On-Demand Loading**: Automatically loads required models when specific voices are requested
 - **LRU Cache**: Maximum 5 models in memory, automatically unloads least-used models
-- **Favorites Protection**: Models 0, 1, 8 are never unloaded
-- **Real Memory Release**: Uses VOICEVOX Core's `unload_voice_model` API
+- **Favorites Protection**: Models 0, 1, 8 are never unloaded (configurable)
+- **Real Memory Release**: Uses VOICEVOX Core's `unload_voice_model` API for actual memory recovery
+
+### Voice Discovery System
+- **Complete Speaker List**: Daemon shows all 99 available styles in `--list-speakers`, regardless of loaded models
+- **Style-to-Model Mapping**: Built dynamically at startup by scanning all VVM files
+- **Zero Hardcoding**: Voice IDs are discovered from model files, not hardcoded in source
 
 ### First-Run Experience
 - **Automatic Setup**: Downloads models on first use if not found
@@ -367,41 +306,16 @@ ps aux | grep voicevox-daemon | grep -v grep | awk '{print "Memory (MB): " $6/10
 ./result/bin/voicevox-daemon --stop
 ```
 
-### Development Testing (Cargo)
+
+
+### CI Commands
 
 ```bash
-# For Cargo builds, library path issues are common on macOS
-# Recommendation: Use Nix build for testing to avoid dylib issues
-
-# If you must use Cargo:
-cargo build --release
-# Copy libraries to target directory (macOS workaround)
-cp target/release/deps/*.dylib target/release/ 2>/dev/null || true
-
-# Then test from release directory
-cd target/release
-./voicevox-daemon --foreground &
-./voicevox-say "テスト"
-pkill -f voicevox-daemon
-```
-
-
-### CI Task Runner (Local)
-
-Run the complete CI pipeline locally using Nix:
-
-```bash
-# Run all CI checks (matches GitHub Actions)
+# Run all CI checks
 nix run .#ci
 
-# Individual development commands
+# Individual checks
 nix develop --command cargo fmt        # Format code
 nix develop --command cargo clippy     # Static analysis
 nix develop --command cargo audit      # Security audit
-nix build                              # Build project
 ```
-
-### GitHub Actions CI
-
-**Pipeline**: Static analysis, Nix build, package verification, security audit
-**Features**: SHA-pinned actions, matrix strategy (Nix primary, Cargo fallback), efficient caching

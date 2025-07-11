@@ -257,55 +257,40 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
     match UnixStream::connect(socket_path).await {
         Ok(_) => {
             // Daemon is running, find and stop it
-            let output = std::process::Command::new("pgrep")
-                .args([
-                    "-f",
-                    "-u",
-                    &unsafe { libc::getuid() }.to_string(),
-                    "voicevox-daemon",
-                ])
-                .output();
-
-            match output {
-                Ok(output) if output.status.success() => {
-                    let pids = String::from_utf8_lossy(&output.stdout);
-                    let pids: Vec<&str> = pids.trim().lines().collect();
-
+            match voicevox_cli::daemon::process::find_daemon_processes() {
+                Ok(pids) => {
                     if pids.is_empty() {
                         println!("❌ No daemon process found");
                         return Ok(());
                     }
 
-                    for pid in pids {
-                        if let Ok(pid_num) = pid.parse::<u32>() {
-                            let kill_result = std::process::Command::new("kill")
-                                .arg("-TERM")
-                                .arg(pid)
-                                .status();
+                    for pid_num in pids {
+                        let kill_result = std::process::Command::new("kill")
+                            .arg("-TERM")
+                            .arg(pid_num.to_string())
+                            .status();
 
-                            match kill_result {
-                                Ok(status) if status.success() => {
-                                    println!("✅ Daemon stopped (PID: {})", pid_num);
+                        match kill_result {
+                            Ok(status) if status.success() => {
+                                println!("✅ Daemon stopped (PID: {})", pid_num);
 
-                                    // Wait a moment then verify
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(1000))
-                                        .await;
+                                // Wait a moment then verify
+                                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
-                                    match UnixStream::connect(socket_path).await {
-                                        Err(_) => println!("✅ Socket cleanup confirmed"),
-                                        Ok(_) => println!("⚠️  Daemon may still be running"),
-                                    }
+                                match UnixStream::connect(socket_path).await {
+                                    Err(_) => println!("✅ Socket cleanup confirmed"),
+                                    Ok(_) => println!("⚠️  Daemon may still be running"),
                                 }
-                                _ => {
-                                    println!("❌ Failed to stop daemon (PID: {})", pid_num);
-                                    println!("   Try: kill -9 {}", pid_num);
-                                }
+                            }
+                            _ => {
+                                println!("❌ Failed to stop daemon (PID: {})", pid_num);
+                                println!("   Try: kill -9 {}", pid_num);
                             }
                         }
                     }
                 }
-                _ => {
-                    println!("❌ Failed to find daemon process");
+                Err(e) => {
+                    println!("❌ Failed to find daemon process: {}", e);
                     println!("   Try manual: pkill -f -u $(id -u) voicevox-daemon");
                 }
             }
@@ -331,37 +316,21 @@ async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
             println!("Socket: {}", socket_path.display());
 
             // Additional process information
-            let output = std::process::Command::new("pgrep")
-                .args([
-                    "-f",
-                    "-u",
-                    &unsafe { libc::getuid() }.to_string(),
-                    "voicevox-daemon",
-                ])
-                .output();
+            if let Ok(pids) = voicevox_cli::daemon::process::find_daemon_processes() {
+                for pid_num in pids {
+                    println!("Process ID: {}", pid_num);
 
-            if let Ok(output) = output {
-                if output.status.success() {
-                    let pids = String::from_utf8_lossy(&output.stdout);
-                    let pids: Vec<&str> = pids.trim().lines().collect();
+                    // Get memory usage if possible
+                    let ps_output = std::process::Command::new("ps")
+                        .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
+                        .output();
 
-                    for pid in pids {
-                        if let Ok(pid_num) = pid.parse::<u32>() {
-                            println!("Process ID: {}", pid_num);
-
-                            // Get memory usage if possible
-                            let ps_output = std::process::Command::new("ps")
-                                .args(["-p", pid, "-o", "rss,pmem,time"])
-                                .output();
-
-                            if let Ok(ps_output) = ps_output {
-                                if ps_output.status.success() {
-                                    let info = String::from_utf8_lossy(&ps_output.stdout);
-                                    let lines: Vec<&str> = info.lines().collect();
-                                    if lines.len() > 1 {
-                                        println!("Memory Info: {}", lines[1].trim());
-                                    }
-                                }
+                    if let Ok(ps_output) = ps_output {
+                        if ps_output.status.success() {
+                            let info = String::from_utf8_lossy(&ps_output.stdout);
+                            let lines: Vec<&str> = info.lines().collect();
+                            if lines.len() > 1 {
+                                println!("Memory Info: {}", lines[1].trim());
                             }
                         }
                     }

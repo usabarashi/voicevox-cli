@@ -1,5 +1,6 @@
 use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
@@ -7,53 +8,9 @@ use tokio::signal;
 use tokio::sync::Mutex;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
-fn get_dynamic_voice_mapping(
-) -> std::collections::HashMap<std::borrow::Cow<'static, str>, (u32, std::borrow::Cow<'static, str>)>
-{
-    use std::borrow::Cow;
-
-    let mut mapping = std::collections::HashMap::new();
-
-    let available_models = scan_available_models().unwrap_or_default();
-
-    available_models
-        .iter()
-        .enumerate()
-        .for_each(|(index, model)| {
-            let model_name = format!("model{}", model.model_id);
-            let description = format!("Model {} (Default Style)", model.model_id);
-            mapping.insert(
-                Cow::Owned(model_name),
-                (model.model_id, Cow::Owned(description)),
-            );
-
-            mapping.insert(
-                Cow::Owned(model.model_id.to_string()),
-                (
-                    model.model_id,
-                    Cow::Owned(format!("Model {}", model.model_id)),
-                ),
-            );
-
-            if index == 0 {
-                mapping.insert(
-                    Cow::Borrowed("default"),
-                    (
-                        model.model_id,
-                        Cow::Owned(format!("Default Model {}", model.model_id)),
-                    ),
-                );
-            }
-        });
-
-    mapping
-}
-
 use crate::core::VoicevoxCore;
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
-use crate::voice::{resolve_voice_dynamic, scan_available_models};
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 // Model cache with LRU-style tracking and usage statistics
@@ -128,6 +85,8 @@ pub struct DaemonState {
     core: VoicevoxCore,
     loaded_models: Arc<Mutex<HashSet<u32>>>,
     model_cache: Arc<Mutex<ModelCache>>,
+    style_to_model_map: Arc<Mutex<HashMap<u32, u32>>>,
+    all_speakers: Arc<Mutex<Vec<crate::voice::Speaker>>>,
     #[cfg(unix)]
     pending_fd: Arc<Mutex<Option<std::os::unix::io::RawFd>>>,
 }
@@ -146,6 +105,7 @@ impl DaemonState {
     pub async fn with_config(config: crate::config::Config) -> Result<Self> {
         let core = VoicevoxCore::new()?;
         let loaded_models = Arc::new(Mutex::new(HashSet::new()));
+        let style_to_model_map = Arc::new(Mutex::new(HashMap::new()));
 
         // Create model cache with configuration
         let model_cache = if config.memory.enable_lru_cache {
@@ -160,6 +120,16 @@ impl DaemonState {
                 config.models.favorites.clone(),
             )))
         };
+
+        // Build dynamic style-to-model mapping
+        println!("Building dynamic style-to-model mapping...");
+        let (mapping, speakers) = crate::voice::build_style_to_model_map_async(&core).await?;
+        *style_to_model_map.lock().await = mapping;
+        let all_speakers = Arc::new(Mutex::new(speakers));
+        println!(
+            "  ✓ Discovered {} style mappings",
+            style_to_model_map.lock().await.len()
+        );
 
         // Load models specified in config
         let preload_models = config.models.preload;
@@ -189,6 +159,8 @@ impl DaemonState {
             core,
             loaded_models,
             model_cache,
+            style_to_model_map,
+            all_speakers,
             #[cfg(unix)]
             pending_fd: Arc::new(Mutex::new(None)),
         })
@@ -200,33 +172,21 @@ impl DaemonState {
         self.pending_fd.lock().await.take()
     }
 
-    // Helper function to extract model_id from style_id
-    fn get_model_id_from_style(style_id: u32) -> u32 {
-        // Map style_id to model_id based on known patterns
-        match style_id {
-            // 四国めたん styles
-            0 | 2 | 4 | 6 | 36 | 37 => 0,
-            // ずんだもん styles
-            1 | 3 | 5 | 7 | 22 | 38 | 75 | 76 => 1,
-            // 春日部つむぎ
-            8 => 8,
-            // 雨晴はう
-            10 => 10,
-            // 波音リツ
-            9 | 65 => 9,
-            // 玄野武宏
-            11 | 39 | 40 | 41 => 11,
-            // 白上虎太郎
-            12 | 32 | 33 | 34 | 35 => 12,
-            // 青山龍星
-            13 | 84 | 85 | 86 => 13,
-            // 冥鳴ひまり
-            14 => 14,
-            // 九州そら
-            15..=19 => 16,
-            // Default: assume direct mapping for others
-            _ => style_id,
+    // Helper function to extract model_id from style_id using dynamic mapping
+    async fn get_model_id_from_style(&self, style_id: u32) -> u32 {
+        let map = self.style_to_model_map.lock().await;
+
+        // Use dynamic mapping if available
+        if let Some(&model_id) = map.get(&style_id) {
+            return model_id;
         }
+
+        // Fallback: use style_id as model_id (for backward compatibility)
+        eprintln!(
+            "Warning: Style {} not found in dynamic mapping, using style ID as model ID",
+            style_id
+        );
+        style_id
     }
 
     // Ensure a model is loaded before use with memory management
@@ -287,7 +247,7 @@ impl DaemonState {
                 options,
             } => {
                 // Ensure the required model is loaded
-                let model_id = Self::get_model_id_from_style(style_id);
+                let model_id = self.get_model_id_from_style(style_id).await;
 
                 match self.ensure_model_loaded(model_id).await {
                     Ok(_) => {
@@ -358,17 +318,17 @@ impl DaemonState {
                 }
             }
 
-            OwnedRequest::ListSpeakers => match self.core.get_speakers() {
-                Ok(speakers) => OwnedResponse::SpeakersList {
-                    speakers: Cow::Owned(speakers),
-                },
-                Err(e) => {
-                    eprintln!("Failed to get speakers: {}", e);
-                    OwnedResponse::Error {
-                        message: Cow::Owned(format!("Failed to get speakers: {}", e)),
-                    }
+            OwnedRequest::ListSpeakers => {
+                // Use the pre-collected speakers list that includes all models
+                let all_speakers = self.all_speakers.lock().await.clone();
+                let style_to_model = self.style_to_model_map.lock().await.clone();
+
+                // Send enhanced response with all speakers and model mapping
+                OwnedResponse::SpeakersListWithModels {
+                    speakers: Cow::Owned(all_speakers),
+                    style_to_model,
                 }
-            },
+            }
 
             OwnedRequest::LoadModel { model_name } => {
                 println!("Loading model: {}", model_name);
@@ -418,32 +378,48 @@ impl DaemonState {
 
             OwnedRequest::GetVoiceMapping => {
                 println!("Getting voice mapping");
-                // Return dynamic voice mapping from available models
-                let dynamic_mapping = get_dynamic_voice_mapping();
+                // Build voice mapping from all speakers
+                let mut mapping = HashMap::new();
+                let all_speakers = self.all_speakers.lock().await;
 
-                OwnedResponse::VoiceMapping {
-                    mapping: dynamic_mapping,
+                for speaker in all_speakers.iter() {
+                    for style in &speaker.styles {
+                        let voice_name = format!("{}-{}", speaker.name, style.name);
+                        let description = format!("{} ({})", speaker.name, style.name);
+                        mapping.insert(Cow::Owned(voice_name), (style.id, Cow::Owned(description)));
+                    }
                 }
+
+                OwnedResponse::VoiceMapping { mapping }
             }
 
             OwnedRequest::ResolveVoiceName { voice_name } => {
                 println!("Resolving voice name: {}", voice_name);
-                match resolve_voice_dynamic(&voice_name) {
-                    Ok((style_id, description)) => {
-                        println!("Resolved to style ID {} ({})", style_id, description);
-                        OwnedResponse::VoiceResolution {
-                            style_id,
-                            description: Cow::Owned(description),
+
+                // Try to parse as style ID first
+                if let Ok(style_id) = voice_name.parse::<u32>() {
+                    OwnedResponse::VoiceResolution {
+                        style_id,
+                        description: Cow::Owned(format!("Style ID {}", style_id)),
+                    }
+                } else {
+                    // Search through all speakers for matching voice name
+                    let all_speakers = self.all_speakers.lock().await;
+
+                    for speaker in all_speakers.iter() {
+                        for style in &speaker.styles {
+                            let full_name = format!("{}-{}", speaker.name, style.name);
+                            if full_name.to_lowercase() == voice_name.to_lowercase() {
+                                return OwnedResponse::VoiceResolution {
+                                    style_id: style.id,
+                                    description: Cow::Owned(full_name),
+                                };
+                            }
                         }
                     }
-                    Err(e) => {
-                        println!("Failed to resolve voice name {}: {}", voice_name, e);
-                        OwnedResponse::Error {
-                            message: Cow::Owned(format!(
-                                "Failed to resolve voice name {}: {}",
-                                voice_name, e
-                            )),
-                        }
+
+                    OwnedResponse::Error {
+                        message: Cow::Owned(format!("Voice name '{}' not found", voice_name)),
                     }
                 }
             }

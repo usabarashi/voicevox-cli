@@ -1,7 +1,7 @@
 //! XDG-compliant path discovery and management
 
 use anyhow::{anyhow, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Gets XDG-compliant socket path for daemon communication
 pub fn get_socket_path() -> PathBuf {
@@ -195,4 +195,12 @@ pub fn find_openjtalk_dict() -> Result<String> {
          Searched paths: ./dict, ~/.local/share/voicevox/dict, legacy: {:?}",
         EMBEDDED_DICT_LEGACY
     ))
+}
+
+/// Ensure parent directory exists for a given path
+pub fn ensure_parent_dir(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(())
 }

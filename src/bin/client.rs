@@ -6,6 +6,7 @@
 
 use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -332,10 +333,24 @@ async fn main() -> Result<()> {
 
         println!("All available speakers and styles from loaded models:");
         let speakers = core.get_speakers()?;
+
+        // Build dynamic style-to-model mapping by scanning loaded models
+        println!("Building style-to-model mapping...");
+        // For standalone mode, we can't easily determine exact mappings since all models are loaded
+        // Just create a simple mapping where style_id maps to itself
+        let style_to_model: HashMap<u32, u32> = speakers
+            .iter()
+            .flat_map(|s| s.styles.iter().map(|style| (style.id, style.id)))
+            .collect();
+
         for speaker in &speakers {
             println!("  {}", speaker.name);
             for style in &speaker.styles {
-                println!("    {} (ID: {})", style.name, style.id);
+                let model_id = style_to_model.get(&style.id).copied().unwrap_or(style.id);
+                println!(
+                    "    {} (Model: {}, Style ID: {})",
+                    style.name, model_id, style.id
+                );
                 if let Some(style_type) = &style.style_type {
                     println!("        Type: {}", style_type);
                 }

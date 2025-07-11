@@ -199,7 +199,31 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
                 for speaker in speakers.as_ref() {
                     println!("  {}", speaker.name);
                     for style in &speaker.styles {
-                        println!("    {} (ID: {})", style.name, style.id);
+                        println!("    {} (Style ID: {})", style.name, style.id);
+                        if let Some(style_type) = &style.style_type {
+                            println!("        Type: {}", style_type);
+                        }
+                    }
+                    println!();
+                }
+                return Ok(());
+            }
+            OwnedResponse::SpeakersListWithModels {
+                speakers,
+                style_to_model,
+            } => {
+                println!("All available speakers and styles from daemon:");
+                for speaker in speakers.as_ref() {
+                    println!("  {}", speaker.name);
+                    for style in &speaker.styles {
+                        let model_id = style_to_model
+                            .get(&style.id)
+                            .map(|id| format!("{}", id))
+                            .unwrap_or_else(|| "?".to_string());
+                        println!(
+                            "    {} (Model: {}, Style ID: {})",
+                            style.name, model_id, style.id
+                        );
                         if let Some(style_type) = &style.style_type {
                             println!("        Type: {}", style_type);
                         }

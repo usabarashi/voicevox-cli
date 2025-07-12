@@ -58,35 +58,43 @@ async fn try_daemon_with_retry(
     .await;
 
     match initial_result {
-        Ok(_) => return Ok(()),
-        Err(_) => {
-            // Check if models exist before doing anything else
-            if voicevox_cli::paths::find_models_dir_client().is_err() {
-                // Models not found, this is likely first run
-                if !quiet {
-                    println!("🎭 Voice models not found. Setting up VOICEVOX...");
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Check if error is connection-related (daemon not running)
+            let is_connection_error = e.to_string().contains("Failed to connect to daemon")
+                || e.to_string().contains("Daemon connection timeout");
+
+            if is_connection_error {
+                // Check if models exist before starting daemon
+                if voicevox_cli::paths::find_models_dir_client().is_err() {
+                    // Models not found, this is likely first run
+                    if !quiet {
+                        println!("🎭 Voice models not found. Setting up VOICEVOX...");
+                    }
+                    ensure_models_available().await?;
                 }
-                ensure_models_available().await?;
+
+                // Try to start daemon
+                start_daemon_with_confirmation().await?;
+                tokio::time::sleep(Duration::from_secs(5)).await;
+
+                // Retry daemon mode after starting daemon
+                return daemon_mode(
+                    text,
+                    style_id,
+                    voice_description,
+                    options,
+                    output_file,
+                    quiet,
+                    socket_path,
+                )
+                .await;
             }
-            // Continue to daemon start regardless of error type
+
+            // For other errors, just propagate them
+            Err(e)
         }
     }
-
-    // Try to start daemon if not running
-    start_daemon_with_confirmation().await?;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // Retry daemon mode
-    daemon_mode(
-        text,
-        style_id,
-        voice_description,
-        options,
-        output_file,
-        quiet,
-        socket_path,
-    )
-    .await
 }
 
 async fn standalone_mode(

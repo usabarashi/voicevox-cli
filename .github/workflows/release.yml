@@ -37,7 +37,6 @@ jobs:
           restore-keys: |
             nix-release-${{ runner.os }}-
 
-
       - name: Get version
         id: get_version
         run: |
@@ -55,10 +54,10 @@ jobs:
 
           # Build with Nix
           nix build --show-trace
-          
+
           # Create tarball from build result
           tar -czf "${ARCHIVE_NAME}" -C result/bin .
-          
+
           # Calculate hash
           shasum -a 256 "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
 

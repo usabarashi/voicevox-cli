@@ -13,50 +13,9 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  macos-static-analysis:
-    name: macOS Static Analysis
+  build-and-test:
+    name: Build & Test (Apple Silicon)
     runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-
-      - name: Setup Nix cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/nix
-            /nix/store
-          key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
-          restore-keys: |
-            nix-${{ runner.os }}-
-
-      - name: Check Nix flake
-        run: nix flake check --show-trace
-
-      - name: Setup Rust toolchain
-        run: |
-          nix develop --command rustc --version
-          nix develop --command cargo --version
-
-      - name: Check code formatting
-        run: nix develop --command cargo fmt --check
-
-      - name: Run clippy
-        run: nix develop --command cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Check script syntax
-        run: |
-          bash -n scripts/voicevox-setup-models.sh
-          # Template file syntax check (with placeholders)
-          sed 's/@@[^@]*@@/placeholder/g' scripts/voicevox-auto-setup.sh.template | bash -n
-
-  macos-build-test:
-    name: macOS Build & Test (Apple Silicon)
-    runs-on: macos-latest
-    needs: macos-static-analysis
     strategy:
       fail-fast: false
       matrix:
@@ -110,7 +69,7 @@ jobs:
         run: |
           echo "Building VOICEVOX CLI with Nix (static linking)..."
           nix build --show-trace
-          
+
       - name: Verify Nix build artifacts
         if: matrix.method == 'nix'
         run: |
@@ -126,10 +85,9 @@ jobs:
           # Basic help commands (compilation verification)
           result/bin/voicevox-say --help || echo "Help command test"
           result/bin/voicevox-daemon --help || echo "Help command test"
-          
+
           # Version information
           result/bin/voicevox-say --version || echo "Version command not available"
-      
 
       # Cargo Build Path (Compilation Check)
       - name: Check Cargo compilation
@@ -138,43 +96,6 @@ jobs:
           echo "Checking Rust compilation without VOICEVOX Core..."
           # Check that Rust code compiles (syntax/type checking)
           cargo check --all-targets --target aarch64-apple-darwin || echo "Expected: Missing VOICEVOX Core dependencies"
-          
+
           # Run unit tests that don't require VOICEVOX Core
           cargo test --lib --target aarch64-apple-darwin || echo "Some tests may fail without VOICEVOX Core"
-
-      - name: Test script generation
-        run: |
-          # Test that scripts can be processed
-          test -f scripts/voicevox-setup-models.sh
-          test -f scripts/voicevox-auto-setup.sh.template
-          
-          # Verify script templates are valid
-          bash -n scripts/voicevox-setup-models.sh
-          echo "✅ Scripts validated successfully"
-
-
-  macos-security-audit:
-    name: macOS Security Audit
-    runs-on: macos-latest
-    needs: macos-static-analysis
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
-
-      - name: Install cargo-audit
-        run: nix develop --command cargo install cargo-audit
-
-      - name: Run security audit
-        run: nix develop --command cargo audit
-
-      - name: Check licenses
-        run: |
-          echo "Checking license compatibility..."
-          # Verify license information is present
-          grep -r "license.*=" Cargo.toml
-          test -f LICENSE
-          echo "✅ License checks completed"

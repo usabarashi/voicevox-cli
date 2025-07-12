@@ -99,8 +99,12 @@ impl DaemonState {
                                     .core
                                     .unload_voice_model_by_path(model_path.to_str().unwrap_or(""))
                                 {
-                                    Ok(_) => println!("  ✓ Unloaded model {} after synthesis", model_id),
-                                    Err(e) => eprintln!("  ✗ Failed to unload model {}: {}", model_id, e),
+                                    Ok(_) => {
+                                        println!("  ✓ Unloaded model {} after synthesis", model_id)
+                                    }
+                                    Err(e) => {
+                                        eprintln!("  ✗ Failed to unload model {}: {}", model_id, e)
+                                    }
                                 }
                             }
                             Err(e) => {

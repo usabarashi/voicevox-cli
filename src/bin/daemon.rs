@@ -70,18 +70,6 @@ async fn main() -> Result<()> {
                 .value_name("FILE"),
         )
         .arg(
-            Arg::new("max-models")
-                .help("Override maximum number of loaded models")
-                .long("max-models")
-                .value_name("NUM"),
-        )
-        .arg(
-            Arg::new("no-lru")
-                .help("Disable LRU cache management")
-                .long("no-lru")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("create-config")
                 .help("Create example configuration file")
                 .long("create-config")
@@ -220,30 +208,12 @@ async fn main() -> Result<()> {
         })
     };
 
-    // Apply CLI overrides
-    if let Some(max_models) = matches.get_one::<String>("max-models") {
-        if let Ok(num) = max_models.parse::<usize>() {
-            config.memory.max_loaded_models = num;
-        }
-    }
-
-    if matches.get_flag("no-lru") {
-        config.memory.enable_lru_cache = false;
-    }
 
     // Display startup banner
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
     println!("Starting user daemon...");
     println!("Socket: {} (user-specific)", socket_path.display());
-    println!(
-        "Mode: {} models max, LRU: {}",
-        config.memory.max_loaded_models,
-        if config.memory.enable_lru_cache {
-            "enabled"
-        } else {
-            "disabled"
-        }
-    );
+    println!("Models: Load and unload per request (no caching)");
 
     // Use the FD-passing enabled server v2
     voicevox_cli::daemon::fd_server::run_daemon_fd(socket_path, foreground).await

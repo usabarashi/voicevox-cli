@@ -1,53 +1,19 @@
 //! Configuration management for VOICEVOX CLI
 //!
-//! Provides configuration file support for memory management and model preferences
+//! Provides configuration file support for daemon settings
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// Main configuration structure
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Memory management settings
-    pub memory: MemoryConfig,
-
-    /// Model preferences
-    pub models: ModelConfig,
-
     /// Daemon settings
     pub daemon: DaemonConfig,
 }
 
-/// Memory management configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct MemoryConfig {
-    /// Maximum number of models to keep in memory
-    pub max_loaded_models: usize,
-
-    /// Enable LRU cache management
-    pub enable_lru_cache: bool,
-
-    /// Memory limit in MB (informational only)
-    pub memory_limit_mb: Option<usize>,
-}
-
-/// Model preferences configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ModelConfig {
-    /// Models to preload on startup
-    pub preload: Vec<u32>,
-
-    /// Models that should never be unloaded (favorites)
-    pub favorites: HashSet<u32>,
-
-    /// Enable predictive preloading based on usage patterns
-    pub predictive_preload: bool,
-}
 
 /// Daemon configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,25 +29,6 @@ pub struct DaemonConfig {
     pub debug: bool,
 }
 
-impl Default for MemoryConfig {
-    fn default() -> Self {
-        Self {
-            max_loaded_models: 5,
-            enable_lru_cache: true,
-            memory_limit_mb: None,
-        }
-    }
-}
-
-impl Default for ModelConfig {
-    fn default() -> Self {
-        Self {
-            preload: vec![0, 1, 8], // Metan(0), Zundamon(1), Tsumugi(8)
-            favorites: HashSet::from([0, 1, 8]),
-            predictive_preload: false,
-        }
-    }
-}
 
 impl Default for DaemonConfig {
     fn default() -> Self {
@@ -131,16 +78,6 @@ impl Config {
     /// Create example configuration file
     pub fn create_example() -> Result<()> {
         let example = Config {
-            memory: MemoryConfig {
-                max_loaded_models: 5,
-                enable_lru_cache: true,
-                memory_limit_mb: Some(1024),
-            },
-            models: ModelConfig {
-                preload: vec![3, 2, 8, 1], // Add Zundamon sweet variant
-                favorites: HashSet::from([3, 2, 8]),
-                predictive_preload: false,
-            },
             daemon: DaemonConfig {
                 socket_path: None,
                 startup_timeout: 10,
@@ -159,14 +96,6 @@ impl Config {
             "# VOICEVOX CLI Configuration File\n\
              # Copy this file to 'config.toml' and modify as needed\n\n\
              {}\n\n\
-             # Memory Management\n\
-             # max_loaded_models: Maximum number of voice models to keep in memory\n\
-             # enable_lru_cache: Enable automatic unloading of least recently used models\n\
-             # memory_limit_mb: Informational memory limit (not enforced)\n\n\
-             # Model Preferences\n\
-             # preload: Model IDs to load on daemon startup\n\
-             # favorites: Model IDs that should never be unloaded\n\
-             # predictive_preload: Enable predictive model loading (experimental)\n\n\
              # Daemon Settings\n\
              # socket_path: Custom Unix socket path (default: XDG runtime dir)\n\
              # startup_timeout: Timeout for daemon startup in seconds\n\
@@ -191,10 +120,9 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.memory.max_loaded_models, 5);
-        assert!(config.memory.enable_lru_cache);
-        assert_eq!(config.models.preload, vec![0, 1, 8]);
-        assert_eq!(config.models.favorites.len(), 3);
+        assert_eq!(config.daemon.startup_timeout, 10);
+        assert!(!config.daemon.debug);
+        assert!(config.daemon.socket_path.is_none());
     }
 
     #[test]
@@ -204,9 +132,9 @@ mod tests {
         let deserialized: Config = toml::from_str(&serialized).unwrap();
 
         assert_eq!(
-            config.memory.max_loaded_models,
-            deserialized.memory.max_loaded_models
+            config.daemon.startup_timeout,
+            deserialized.daemon.startup_timeout
         );
-        assert_eq!(config.models.preload, deserialized.models.preload);
+        assert_eq!(config.daemon.debug, deserialized.daemon.debug);
     }
 }

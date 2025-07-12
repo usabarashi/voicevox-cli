@@ -14,7 +14,6 @@ pub struct Config {
     pub daemon: DaemonConfig,
 }
 
-
 /// Daemon configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -28,7 +27,6 @@ pub struct DaemonConfig {
     /// Enable debug logging
     pub debug: bool,
 }
-
 
 impl Default for DaemonConfig {
     fn default() -> Self {

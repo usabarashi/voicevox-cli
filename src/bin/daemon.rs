@@ -190,7 +190,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration with CLI overrides
-    let mut config = if let Some(config_path) = matches.get_one::<String>("config") {
+    let _config = if let Some(config_path) = matches.get_one::<String>("config") {
         match std::fs::read_to_string(config_path) {
             Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
                 eprintln!("Failed to parse config file: {}", e);
@@ -207,7 +207,6 @@ async fn main() -> Result<()> {
             voicevox_cli::config::Config::default()
         })
     };
-
 
     // Display startup banner
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));

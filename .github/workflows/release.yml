@@ -28,14 +28,11 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@08dcb3a5e62fa31e2da3d490afc4176ef55ecd72 # v31
 
-      - name: Setup Nix cache
-        uses: actions/cache@v4
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
         with:
-          path: |
-            ~/.cache/nix
-          key: nix-release-${{ runner.os }}-${{ hashFiles('flake.lock') }}
-          restore-keys: |
-            nix-release-${{ runner.os }}-
+          name: voicevox-cli
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Get version
         id: get_version

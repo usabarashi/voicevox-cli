@@ -69,28 +69,18 @@
           dontUnpack = true;
 
           installPhase = ''
-                          echo "Creating dummy OpenJTalk installation..."
-                          mkdir -p $out/{lib,include,lib/pkgconfig}
+            echo "Creating dummy OpenJTalk installation..."
+            mkdir -p $out/{lib,include,lib/pkgconfig}
 
-                          touch $out/lib/libopen_jtalk.a
-                          touch $out/lib/libmecab.a
+            touch $out/lib/libopen_jtalk.a
+            touch $out/lib/libmecab.a
 
-                          mkdir -p $out/include/openjtalk
-                          touch $out/include/openjtalk/openjtalk.h
+            mkdir -p $out/include/openjtalk
+            touch $out/include/openjtalk/openjtalk.h
 
-                          cat > $out/lib/pkgconfig/open_jtalk.pc << EOF
-            prefix=$out
-            exec_prefix=\$prefix
-            libdir=\$prefix/lib
-            includedir=\$prefix/include
-
-            Name: OpenJTalk
-            Description: OpenJTalk speech synthesis system (dummy for VOICEVOX)
-            Version: 1.11
-            Libs: -L\$libdir
-            Cflags: -I\$includedir
-            EOF
-
+            # Generate pkg-config file from template
+            substitute ${./open_jtalk.pc} $out/lib/pkgconfig/open_jtalk.pc \
+              --replace "@out@" "$out"
           '';
         };
 
@@ -120,7 +110,6 @@
               cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
             fi
 
-            # Extract OpenJTalk dictionary
             cd $TMPDIR
             ${pkgs.gnutar}/bin/tar -xzf ${openJTalkDict}
             DICT_DIR=$(find . -maxdepth 1 -name "open_jtalk_dic*" -type d | head -1)
@@ -206,8 +195,9 @@
             openJTalkStaticLibs
           ];
 
+          # Build-time environment variables
           preBuild = ''
-
+            # OpenJTalk configuration
             export OPENJTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
             export OPEN_JTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
             export OPENJTALK_LIB_DIR="${openJTalkStaticLibs}/lib"
@@ -215,12 +205,14 @@
             export OPENJTALK_STATIC_LIB="1"
             export OPENJTALK_SKIP_BUILD="1"
             export OPENJTALK_NO_BUILD="1"
+            export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
 
             # ONNX Runtime configuration
             export ORT_STRATEGY="system"
             export ORT_USE_SYSTEM_LIB="1"
             export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
 
+            # CMake configuration
             export CMAKE_DISABLE_FIND_PACKAGE_Git="TRUE"
             export FETCHCONTENT_FULLY_DISCONNECTED="ON"
             export FETCHCONTENT_QUIET="ON"
@@ -228,31 +220,27 @@
             export CMAKE_BUILD_PARALLEL_LEVEL="8"
             export GIT_SSL_NO_VERIFY="false"
 
-
+            # VOICEVOX Core configuration
             export VOICEVOX_CORE_LIB_DIR="${voicevoxResources}/voicevox_core/lib"
             export VOICEVOX_CORE_INCLUDE_DIR="${voicevoxResources}/voicevox_core/include"
 
-
+            # Build paths
             export PKG_CONFIG_PATH="${openJTalkStaticLibs}/lib/pkgconfig:${voicevoxResources}/voicevox_core/lib/pkgconfig:$PKG_CONFIG_PATH"
-
             export LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$LIBRARY_PATH"
             export LD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$LD_LIBRARY_PATH"
             export DYLD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$DYLD_LIBRARY_PATH"
 
-            export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
+            # Rust flags
             export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib --cfg openjtalk_dict_path $RUSTFLAGS"
-
           '';
 
           postInstall = ''
             if [ ! -f "$out/bin/voicevox-daemon" ]; then
               echo "Warning: voicevox-daemon binary not found"
             fi
+
             cp ${voicevoxResources}/bin/voicevox-download $out/bin/
-
             install -m755 ${./scripts/voicevox-setup-models.sh} $out/bin/voicevox-setup-models
-            chmod +x $out/bin/voicevox-setup-models
-
           '';
 
           meta = packageMeta;
@@ -260,7 +248,7 @@
 
         licenseAcceptor = pkgs.runCommand "voicevox-auto-setup" { } ''
           mkdir -p $out/bin
-          substitute ${./scripts/voicevox-auto-setup.sh.template} $out/bin/voicevox-auto-setup \
+          substitute ${./scripts/voicevox-auto-setup.sh} $out/bin/voicevox-auto-setup \
             --replace "@@BASH_PATH@@" "${pkgs.bash}/bin/bash" \
             --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
             --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
@@ -319,7 +307,7 @@
               echo ""
               echo "📜 Checking script syntax..."
               bash -n ${./.}/scripts/voicevox-setup-models.sh
-              sed 's/@@[^@]*@@/placeholder/g' ${./.}/scripts/voicevox-auto-setup.sh.template | bash -n
+              sed 's/@@[^@]*@@/placeholder/g' ${./.}/scripts/voicevox-auto-setup.sh | bash -n
 
               echo ""
               echo "🔒 Running security audit..."

@@ -1,0 +1,10 @@
+prefix=@out@
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: OpenJTalk
+Description: OpenJTalk speech synthesis system (dummy for VOICEVOX)
+Version: 1.11
+Libs: -L${libdir}
+Cflags: -I${includedir}

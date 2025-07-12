@@ -70,7 +70,6 @@ impl DaemonState {
         style_id
     }
 
-
     pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
         match request {
             OwnedRequest::Ping => OwnedResponse::Pong,
@@ -87,20 +86,29 @@ impl DaemonState {
                 match self.core.load_specific_model(&model_id.to_string()) {
                     Ok(_) => {
                         println!("  ✓ Loaded model {} for synthesis", model_id);
-                        
+
                         // Perform synthesis
                         let synthesis_result = self.core.synthesize(&text, style_id);
-                        
+
                         // Always unload model after synthesis
-                        let models_dir = crate::paths::find_models_dir_client().unwrap_or_else(|_| {
-                            std::path::PathBuf::from("~/.local/share/voicevox/models/vvms")
-                        });
-                        let model_path = models_dir.join(format!("{}.vvm", model_id));
-                        match self.core.unload_voice_model_by_path(model_path.to_str().unwrap_or("")) {
-                            Ok(_) => println!("  ✓ Unloaded model {} after synthesis", model_id),
-                            Err(e) => eprintln!("  ✗ Failed to unload model {}: {}", model_id, e),
+                        // Note: Since we just loaded the model successfully, we should have a valid path
+                        match crate::paths::find_models_dir_client() {
+                            Ok(models_dir) => {
+                                let model_path = models_dir.join(format!("{}.vvm", model_id));
+                                match self
+                                    .core
+                                    .unload_voice_model_by_path(model_path.to_str().unwrap_or(""))
+                                {
+                                    Ok(_) => println!("  ✓ Unloaded model {} after synthesis", model_id),
+                                    Err(e) => eprintln!("  ✗ Failed to unload model {}: {}", model_id, e),
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("  ✗ Failed to find models directory for unload: {}", e);
+                                // Model will remain loaded but will be cleaned up on daemon shutdown
+                            }
                         }
-                        
+
                         match synthesis_result {
                             Ok(wav_data) => {
                                 // Check if client supports zero-copy
@@ -181,7 +189,10 @@ impl DaemonState {
 
             OwnedRequest::LoadModel { model_name } => {
                 // Since we load and unload per request, this is now a no-op
-                println!("LoadModel request received for: {} (no-op - models are loaded per request)", model_name);
+                println!(
+                    "LoadModel request received for: {} (no-op - models are loaded per request)",
+                    model_name
+                );
                 OwnedResponse::Success
             }
 

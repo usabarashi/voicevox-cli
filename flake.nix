@@ -179,15 +179,48 @@
           };
 
           doCheck = false;
+          
+          # Pre-configure phase to setup build environment
+          preConfigure = ''
+            # Create ORT cache directory structure that build.rs expects
+            export HOME=$PWD/build-home
+            mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib
+            
+            # Copy ONNX Runtime libraries to expected location
+            if [ -d "${voicevoxResources}/voicevox_core/lib" ]; then
+              cp -r ${voicevoxResources}/voicevox_core/lib/* \
+                $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib/
+            fi
+            
+            # Also create include directory
+            mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include
+            if [ -d "${voicevoxResources}/voicevox_core/include" ]; then
+              cp -r ${voicevoxResources}/voicevox_core/include/* \
+                $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include/
+            fi
+            
+            # Create VERSION_NUMBER file that voicevox-ort-sys expects
+            echo "1.17.3" > $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/VERSION_NUMBER
+          '';
 
           nativeBuildInputs = with pkgs; [
+            # Rust tools
+            rustfmt
+            clippy
+            
+            # Build tools
             pkg-config
             cmake
-            git
+            gnumake
+            
+            # Autotools (for dependencies)
             autoconf
             automake
             libtool
-            gnumake
+            
+            # Version control (required by some build scripts)
+            git
+            cacert
           ];
 
           buildInputs = [
@@ -197,6 +230,13 @@
 
           # Build-time environment variables
           preBuild = ''
+            # Run full CI checks before build
+            ${pkgs.bash}/bin/bash ${./scripts/ci.sh} --build-phase || exit 1
+            
+            # Git SSL configuration
+            export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            
             # OpenJTalk configuration
             export OPENJTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
             export OPEN_JTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
@@ -281,82 +321,22 @@
           # CI Task Runner - All checks in one command
           ci = {
             type = "app";
-            program = "${pkgs.writeShellScript "ci" ''
-              set -euo pipefail
-              echo "🔍 Running Complete CI Pipeline..."
-              echo "=================================="
-
-              # Static Analysis
-              echo ""
-              echo "📦 Checking Nix flake..."
-              nix flake check --show-trace
-
-              echo ""
-              echo "🛠️  Verifying Rust toolchain..."
-              nix develop --command rustc --version
-              nix develop --command cargo --version
-
-              echo ""
-              echo "📝 Checking code formatting..."
-              nix develop --command cargo fmt --check
-
-              echo ""
-              echo "🧹 Running clippy analysis..."
-              nix develop --command cargo clippy --all-targets --all-features -- -D warnings
-
-              echo ""
-              echo "📜 Checking script syntax..."
-              bash -n ${./.}/scripts/voicevox-setup-models.sh
-              sed 's/@@[^@]*@@/placeholder/g' ${./.}/scripts/voicevox-auto-setup.sh | bash -n
-
-              echo ""
-              echo "🔒 Running security audit..."
-              if ! nix develop --command cargo audit --version >/dev/null 2>&1; then
-                echo "Installing cargo-audit..."
-                nix develop --command cargo install cargo-audit
-              fi
-              nix develop --command cargo audit
-
-              echo ""
-              echo "🏗️  Building project..."
-              nix build --show-trace
-
-              echo ""
-              echo "🔧 Verifying build artifacts..."
-              ls -la result/bin/
-              file result/bin/voicevox-say
-              file result/bin/voicevox-daemon
-              test -x result/bin/voicevox-setup-models
-              echo "All binaries built successfully"
-
-              echo ""
-              echo "🧪 Testing functionality..."
-              result/bin/voicevox-say --help || echo "Help command test"
-              result/bin/voicevox-daemon --help || echo "Help command test"
-              result/bin/voicevox-say --version || echo "Version command not available"
-
-              echo ""
-              echo "📦 Package verification..."
-              echo "Binary sizes:"
-              ls -lah result/bin/
-              echo "Static linking verification:"
-              otool -L result/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
-              echo "Total package size:"
-              du -sh result/
-
-              echo ""
-              echo "✅ All CI checks completed successfully!"
-            ''}";
+            program = toString (pkgs.writeShellScript "ci-runner" ''
+              exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
+            '');
           };
         };
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
+            # Rust toolchain
             cargo
             rustc
             rustfmt
             clippy
             rust-analyzer
+            
+            # Build tools
             pkg-config
             cmake
           ];

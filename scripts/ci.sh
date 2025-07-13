@@ -33,7 +33,14 @@ fi
 echo ""
 echo "📝 Checking code formatting..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
-  cargo fmt --check || (echo "❌ Code formatting errors detected. Run 'cargo fmt' to fix." && exit 1)
+  # Check formatting and show diff if needed
+  if ! cargo fmt --check; then
+    echo "❌ Code formatting errors detected. Run 'cargo fmt' to fix."
+    echo ""
+    echo "Hint: The most common issue is missing newline at end of file."
+    echo "You can fix this by running: cargo fmt"
+    exit 1
+  fi
 else
   nix develop --command cargo ci-fmt
 fi

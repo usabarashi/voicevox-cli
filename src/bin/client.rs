@@ -1,9 +1,3 @@
-//! VOICEVOX CLI client binary - `voicevox-say`
-//!
-//! Lightweight CLI client that communicates with the daemon via Unix sockets.
-//! Provides macOS `say` command-compatible interface for Japanese TTS with
-//! various character voices. Handles first-run setup and model downloads.
-
 use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
 use std::collections::HashMap;
@@ -12,7 +6,7 @@ use std::time::Duration;
 
 use voicevox_cli::client::daemon_client::start_daemon_with_confirmation;
 use voicevox_cli::client::*;
-use voicevox_cli::core::VoicevoxCore;
+use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
@@ -39,7 +33,6 @@ fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> 
 async fn try_daemon_with_retry(
     text: &str,
     style_id: u32,
-    voice_description: &str,
     options: OwnedSynthesizeOptions,
     output_file: Option<&String>,
     quiet: bool,
@@ -49,7 +42,6 @@ async fn try_daemon_with_retry(
     let initial_result = daemon_mode(
         text,
         style_id,
-        voice_description,
         options.clone(),
         output_file,
         quiet,
@@ -79,16 +71,7 @@ async fn try_daemon_with_retry(
                 tokio::time::sleep(Duration::from_secs(5)).await;
 
                 // Retry daemon mode after starting daemon
-                return daemon_mode(
-                    text,
-                    style_id,
-                    voice_description,
-                    options,
-                    output_file,
-                    quiet,
-                    socket_path,
-                )
-                .await;
+                return daemon_mode(text, style_id, options, output_file, quiet, socket_path).await;
             }
 
             // For other errors, just propagate them
@@ -100,11 +83,8 @@ async fn try_daemon_with_retry(
 async fn standalone_mode(
     text: &str,
     style_id: u32,
-    _voice_description: &str,
     output_file: Option<&String>,
     quiet: bool,
-    _rate: f32,
-    _streaming: bool,
 ) -> Result<()> {
     // Check for models before initializing core
     if voicevox_cli::paths::find_models_dir_client().is_err() {
@@ -115,10 +95,10 @@ async fn standalone_mode(
     }
 
     let core = VoicevoxCore::new()?;
-    core.load_all_models_no_download().map_err(|e| {
-        eprintln!("Error: Failed to load models: {}", e);
-        e
-    })?;
+    // In standalone mode, we need to load the specific model for the style
+    let model_id = voicevox_cli::voice::get_model_for_voice_id(style_id)
+        .ok_or_else(|| anyhow!("No model found for style ID {}", style_id))?;
+    core.load_specific_model(&model_id.to_string())?;
 
     let wav_data = core.synthesize(text, style_id)?;
 
@@ -177,12 +157,6 @@ async fn main() -> Result<()> {
                 .value_name("FILE"),
         )
         .arg(
-            Arg::new("streaming")
-                .help("Enable streaming synthesis (sentence-by-sentence)")
-                .long("streaming")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("quiet")
                 .help("Don't play audio, only save to file")
                 .long("quiet")
@@ -199,7 +173,6 @@ async fn main() -> Result<()> {
             Arg::new("speaker-id")
                 .help("Directly specify speaker style ID (advanced users)")
                 .long("speaker-id")
-                .short('s')
                 .value_name("ID")
                 .value_parser(clap::value_parser!(u32))
                 .conflicts_with_all(["voice", "model"]),
@@ -235,7 +208,7 @@ async fn main() -> Result<()> {
             Arg::new("socket-path")
                 .help("Specify custom Unix socket path")
                 .long("socket-path")
-                .short('s')
+                .short('S')
                 .value_name("PATH"),
         );
 
@@ -306,7 +279,7 @@ async fn main() -> Result<()> {
                 use voicevox_cli::paths::find_openjtalk_dict;
                 match find_openjtalk_dict() {
                     Ok(dict_path) => {
-                        println!("Dictionary: {} ✅", dict_path);
+                        println!("Dictionary: {} ✅", dict_path.display());
                     }
                     Err(_) => {
                         println!("Dictionary: Not found ❌");
@@ -334,9 +307,12 @@ async fn main() -> Result<()> {
         println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
 
-        if let Err(e) = core.load_all_models_no_download() {
-            println!("Warning: Failed to load some models: {}", e);
-            eprintln!("Please start voicevox-daemon to download voice models automatically");
+        // Load all available models for listing speakers
+        let models = scan_available_models()?;
+        for model in &models {
+            if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {
+                println!("Warning: Failed to load model {}: {}", model.model_id, e);
+            }
         }
 
         println!("All available speakers and styles from loaded models:");
@@ -376,10 +352,9 @@ async fn main() -> Result<()> {
     }
 
     // Voice resolution: speaker-id → model → voice-name → default
-    let (style_id, voice_description) = resolve_voice_from_args(&matches)?;
+    let (style_id, _voice_description) = resolve_voice_from_args(&matches)?;
 
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
-    let streaming = matches.get_flag("streaming");
     let quiet = matches.get_flag("quiet");
     let output_file = matches.get_one::<String>("output-file");
     let force_standalone = matches.get_flag("standalone");
@@ -390,9 +365,7 @@ async fn main() -> Result<()> {
 
     let options = OwnedSynthesizeOptions {
         rate,
-        streaming,
-        context: None,
-        zero_copy: false,
+        ..Default::default()
     };
 
     // Try daemon mode first, regardless of model availability
@@ -405,7 +378,6 @@ async fn main() -> Result<()> {
         if try_daemon_with_retry(
             &text,
             style_id,
-            &voice_description,
             options.clone(),
             output_file,
             quiet,
@@ -422,14 +394,5 @@ async fn main() -> Result<()> {
         }
     }
 
-    standalone_mode(
-        &text,
-        style_id,
-        &voice_description,
-        output_file,
-        quiet,
-        rate,
-        streaming,
-    )
-    .await
+    standalone_mode(&text, style_id, output_file, quiet).await
 }

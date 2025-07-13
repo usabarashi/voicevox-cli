@@ -8,7 +8,7 @@ use tokio::signal;
 use tokio::sync::Mutex;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
-use crate::core::VoicevoxCore;
+use crate::core::{CoreSynthesis, VoicevoxCore};
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 use std::borrow::Cow;
 
@@ -16,8 +16,6 @@ pub struct DaemonState {
     core: VoicevoxCore,
     style_to_model_map: Arc<Mutex<HashMap<u32, u32>>>,
     all_speakers: Arc<Mutex<Vec<crate::voice::Speaker>>>,
-    #[cfg(unix)]
-    pending_fd: Arc<Mutex<Option<std::os::unix::io::RawFd>>>,
 }
 
 impl DaemonState {
@@ -25,7 +23,6 @@ impl DaemonState {
         let core = VoicevoxCore::new()?;
         let style_to_model_map = Arc::new(Mutex::new(HashMap::new()));
 
-        // Build dynamic style-to-model mapping
         println!("Building dynamic style-to-model mapping...");
         let (mapping, speakers) = crate::voice::build_style_to_model_map_async(&core).await?;
         *style_to_model_map.lock().await = mapping;
@@ -35,34 +32,21 @@ impl DaemonState {
             style_to_model_map.lock().await.len()
         );
 
-        // No persistent loading - models are loaded and unloaded per request
         println!("Models will be loaded and unloaded per synthesis request.");
 
         Ok(DaemonState {
             core,
             style_to_model_map,
             all_speakers,
-            #[cfg(unix)]
-            pending_fd: Arc::new(Mutex::new(None)),
         })
     }
 
-    // Get pending FD and clear it
-    #[cfg(unix)]
-    pub async fn take_pending_fd(&self) -> Option<std::os::unix::io::RawFd> {
-        self.pending_fd.lock().await.take()
-    }
-
-    // Helper function to extract model_id from style_id using dynamic mapping
     async fn get_model_id_from_style(&self, style_id: u32) -> u32 {
         let map = self.style_to_model_map.lock().await;
 
-        // Use dynamic mapping if available
         if let Some(&model_id) = map.get(&style_id) {
             return model_id;
         }
-
-        // Fallback: use style_id as model_id (for backward compatibility)
         eprintln!(
             "Warning: Style {} not found in dynamic mapping, using style ID as model ID",
             style_id
@@ -77,22 +61,16 @@ impl DaemonState {
             OwnedRequest::Synthesize {
                 text,
                 style_id,
-                options,
+                options: _,
             } => {
-                // Get the required model ID
                 let model_id = self.get_model_id_from_style(style_id).await;
 
-                // Load model for this request only
                 match self.core.load_specific_model(&model_id.to_string()) {
                     Ok(_) => {
                         println!("  ✓ Loaded model {} for synthesis", model_id);
 
-                        // Perform synthesis
                         let synthesis_result = self.core.synthesize(&text, style_id);
-
-                        // Always unload model after synthesis
-                        // Note: Since we just loaded the model successfully, we should have a valid path
-                        match crate::paths::find_models_dir_client() {
+                        match crate::paths::find_models_dir() {
                             Ok(models_dir) => {
                                 let model_path = models_dir.join(format!("{}.vvm", model_id));
                                 match self
@@ -109,56 +87,13 @@ impl DaemonState {
                             }
                             Err(e) => {
                                 eprintln!("  ✗ Failed to find models directory for unload: {}", e);
-                                // Model will remain loaded but will be cleaned up on daemon shutdown
                             }
                         }
 
                         match synthesis_result {
-                            Ok(wav_data) => {
-                                // Check if client supports zero-copy
-                                #[cfg(unix)]
-                                if options.zero_copy {
-                                    // Create anonymous buffer and write WAV data
-                                    use super::fd_passing::AnonymousBuffer;
-
-                                    match AnonymousBuffer::new("voicevox_audio", wav_data.len()) {
-                                        Ok(mut buffer) => {
-                                            if buffer.write_all(&wav_data).is_ok() {
-                                                // Store the FD for later sending
-                                                let fd = buffer.into_fd();
-                                                self.pending_fd.lock().await.replace(fd);
-
-                                                // Send metadata response
-                                                OwnedResponse::SynthesizeResultFd {
-                                                    size: wav_data.len(),
-                                                    format: crate::ipc::AudioFormat::default(),
-                                                }
-                                            } else {
-                                                // Fallback to regular response
-                                                OwnedResponse::SynthesizeResult {
-                                                    wav_data: Cow::Owned(wav_data),
-                                                }
-                                            }
-                                        }
-                                        Err(_e) => {
-                                            // Fallback to regular response
-                                            OwnedResponse::SynthesizeResult {
-                                                wav_data: Cow::Owned(wav_data),
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    // Regular response
-                                    OwnedResponse::SynthesizeResult {
-                                        wav_data: Cow::Owned(wav_data),
-                                    }
-                                }
-
-                                #[cfg(not(unix))]
-                                OwnedResponse::SynthesizeResult {
-                                    wav_data: Cow::Owned(wav_data),
-                                }
-                            }
+                            Ok(wav_data) => OwnedResponse::SynthesizeResult {
+                                wav_data: Cow::Owned(wav_data),
+                            },
                             Err(e) => {
                                 eprintln!("Synthesis failed: {}", e);
                                 OwnedResponse::Error {
@@ -180,76 +115,11 @@ impl DaemonState {
             }
 
             OwnedRequest::ListSpeakers => {
-                // Use the pre-collected speakers list that includes all models
                 let all_speakers = self.all_speakers.lock().await.clone();
                 let style_to_model = self.style_to_model_map.lock().await.clone();
-
-                // Send enhanced response with all speakers and model mapping
                 OwnedResponse::SpeakersListWithModels {
                     speakers: Cow::Owned(all_speakers),
                     style_to_model,
-                }
-            }
-
-            OwnedRequest::LoadModel { model_name } => {
-                // Since we load and unload per request, this is now a no-op
-                println!(
-                    "LoadModel request received for: {} (no-op - models are loaded per request)",
-                    model_name
-                );
-                OwnedResponse::Success
-            }
-
-            OwnedRequest::GetCapabilities => {
-                // Return daemon capabilities
-                OwnedResponse::Capabilities(crate::ipc::ProtocolCapabilities::default())
-            }
-
-            OwnedRequest::GetVoiceMapping => {
-                println!("Getting voice mapping");
-                // Build voice mapping from all speakers
-                let mut mapping = HashMap::new();
-                let all_speakers = self.all_speakers.lock().await;
-
-                for speaker in all_speakers.iter() {
-                    for style in &speaker.styles {
-                        let voice_name = format!("{}-{}", speaker.name, style.name);
-                        let description = format!("{} ({})", speaker.name, style.name);
-                        mapping.insert(Cow::Owned(voice_name), (style.id, Cow::Owned(description)));
-                    }
-                }
-
-                OwnedResponse::VoiceMapping { mapping }
-            }
-
-            OwnedRequest::ResolveVoiceName { voice_name } => {
-                println!("Resolving voice name: {}", voice_name);
-
-                // Try to parse as style ID first
-                if let Ok(style_id) = voice_name.parse::<u32>() {
-                    OwnedResponse::VoiceResolution {
-                        style_id,
-                        description: Cow::Owned(format!("Style ID {}", style_id)),
-                    }
-                } else {
-                    // Search through all speakers for matching voice name
-                    let all_speakers = self.all_speakers.lock().await;
-
-                    for speaker in all_speakers.iter() {
-                        for style in &speaker.styles {
-                            let full_name = format!("{}-{}", speaker.name, style.name);
-                            if full_name.to_lowercase() == voice_name.to_lowercase() {
-                                return OwnedResponse::VoiceResolution {
-                                    style_id: style.id,
-                                    description: Cow::Owned(full_name),
-                                };
-                            }
-                        }
-                    }
-
-                    OwnedResponse::Error {
-                        message: Cow::Owned(format!("Voice name '{}' not found", voice_name)),
-                    }
                 }
             }
         }
@@ -260,7 +130,6 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
     println!("New client connected (FD-enabled handler)");
 
     loop {
-        // Read request using framed codec
         let request = {
             let (reader, _writer) = stream.split();
             let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
@@ -277,19 +146,11 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
             }
         };
 
-        // Handle request
         let response = {
             let state = state.lock().await;
             state.handle_request(request).await
         };
 
-        // Check if we need FD passing
-        #[cfg(unix)]
-        let needs_fd = matches!(response, OwnedResponse::SynthesizeResultFd { .. });
-        #[cfg(not(unix))]
-        let needs_fd = false;
-
-        // Send response
         {
             let (_reader, writer) = stream.split();
             let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
@@ -304,39 +165,6 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
                 Err(e) => {
                     println!("Failed to serialize response: {}", e);
                     break;
-                }
-            }
-        }
-
-        // Now handle FD passing if needed - stream is available again
-        #[cfg(unix)]
-        if needs_fd {
-            if let Some(fd) = state.lock().await.take_pending_fd().await {
-                // Small delay to ensure response is received
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-                // Use the stream directly for FD passing
-                let result = stream.try_io(tokio::io::Interest::WRITABLE, || {
-                    use crate::daemon::fd_passing::send_fd;
-                    use std::os::unix::io::AsRawFd;
-                    let socket_fd = stream.as_raw_fd();
-                    match send_fd(socket_fd, fd, b"audio") {
-                        Ok(_) => Ok(()),
-                        Err(e) => {
-                            eprintln!("FD send error: {}", e);
-                            Err(std::io::Error::other(e.to_string()))
-                        }
-                    }
-                });
-
-                match result {
-                    Ok(_) => println!("✅ Successfully sent audio FD"),
-                    Err(e) => eprintln!("❌ Failed to send FD: {}", e),
-                }
-
-                // Close the FD
-                unsafe {
-                    libc::close(fd);
                 }
             }
         }

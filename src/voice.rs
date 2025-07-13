@@ -1,5 +1,3 @@
-//! Dynamic voice detection and resolution system
-
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -13,16 +11,13 @@ use smallvec::SmallVec;
 #[cfg(feature = "compact_str")]
 use compact_str::CompactString;
 
-/// Voice speaker metadata with multiple emotional styles
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Speaker {
-    /// Display name of the speaker character
     #[cfg(feature = "compact_str")]
     pub name: CompactString,
     #[cfg(not(feature = "compact_str"))]
     pub name: String,
 
-    /// Unique identifier for the speaker (UUID format)
     #[serde(default)]
     #[cfg(feature = "compact_str")]
     pub speaker_uuid: CompactString,
@@ -30,13 +25,11 @@ pub struct Speaker {
     #[cfg(not(feature = "compact_str"))]
     pub speaker_uuid: String,
 
-    /// Available emotional/speaking styles for this speaker
     #[cfg(feature = "smallvec")]
     pub styles: SmallVec<[Style; 8]>,
     #[cfg(not(feature = "smallvec"))]
     pub styles: Vec<Style>,
 
-    /// Voice model version
     #[serde(default)]
     #[cfg(feature = "compact_str")]
     pub version: CompactString,
@@ -45,19 +38,15 @@ pub struct Speaker {
     pub version: String,
 }
 
-/// Individual voice style within a speaker
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Style {
-    /// Display name of the style (e.g., "ノーマル", "あまあま", "ツンツン")
     #[cfg(feature = "compact_str")]
     pub name: CompactString,
     #[cfg(not(feature = "compact_str"))]
     pub name: String,
 
-    /// Unique style ID used for speech synthesis
     pub id: u32,
 
-    /// Optional style type classification
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     #[cfg(feature = "compact_str")]
     pub style_type: Option<CompactString>,
@@ -66,21 +55,16 @@ pub struct Style {
     pub style_type: Option<String>,
 }
 
-/// Available voice model with metadata
 #[derive(Debug, Clone)]
 pub struct AvailableModel {
-    /// Numeric model ID extracted from filename (e.g., 3 from "3.vvm")
     pub model_id: u32,
-    /// Full path to the VVM model file
     pub file_path: PathBuf,
-    /// List of voice speakers contained in this model
     #[cfg(feature = "smallvec")]
     pub speakers: SmallVec<[Speaker; 4]>,
     #[cfg(not(feature = "smallvec"))]
     pub speakers: Vec<Speaker>,
 }
 
-/// Scans for available voice models in the models directory
 pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     use crate::paths::find_models_dir_client;
 
@@ -133,59 +117,22 @@ fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
         return Ok(Vec::new());
     }
 
-    #[cfg(feature = "smallvec")]
-    let mut vvm_files = SmallVec::<[PathBuf; 16]>::new();
-    #[cfg(not(feature = "smallvec"))]
     let mut vvm_files = Vec::new();
 
     let entries = std::fs::read_dir(dir)
         .map_err(|e| anyhow!("Failed to read directory {}: {}", dir.display(), e))?;
 
-    let paths: Result<Vec<_>> = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .map(|path| process_path_entry(&path))
-        .collect();
-
-    let all_paths = paths?;
-
-    for path_result in all_paths {
-        match path_result {
-            PathProcessResult::VvmFile(path) => vvm_files.push(path),
-            PathProcessResult::Directory(paths) => vvm_files.extend(paths),
-            PathProcessResult::Skip => continue,
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_file() && path.extension().map(|ext| ext == "vvm").unwrap_or(false) {
+            vvm_files.push(path);
+        } else if path.is_dir() {
+            // Recursively search subdirectories
+            vvm_files.extend(find_vvm_files(&path)?);
         }
     }
 
-    #[cfg(feature = "smallvec")]
-    let result = vvm_files.into_vec();
-    #[cfg(not(feature = "smallvec"))]
-    let result = vvm_files;
-
-    Ok(result)
-}
-
-#[derive(Debug)]
-enum PathProcessResult {
-    VvmFile(PathBuf),
-    Directory(Vec<PathBuf>),
-    Skip,
-}
-
-fn process_path_entry(path: &PathBuf) -> Result<PathProcessResult> {
-    if path.is_file() {
-        let is_vvm = path.extension().map(|ext| ext == "vvm").unwrap_or(false);
-
-        if is_vvm {
-            Ok(PathProcessResult::VvmFile(path.clone()))
-        } else {
-            Ok(PathProcessResult::Skip)
-        }
-    } else if path.is_dir() {
-        find_vvm_files(path).map(PathProcessResult::Directory)
-    } else {
-        Ok(PathProcessResult::Skip)
-    }
+    Ok(vvm_files)
 }
 
 fn extract_model_id_from_path(path: &Path) -> Option<u32> {
@@ -221,7 +168,7 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
         .filter(|&id| id > 0 && id < 1000)
         .map(|style_id| (style_id, format!("Style ID {}", style_id)))
         .map(Ok)
-        .unwrap_or_else(|| resolve_voice_with_core_integration(voice_input))
+        .unwrap_or_else(|| try_resolve_from_available_models(voice_input))
 }
 
 fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
@@ -265,71 +212,6 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
         })
 }
 
-pub fn get_styles_for_model_from_core(model_id: u32) -> Result<Vec<Style>> {
-    use crate::core::VoicevoxCore;
-
-    match VoicevoxCore::new() {
-        Ok(core) => match core.get_speakers() {
-            Ok(speakers) => {
-                let mut styles = Vec::new();
-                for speaker in speakers {
-                    for style in speaker.styles {
-                        if (style.id >= model_id * 10 && style.id < (model_id + 1) * 10)
-                            || (model_id <= 30 && style.id == model_id)
-                        {
-                            styles.push(style);
-                        }
-                    }
-                }
-                Ok(styles)
-            }
-            Err(e) => Err(anyhow!("Failed to get speakers from VOICEVOX Core: {}", e)),
-        },
-        Err(_) => Ok(Vec::new()),
-    }
-}
-
-pub fn resolve_voice_with_core_integration(voice_input: &str) -> Result<(u32, String)> {
-    match try_resolve_from_available_models(voice_input) {
-        Ok(result) => Ok(result),
-        Err(_) => {
-            use crate::core::VoicevoxCore;
-
-            if let Ok(core) = VoicevoxCore::new() {
-                if let Ok(speakers) = core.get_speakers() {
-                    for speaker in speakers {
-                        let normalized_name = speaker
-                            .name
-                            .to_lowercase()
-                            .replace(" ", "")
-                            .replace("（", "")
-                            .replace("）", "")
-                            .replace("(", "")
-                            .replace(")", "");
-
-                        let normalized_input =
-                            voice_input.to_lowercase().replace(" ", "").replace("-", "");
-
-                        if normalized_name.contains(&normalized_input) {
-                            if let Some(first_style) = speaker.styles.first() {
-                                return Ok((
-                                    first_style.id,
-                                    format!("{} ({})", speaker.name, first_style.name),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-
-            Err(anyhow!(
-                "Voice '{}' not found. Use --list-speakers to see all available voices.",
-                voice_input
-            ))
-        }
-    }
-}
-
 pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
     if let Ok(available_models) = scan_available_models() {
         available_models
@@ -349,6 +231,7 @@ pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
 pub async fn build_style_to_model_map_async(
     core: &crate::core::VoicevoxCore,
 ) -> Result<(std::collections::HashMap<u32, u32>, Vec<Speaker>)> {
+    use crate::core::CoreSynthesis;
     use std::collections::{HashMap, HashSet};
 
     let mut style_map = HashMap::new();
@@ -383,8 +266,6 @@ pub async fn build_style_to_model_map_async(
             None => continue,
         };
 
-        println!("  Scanning model {}.vvm...", model_id);
-
         // Temporarily load the model to get its metadata
         match core.load_specific_model(&model_id.to_string()) {
             Ok(_) => {
@@ -415,14 +296,7 @@ pub async fn build_style_to_model_map_async(
         }
     }
 
-    // For any styles in the initial set, try to infer their model
-    for style_id in initial_style_ids {
-        // Default mapping for unmapped styles
-        style_map.entry(style_id).or_insert(style_id);
-    }
-
     // Load all models to get complete speaker list
-    println!("  Loading all models to get complete speaker list...");
     let mut all_speakers = Vec::new();
 
     // Re-load all models to get the complete speaker list
@@ -455,12 +329,6 @@ pub async fn build_style_to_model_map_async(
             eprintln!("  ✗ Failed to unload model after speaker collection: {}", e);
         }
     }
-
-    println!(
-        "  ✓ Built style-to-model mapping with {} entries",
-        style_map.len()
-    );
-    println!("  ✓ Collected {} speakers", all_speakers.len());
 
     Ok((style_map, all_speakers))
 }

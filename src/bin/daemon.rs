@@ -1,9 +1,3 @@
-//! VOICEVOX CLI daemon binary - `voicevox-daemon`
-//!
-//! Background service that pre-loads voice models and handles synthesis requests
-//! via Unix socket IPC. Provides instant response times after initial model loading.
-//! Supports graceful shutdown and duplicate process prevention.
-
 use anyhow::Result;
 use clap::{Arg, Command};
 use std::path::PathBuf;
@@ -61,19 +55,6 @@ async fn main() -> Result<()> {
                 .help("Restart the daemon (stop then start)")
                 .long("restart")
                 .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("config")
-                .help("Path to configuration file")
-                .long("config")
-                .short('c')
-                .value_name("FILE"),
-        )
-        .arg(
-            Arg::new("create-config")
-                .help("Create example configuration file")
-                .long("create-config")
-                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
@@ -91,13 +72,6 @@ async fn main() -> Result<()> {
     let stop = matches.get_flag("stop");
     let status = matches.get_flag("status");
     let restart = matches.get_flag("restart");
-    let create_config = matches.get_flag("create-config");
-
-    // Handle create-config
-    if create_config {
-        return voicevox_cli::config::Config::create_example()
-            .map_err(|e| anyhow::anyhow!("Failed to create example config: {}", e));
-    }
 
     // Handle daemon operations
     if stop {
@@ -188,25 +162,6 @@ async fn main() -> Result<()> {
         eprintln!("{}", e);
         std::process::exit(1);
     }
-
-    // Load configuration with CLI overrides
-    let _config = if let Some(config_path) = matches.get_one::<String>("config") {
-        match std::fs::read_to_string(config_path) {
-            Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
-                eprintln!("Failed to parse config file: {}", e);
-                voicevox_cli::config::Config::default()
-            }),
-            Err(e) => {
-                eprintln!("Failed to read config file: {}", e);
-                voicevox_cli::config::Config::default()
-            }
-        }
-    } else {
-        voicevox_cli::config::Config::load().unwrap_or_else(|e| {
-            eprintln!("Failed to load config, using defaults: {}", e);
-            voicevox_cli::config::Config::default()
-        })
-    };
 
     // Display startup banner
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));

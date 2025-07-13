@@ -3,9 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-// Check for existing daemon and prevent duplicate processes
 pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
-    // Check if socket file exists
     if socket_path.exists() {
         // Try to connect to existing daemon
         match tokio::net::UnixStream::connect(socket_path).await {
@@ -16,7 +14,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
                 ));
             }
             Err(_) => {
-                // Socket exists but no daemon responding, remove stale socket
                 println!("Removing stale socket file: {}", socket_path.display());
                 if let Err(e) = fs::remove_file(socket_path) {
                     return Err(anyhow!("Failed to remove stale socket: {}", e));
@@ -25,7 +22,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
         }
     }
 
-    // Check for running daemon processes (user-specific)
     match process::Command::new("pgrep")
         .arg("-x")
         .arg("-u")

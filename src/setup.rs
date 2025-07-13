@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
+use crate::paths::get_default_models_dir;
+
 // Attempt first-run setup for voice models with automatic license acceptance
 pub fn attempt_first_run_setup() -> Result<PathBuf> {
     println!("🎭 VOICEVOX CLI - User Setup");
@@ -8,10 +10,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
     println!();
 
     // Primary target: user directory for user-specific setup
-    let target_dir = std::env::var("HOME")
-        .ok()
-        .map(|home| PathBuf::from(home).join(".local/share/voicevox/models"))
-        .unwrap_or_else(|| PathBuf::from("./models"));
+    let target_dir = get_default_models_dir();
 
     println!(
         "📦 Installing models to: {} (user-specific)",

@@ -238,13 +238,7 @@
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             
             # OpenJTalk configuration
-            export OPENJTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
-            export OPEN_JTALK_DICT_DIR="${voicevoxResources}/openjtalk_dict"
-            export OPENJTALK_LIB_DIR="${openJTalkStaticLibs}/lib"
-            export OPENJTALK_INCLUDE_DIR="${openJTalkStaticLibs}/include"
-            export OPENJTALK_STATIC_LIB="1"
-            export OPENJTALK_SKIP_BUILD="1"
-            export OPENJTALK_NO_BUILD="1"
+            # Used by build.rs to embed dictionary path at compile time
             export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
 
             # ONNX Runtime configuration
@@ -271,16 +265,23 @@
             export DYLD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$DYLD_LIBRARY_PATH"
 
             # Rust flags
-            export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib --cfg openjtalk_dict_path $RUSTFLAGS"
+            export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib $RUSTFLAGS"
           '';
 
           postInstall = ''
-            if [ ! -f "$out/bin/voicevox-daemon" ]; then
-              echo "Warning: voicevox-daemon binary not found"
-            fi
-
+            # Install binaries
             cp ${voicevoxResources}/bin/voicevox-download $out/bin/
             install -m755 ${./scripts/voicevox-setup-models.sh} $out/bin/voicevox-setup-models
+            
+            # Install OpenJTalk dictionary to standard location
+            mkdir -p $out/share/voicevox
+            if [ -d "${voicevoxResources}/openjtalk_dict" ]; then
+              cp -r ${voicevoxResources}/openjtalk_dict $out/share/voicevox/openjtalk_dict
+              echo "✓ OpenJTalk dictionary installed to $out/share/voicevox/openjtalk_dict"
+            else
+              echo "✗ ERROR: OpenJTalk dictionary not found in build resources!"
+              exit 1
+            fi
           '';
 
           meta = packageMeta;

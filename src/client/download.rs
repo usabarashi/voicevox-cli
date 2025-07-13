@@ -1,36 +1,31 @@
-//! Voice model download and management functionality
-
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
+
+use crate::paths::get_default_voicevox_dir;
 
 /// Launches VOICEVOX downloader for voice models with direct user interaction
 pub async fn launch_downloader_for_user() -> Result<()> {
     let target_dir = std::env::var("HOME")
         .ok()
-        .map(|home| PathBuf::from(home).join(".local/share/voicevox"))
+        .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    // Create target directory
     std::fs::create_dir_all(&target_dir)?;
 
-    // Find downloader binary
     let downloader_path = if let Ok(current_exe) = std::env::current_exe() {
         let mut downloader = current_exe.clone();
         downloader.set_file_name("voicevox-download");
         if downloader.exists() {
             downloader
-        } else {
-            // Try package installation path
-            if let Some(pkg_root) = current_exe.parent().and_then(|p| p.parent()) {
-                let pkg_downloader = pkg_root.join("bin/voicevox-download");
-                if pkg_downloader.exists() {
-                    pkg_downloader
-                } else {
-                    return Err(anyhow!("voicevox-download not found"));
-                }
+        } else if let Some(pkg_root) = current_exe.parent().and_then(|p| p.parent()) {
+            let pkg_downloader = pkg_root.join("bin/voicevox-download");
+            if pkg_downloader.exists() {
+                pkg_downloader
             } else {
                 return Err(anyhow!("voicevox-download not found"));
             }
+        } else {
+            return Err(anyhow!("voicevox-download not found"));
         }
     } else {
         return Err(anyhow!("Could not find voicevox-download"));
@@ -42,11 +37,9 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     println!("   Please follow the on-screen instructions to accept license terms.");
     println!("   Press Enter when ready to continue...");
 
-    // Wait for user confirmation
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
 
-    // Launch downloader with direct user interaction (models only)
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
@@ -55,7 +48,6 @@ pub async fn launch_downloader_for_user() -> Result<()> {
         .status()?;
 
     if status.success() {
-        // Verify models were downloaded by checking target directory directly
         let _vvm_files = std::fs::read_dir(&target_dir)
             .map_err(|e| anyhow!("Failed to read target directory: {}", e))?
             .filter_map(|entry| entry.ok())
@@ -65,11 +57,10 @@ pub async fn launch_downloader_for_user() -> Result<()> {
                         .file_name()
                         .to_str()
                         .is_some_and(|name| name.ends_with(".vvm"))
-                    || entry.path().is_dir() // Also check subdirectories
+                    || entry.path().is_dir()
             })
             .collect::<Vec<_>>();
 
-        // Count VVM files recursively
         let vvm_count = count_vvm_files_recursive(&target_dir);
 
         if vvm_count > 0 {
@@ -79,7 +70,6 @@ pub async fn launch_downloader_for_user() -> Result<()> {
             );
             println!("   Found {} VVM model files", vvm_count);
 
-            // Clean up unnecessary files (zip, tgz, tar.gz) in target directory
             cleanup_unnecessary_files(&target_dir);
 
             Ok(())
@@ -93,7 +83,6 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     }
 }
 
-// Count VVM files recursively
 pub fn count_vvm_files_recursive(dir: &std::path::PathBuf) -> usize {
     std::fs::read_dir(dir)
         .map(|entries| {
@@ -118,11 +107,8 @@ fn count_vvm_file(path: &Path) -> usize {
         .unwrap_or(0)
 }
 
-// Clean up unnecessary downloaded files
 pub fn cleanup_unnecessary_files(dir: &std::path::PathBuf) {
-    let unnecessary_extensions = [
-        ".zip", ".tgz", ".tar.gz", ".tar", ".gz", // Archive files only
-    ];
+    let unnecessary_extensions = [".zip", ".tgz", ".tar.gz", ".tar", ".gz"];
 
     std::fs::read_dir(dir)
         .map(|entries| {
@@ -176,13 +162,11 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
     }
 }
 
-// Check for VOICEVOX Core system and download if needed
 pub async fn ensure_models_available() -> Result<()> {
     use crate::paths::find_models_dir_client;
 
-    // Check if models are already available
     if find_models_dir_client().is_ok() {
-        return Ok(()); // Models already available
+        return Ok(());
     }
 
     println!("🎭 VOICEVOX CLI - First Run Setup");
@@ -191,7 +175,6 @@ pub async fn ensure_models_available() -> Result<()> {
     println!("Note: Core libraries and dictionary are already included in this build.");
     println!();
 
-    // Interactive license acceptance
     print!("Would you like to download voice models now? [Y/n]: ");
     std::io::Write::flush(&mut std::io::stdout())?;
 
@@ -206,7 +189,6 @@ pub async fn ensure_models_available() -> Result<()> {
         );
         println!();
 
-        // Launch downloader directly for user interaction
         match launch_downloader_for_user().await {
             Ok(_) => {
                 println!("✅ Voice models setup completed!");
@@ -214,7 +196,10 @@ pub async fn ensure_models_available() -> Result<()> {
             }
             Err(e) => {
                 eprintln!("❌ Voice models download failed: {}", e);
-                eprintln!("You can manually run: voicevox-download --only models --output ~/.local/share/voicevox");
+                eprintln!(
+                    "You can manually run: voicevox-download --only models --output {}",
+                    get_default_voicevox_dir().display()
+                );
                 Err(e)
             }
         }
@@ -224,25 +209,21 @@ pub async fn ensure_models_available() -> Result<()> {
     }
 }
 
-// Update voice models only
 pub async fn update_models_only() -> Result<()> {
     println!("🔄 Updating voice models only...");
 
     let target_dir = std::env::var("HOME")
         .ok()
-        .map(|home| PathBuf::from(home).join(".local/share/voicevox"))
+        .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    // Create target directory
     std::fs::create_dir_all(&target_dir)?;
 
-    // Find downloader binary
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading voice models only...");
 
-    // Launch downloader with --only models flag
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
@@ -259,32 +240,27 @@ pub async fn update_models_only() -> Result<()> {
             Ok(())
         }
         _ => {
-            // Fallback to full download
             println!("⚠️  Models-only update not supported, falling back to full update...");
             launch_downloader_for_user().await
         }
     }
 }
 
-// Update dictionary only
 pub async fn update_dictionary_only() -> Result<()> {
     println!("🔄 Updating dictionary only...");
 
     let target_dir = std::env::var("HOME")
         .ok()
-        .map(|home| PathBuf::from(home).join(".local/share/voicevox"))
+        .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    // Create target directory
     std::fs::create_dir_all(&target_dir)?;
 
-    // Find downloader binary
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading dictionary only...");
 
-    // Launch downloader with --only dict flag
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("dict")
@@ -299,32 +275,27 @@ pub async fn update_dictionary_only() -> Result<()> {
             Ok(())
         }
         _ => {
-            // Fallback to full download
             println!("⚠️  Dictionary-only update not supported, falling back to full update...");
             launch_downloader_for_user().await
         }
     }
 }
 
-// Update specific model only
 pub async fn update_specific_model(model_id: u32) -> Result<()> {
     println!("🔄 Updating model {} only...", model_id);
 
     let target_dir = std::env::var("HOME")
         .ok()
-        .map(|home| PathBuf::from(home).join(".local/share/voicevox"))
+        .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    // Create target directory
     std::fs::create_dir_all(&target_dir)?;
 
-    // Find downloader binary
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading model {} only...", model_id);
 
-    // Launch downloader with specific model - this may not be directly supported
     // Fallback to models only for now
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
@@ -340,18 +311,15 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
             Ok(())
         }
         _ => {
-            // Fallback to full download
             println!("⚠️  Specific model update not supported, falling back to full update...");
             launch_downloader_for_user().await
         }
     }
 }
 
-// Check updates only
 pub async fn check_updates() -> Result<()> {
     println!("🔍 Checking for available updates...");
 
-    // Get current models
     use crate::voice::scan_available_models;
     let current_models = scan_available_models()?;
 
@@ -365,11 +333,10 @@ pub async fn check_updates() -> Result<()> {
         );
     }
 
-    // Check dictionary
     use crate::paths::find_openjtalk_dict;
     match find_openjtalk_dict() {
         Ok(dict_path) => {
-            println!("  Dictionary: {} ✅", dict_path);
+            println!("  Dictionary: {} ✅", dict_path.display());
         }
         Err(_) => {
             println!("  Dictionary: Not found ❌");
@@ -385,15 +352,12 @@ pub async fn check_updates() -> Result<()> {
     Ok(())
 }
 
-// Display version information
 pub async fn show_version_info() -> Result<()> {
     println!("📋 VOICEVOX CLI Version Information");
     println!("=====================================");
 
-    // Application version
     println!("Application: v{}", env!("CARGO_PKG_VERSION"));
 
-    // Get current models with metadata
     use crate::voice::scan_available_models;
     let current_models = scan_available_models()?;
 
@@ -414,12 +378,10 @@ pub async fn show_version_info() -> Result<()> {
         );
     }
 
-    // Check dictionary
     use crate::paths::find_openjtalk_dict;
     match find_openjtalk_dict() {
         Ok(dict_path) => {
-            println!("Dictionary: {}", dict_path);
-            // Try to get dictionary version info if available
+            println!("Dictionary: {}", dict_path.display());
         }
         Err(_) => {
             println!("Dictionary: Not installed");
@@ -429,7 +391,6 @@ pub async fn show_version_info() -> Result<()> {
     Ok(())
 }
 
-// Find downloader binary
 fn find_downloader_binary() -> Result<PathBuf> {
     if let Ok(current_exe) = std::env::current_exe() {
         let mut downloader = current_exe.clone();
@@ -438,7 +399,6 @@ fn find_downloader_binary() -> Result<PathBuf> {
             return Ok(downloader);
         }
 
-        // Try package installation path
         if let Some(pkg_root) = current_exe.parent().and_then(|p| p.parent()) {
             let pkg_downloader = pkg_root.join("bin/voicevox-download");
             if pkg_downloader.exists() {
@@ -457,7 +417,6 @@ fn get_file_size(path: &PathBuf) -> Result<u64> {
 fn get_file_modified(path: &PathBuf) -> Result<String> {
     let metadata = std::fs::metadata(path)?;
     let modified = metadata.modified()?;
-    // Simple timestamp formatting without chrono dependency
     Ok(format!("{:?}", modified))
 }
 

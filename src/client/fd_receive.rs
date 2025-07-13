@@ -57,55 +57,5 @@ impl Drop for ReceivedAudioBuffer {
     }
 }
 
-/// Handle zero-copy audio response
-#[cfg(unix)]
-pub async fn handle_audio_fd_response(
-    socket: &tokio::net::UnixStream,
-    size: usize,
-    _format: crate::ipc::AudioFormat,
-) -> Result<Vec<u8>> {
-    use super::super::daemon::fd_passing::receive_fd;
-    use std::os::unix::io::AsRawFd;
-
-    // Prepare to receive FD
-    let mut metadata_buf = vec![0u8; 16]; // Small metadata buffer
-    let socket_fd = socket.as_raw_fd();
-
-    // Receive the file descriptor
-    let (received_fd, _metadata_size) = receive_fd(socket_fd, &mut metadata_buf)
-        .context("Failed to receive audio file descriptor")?;
-
-    // Map and read the audio data
-    let audio_buffer = unsafe { ReceivedAudioBuffer::from_fd(received_fd, size)? };
-
-    // For now, convert to Vec for compatibility
-    // In future, could pass the mmap directly to audio playback
-    Ok(audio_buffer.to_vec())
-}
-
-/// Client capability detection
-pub fn supports_zero_copy() -> bool {
-    #[cfg(unix)]
-    {
-        // Check if we're on a supported platform
-        true
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_capability_detection() {
-        #[cfg(unix)]
-        assert!(supports_zero_copy());
-
-        #[cfg(not(unix))]
-        assert!(!supports_zero_copy());
-    }
-}
+mod tests {}

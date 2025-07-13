@@ -1,14 +1,13 @@
 /// FD passing enabled server with proper stream handling
 use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
-use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::daemon::DaemonState;
-use crate::ipc::{DaemonRequest, OwnedResponse};
+use crate::ipc::DaemonRequest;
 
 /// Handle client with working FD passing
 pub async fn handle_client_fd(
@@ -41,12 +40,6 @@ pub async fn handle_client_fd(
             state.handle_request(request).await
         };
 
-        // Check if we need FD passing
-        #[cfg(unix)]
-        let needs_fd = matches!(response, OwnedResponse::SynthesizeResultFd { .. });
-        #[cfg(not(unix))]
-        let needs_fd = false;
-
         // Send response
         {
             let (_reader, writer) = stream.split();
@@ -62,38 +55,6 @@ pub async fn handle_client_fd(
                 Err(e) => {
                     println!("Failed to serialize response: {}", e);
                     break;
-                }
-            }
-        }
-
-        // Now handle FD passing if needed - stream is available again
-        #[cfg(unix)]
-        if needs_fd {
-            if let Some(fd) = state.lock().await.take_pending_fd().await {
-                // Small delay to ensure response is received
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-                // Use the stream directly for FD passing
-                let result = stream.try_io(tokio::io::Interest::WRITABLE, || {
-                    use crate::daemon::fd_passing::send_fd;
-                    let socket_fd = stream.as_raw_fd();
-                    match send_fd(socket_fd, fd, b"audio") {
-                        Ok(_) => Ok(()),
-                        Err(e) => {
-                            eprintln!("FD send error: {}", e);
-                            Err(std::io::Error::other(e.to_string()))
-                        }
-                    }
-                });
-
-                match result {
-                    Ok(_) => println!("✅ Successfully sent audio FD"),
-                    Err(e) => eprintln!("❌ Failed to send FD: {}", e),
-                }
-
-                // Close the FD
-                unsafe {
-                    libc::close(fd);
                 }
             }
         }

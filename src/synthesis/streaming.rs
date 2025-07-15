@@ -1,0 +1,188 @@
+use anyhow::{Context, Result};
+use rodio::{Decoder, Sink};
+use std::io::Cursor;
+
+use crate::client::DaemonClient;
+
+/// Streaming synthesizer that processes text in chunks for lower latency
+pub struct StreamingSynthesizer {
+    daemon_client: DaemonClient,
+    text_splitter: TextSplitter,
+}
+
+impl StreamingSynthesizer {
+    pub async fn new() -> Result<Self> {
+        let daemon_client = DaemonClient::new().await?;
+        let text_splitter = TextSplitter::default();
+
+        Ok(Self {
+            daemon_client,
+            text_splitter,
+        })
+    }
+
+    /// Synthesize text with streaming playback
+    pub async fn synthesize_streaming(
+        &mut self,
+        text: &str,
+        style_id: u32,
+        sink: &Sink,
+    ) -> Result<()> {
+        // Split text into segments
+        let segments = self.text_splitter.split(text);
+
+        // Process each segment
+        for (i, segment) in segments.iter().enumerate() {
+            if segment.trim().is_empty() {
+                continue;
+            }
+
+            // Synthesize segment
+            let wav_data = self
+                .daemon_client
+                .synthesize(segment, style_id)
+                .await
+                .with_context(|| format!("Failed to synthesize segment {}: {}", i, segment))?;
+
+            // Create decoder from WAV data
+            let cursor = Cursor::new(wav_data);
+            let source = Decoder::new(cursor)
+                .with_context(|| format!("Failed to decode audio for segment {}", i))?;
+
+            // Append to playback queue
+            sink.append(source);
+
+            // Ensure playback starts for first segment
+            if i == 0 {
+                sink.play();
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Text splitter for breaking text into synthesizable segments
+#[derive(Debug, Clone)]
+pub struct TextSplitter {
+    /// Sentence-ending punctuation marks
+    delimiters: Vec<char>,
+    /// Maximum segment length
+    max_length: usize,
+}
+
+impl Default for TextSplitter {
+    fn default() -> Self {
+        Self {
+            delimiters: vec!['。', '！', '？', '．', '\n'],
+            max_length: 100,
+        }
+    }
+}
+
+impl TextSplitter {
+    /// Split text into segments suitable for streaming synthesis
+    pub fn split(&self, text: &str) -> Vec<String> {
+        let mut segments = Vec::new();
+        let mut current_segment = String::new();
+        let mut chars = text.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            current_segment.push(ch);
+
+            // Check if we hit a delimiter
+            if self.delimiters.contains(&ch) {
+                // Look ahead for consecutive punctuation
+                while let Some(&next_ch) = chars.peek() {
+                    if self.delimiters.contains(&next_ch) {
+                        current_segment.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+
+                segments.push(current_segment.clone());
+                current_segment.clear();
+            }
+            // Force split if segment is too long
+            else if current_segment.chars().count() >= self.max_length {
+                // Try to break at a natural boundary (space or punctuation)
+                if let Some(break_pos) = self.find_break_position(&current_segment) {
+                    let (first, rest) = current_segment.split_at(break_pos);
+                    segments.push(first.to_string());
+                    current_segment = rest.to_string();
+                } else {
+                    // Force break at max length
+                    segments.push(current_segment.clone());
+                    current_segment.clear();
+                }
+            }
+        }
+
+        // Add remaining text
+        if !current_segment.trim().is_empty() {
+            segments.push(current_segment);
+        }
+
+        segments
+    }
+
+    /// Find a good position to break text (at space or punctuation)
+    fn find_break_position(&self, text: &str) -> Option<usize> {
+        let chars: Vec<char> = text.chars().collect();
+        let target_pos = self.max_length * 3 / 4; // Try to break around 75% mark
+
+        // Look for space or punctuation near target position
+        for i in (0..target_pos).rev() {
+            if chars[i] == ' ' || chars[i] == '、' || chars[i] == ',' {
+                return Some(text.char_indices().nth(i + 1)?.0);
+            }
+        }
+
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_text_splitter_basic() {
+        let splitter = TextSplitter::default();
+
+        let text = "こんにちは。今日はいい天気ですね！明日も晴れるでしょうか？";
+        let segments = splitter.split(text);
+
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0], "こんにちは。");
+        assert_eq!(segments[1], "今日はいい天気ですね！");
+        assert_eq!(segments[2], "明日も晴れるでしょうか？");
+    }
+
+    #[test]
+    fn test_text_splitter_long_text() {
+        let splitter = TextSplitter {
+            delimiters: vec!['。'],
+            max_length: 10,
+        };
+
+        let text = "あいうえおかきくけこさしすせそ";
+        let segments = splitter.split(text);
+
+        assert!(!segments.is_empty());
+        assert!(segments[0].chars().count() <= 10);
+    }
+
+    #[test]
+    fn test_text_splitter_consecutive_punctuation() {
+        let splitter = TextSplitter::default();
+
+        let text = "すごい！！！本当に？？";
+        let segments = splitter.split(text);
+
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0], "すごい！！！");
+        assert_eq!(segments[1], "本当に？？");
+    }
+}

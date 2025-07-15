@@ -2,7 +2,6 @@ use anyhow::Result;
 use std::fs;
 use std::io::{self, Read};
 
-// Get text input from various sources
 pub fn get_input_text(matches: &clap::ArgMatches) -> Result<String> {
     // Command line argument
     if let Some(text) = matches.get_one::<String>("text") {

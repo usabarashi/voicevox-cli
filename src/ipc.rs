@@ -48,7 +48,6 @@ pub enum DaemonResponse<'a> {
         speakers: Cow<'a, [Speaker]>,
         style_to_model: HashMap<u32, u32>,
     },
-    Success,
     Error {
         message: Cow<'a, str>,
     },

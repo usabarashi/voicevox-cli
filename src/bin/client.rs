@@ -11,7 +11,6 @@ use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
 
-// Resolve voice ID from command line arguments with fallback chain
 fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
     matches
         .get_one::<u32>("speaker-id")
@@ -73,8 +72,6 @@ async fn try_daemon_with_retry(
                 // Retry daemon mode after starting daemon
                 return daemon_mode(text, style_id, options, output_file, quiet, socket_path).await;
             }
-
-            // For other errors, just propagate them
             Err(e)
         }
     }
@@ -321,7 +318,6 @@ async fn main() -> Result<()> {
         // Build dynamic style-to-model mapping by scanning loaded models
         println!("Building style-to-model mapping...");
         // For standalone mode, we can't easily determine exact mappings since all models are loaded
-        // Just create a simple mapping where style_id maps to itself
         let style_to_model: HashMap<u32, u32> = speakers
             .iter()
             .flat_map(|s| s.styles.iter().map(|style| (style.id, style.id)))

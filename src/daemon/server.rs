@@ -127,8 +127,6 @@ impl DaemonState {
 }
 
 pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Result<()> {
-    println!("New client connected (FD-enabled handler)");
-
     loop {
         let request = {
             let (reader, _writer) = stream.split();
@@ -170,35 +168,29 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
         }
     }
 
-    println!("Client disconnected");
     Ok(())
 }
 
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
-    // Remove existing socket file if it exists
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
     }
 
-    // Create Unix socket listener
     let listener = UnixListener::bind(&socket_path)?;
     println!("VOICEVOX daemon started successfully");
     println!("Listening on: {}", socket_path.display());
 
-    // Initialize daemon state
     let state = Arc::new(Mutex::new(DaemonState::new().await?));
 
     if !foreground {
         println!("Running in background mode. Use Ctrl+C to stop gracefully.");
     }
 
-    // Set up graceful shutdown
     let shutdown = async {
         signal::ctrl_c().await.expect("Failed to listen for ctrl-c");
         println!("\nShutting down daemon...");
     };
 
-    // Accept connections
     let server = async {
         loop {
             match listener.accept().await {
@@ -217,13 +209,11 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
         }
     };
 
-    // Run server with shutdown handling
     tokio::select! {
         _ = server => {},
         _ = shutdown => {},
     }
 
-    // Cleanup
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
     }

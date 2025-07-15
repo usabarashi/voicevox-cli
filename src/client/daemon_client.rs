@@ -10,6 +10,7 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
+use crate::voice::Speaker;
 use std::borrow::Cow;
 
 fn find_daemon_binary() -> PathBuf {
@@ -49,13 +50,11 @@ pub async fn daemon_mode(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    // Connect to daemon with timeout
     let mut stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
         .await
         .map_err(|_| anyhow!("Daemon connection timeout"))?
         .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
 
-    // Send request
     let request = OwnedRequest::Synthesize {
         text: Cow::Owned(text.to_string()),
         style_id,
@@ -65,7 +64,6 @@ pub async fn daemon_mode(
     let request_data =
         bincode::serialize(&request).map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
 
-    // Send using split temporarily
     {
         let (_reader, writer) = stream.split();
         let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
@@ -75,7 +73,6 @@ pub async fn daemon_mode(
             .map_err(|e| anyhow!("Failed to send request: {}", e))?;
     }
 
-    // Receive response
     let response_frame = {
         let (reader, _writer) = stream.split();
         let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
@@ -92,7 +89,6 @@ pub async fn daemon_mode(
 
     match response {
         OwnedResponse::SynthesizeResult { wav_data } => {
-            // Handle output
             if let Some(output_file) = output_file {
                 std::fs::write(output_file, &wav_data)?;
             }
@@ -119,12 +115,10 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
     let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
 
-    // Send list speakers request
     let request = DaemonRequest::ListSpeakers;
     let request_data = bincode::serialize(&request)?;
     framed_writer.send(request_data.into()).await?;
 
-    // Receive response
     if let Some(response_frame) = framed_reader.next().await {
         let response_frame = response_frame?;
         let response: OwnedResponse = bincode::deserialize(&response_frame)?;
@@ -184,15 +178,8 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
 pub async fn start_daemon_with_confirmation() -> Result<()> {
     let socket_path = get_socket_path();
 
-    // Check if daemon is already running
-    match UnixStream::connect(&socket_path).await {
-        Ok(_) => {
-            // Daemon is already running
-            return Ok(());
-        }
-        Err(_) => {
-            // Daemon not running, ask user for confirmation
-        }
+    if UnixStream::connect(&socket_path).await.is_ok() {
+        return Ok(());
     }
 
     print!(
@@ -218,21 +205,12 @@ Would you like to start the daemon automatically? [Y/n]: "
 pub async fn start_daemon_if_needed() -> Result<()> {
     let socket_path = get_socket_path();
 
-    // Check if daemon is already running
-    match UnixStream::connect(&socket_path).await {
-        Ok(_) => {
-            // Daemon is already running
-            return Ok(());
-        }
-        Err(_) => {
-            // Daemon not running, try to start it
-        }
+    if UnixStream::connect(&socket_path).await.is_ok() {
+        return Ok(());
     }
 
     start_daemon_automatically().await
 }
-
-// Internal function to actually start the daemon
 async fn start_daemon_automatically() -> Result<()> {
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary();
@@ -272,6 +250,79 @@ async fn start_daemon_automatically() -> Result<()> {
         Err(e) => {
             eprintln!("❌ Failed to execute daemon: {}", e);
             Err(anyhow!("Failed to execute daemon: {}", e))
+        }
+    }
+}
+
+/// Client for communicating with VOICEVOX daemon
+pub struct DaemonClient {
+    stream: UnixStream,
+}
+
+impl DaemonClient {
+    /// Create a new daemon client
+    pub async fn new() -> Result<Self> {
+        let socket_path = get_socket_path();
+        let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+            anyhow!(
+                "Failed to connect to daemon at {}: {}",
+                socket_path.display(),
+                e
+            )
+        })?;
+
+        Ok(Self { stream })
+    }
+
+    /// Synthesize text to speech
+    pub async fn synthesize(&mut self, text: &str, style_id: u32) -> Result<Vec<u8>> {
+        let request = OwnedRequest::Synthesize {
+            text: Cow::Owned(text.to_string()),
+            style_id,
+            options: OwnedSynthesizeOptions::default(),
+        };
+
+        // Send request
+        let request_data = bincode::serialize(&request)?;
+        let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
+        framed_writer.send(request_data.into()).await?;
+
+        // Receive response
+        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
+        if let Some(Ok(response_data)) = framed_reader.next().await {
+            let response: OwnedResponse = bincode::deserialize(&response_data)?;
+            match response {
+                OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
+                OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {}", message)),
+                _ => Err(anyhow!("Unexpected response type")),
+            }
+        } else {
+            Err(anyhow!("No response from daemon"))
+        }
+    }
+
+    /// List available speakers
+    pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
+        let request = OwnedRequest::ListSpeakers;
+
+        // Send request
+        let request_data = bincode::serialize(&request)?;
+        let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
+        framed_writer.send(request_data.into()).await?;
+
+        // Receive response
+        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
+        if let Some(Ok(response_data)) = framed_reader.next().await {
+            let response: OwnedResponse = bincode::deserialize(&response_data)?;
+            match response {
+                OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
+                OwnedResponse::Error { message } => {
+                    Err(anyhow!("List speakers error: {}", message))
+                }
+                _ => Err(anyhow!("Unexpected response type")),
+            }
+        } else {
+            Err(anyhow!("No response from daemon"))
         }
     }
 }

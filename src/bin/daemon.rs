@@ -169,8 +169,8 @@ async fn main() -> Result<()> {
     println!("Socket: {} (user-specific)", socket_path.display());
     println!("Models: Load and unload per request (no caching)");
 
-    // Use the FD-passing enabled server v2
-    voicevox_cli::daemon::fd_server::run_daemon_fd(socket_path, foreground).await
+    // Run the daemon
+    voicevox_cli::daemon::run_daemon(socket_path, foreground).await
 }
 
 /// Handle daemon stop operation

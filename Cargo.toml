@@ -15,6 +15,9 @@ path = "src/bin/client.rs"
 name = "voicevox-daemon"
 path = "src/bin/daemon.rs"
 
+[[bin]]
+name = "voicevox-mcp-server"
+path = "src/bin/mcp_server.rs"
 
 [lib]
 name = "voicevox_cli"
@@ -33,6 +36,10 @@ tempfile = "3.8"
 memmap2 = "0.9"
 toml = "0.8"
 dirs = "5.0"
+
+# MCP Server dependencies
+jsonrpc-lite = "0.6"
+serde_bytes = "0.11"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["signal", "socket", "uio", "fs"] }

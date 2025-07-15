@@ -1,5 +1,3 @@
-//! Client-side file descriptor reception for zero-copy audio
-
 use anyhow::{Context, Result};
 use memmap2::MmapOptions;
 #[cfg(unix)]
@@ -14,8 +12,6 @@ pub struct ReceivedAudioBuffer {
 
 #[cfg(unix)]
 impl ReceivedAudioBuffer {
-    /// Create from received file descriptor
-    ///
     /// # Safety
     ///
     /// The caller must ensure:
@@ -37,7 +33,6 @@ impl ReceivedAudioBuffer {
         Ok(Self { mmap, fd })
     }
 
-    /// Get the audio data as a slice
     pub fn as_slice(&self) -> &[u8] {
         &self.mmap
     }
@@ -56,6 +51,3 @@ impl Drop for ReceivedAudioBuffer {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {}

@@ -4,19 +4,15 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-pub mod core;
-
-pub mod ipc;
-
-pub mod voice;
-
-pub mod paths;
-
-pub mod setup;
-
 pub mod client;
-
+pub mod core;
 pub mod daemon;
+pub mod ipc;
+pub mod mcp;
+pub mod paths;
+pub mod setup;
+pub mod synthesis;
+pub mod voice;
 
 pub use core::{CoreSynthesis, VoicevoxCore};
 pub use ipc::{

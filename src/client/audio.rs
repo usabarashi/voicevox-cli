@@ -15,13 +15,18 @@ pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
         match Decoder::new(cursor) {
             Ok(source) => {
                 sink.append(source);
+                sink.play(); // Ensure playback starts
                 sink.sleep_until_end();
+                // _stream is kept alive until here
                 return Ok(());
             }
             Err(_) => {
                 // Rodio failed, fall back to system command
+                // Rodio failed, fall back to system command
             }
         }
+    } else {
+        // OutputStream failed, fall back to system command
     }
 
     // Fallback to system audio players (like original say command behavior)
@@ -43,21 +48,17 @@ fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
     let _cleanup = TempFileCleanup(temp_file);
 
     // macOS standard afplay for playback (silent like say command)
-    if std::process::Command::new("afplay")
-        .arg(temp_file)
-        .output()
-        .is_ok()
-    {
-        return Ok(());
+    if let Ok(output) = std::process::Command::new("afplay").arg(temp_file).output() {
+        if output.status.success() {
+            return Ok(());
+        }
     }
 
     // sox fallback
-    if std::process::Command::new("play")
-        .arg(temp_file)
-        .output()
-        .is_ok()
-    {
-        return Ok(());
+    if let Ok(output) = std::process::Command::new("play").arg(temp_file).output() {
+        if output.status.success() {
+            return Ok(());
+        }
     }
 
     Err(anyhow!(

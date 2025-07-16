@@ -5,7 +5,6 @@ use std::process;
 
 pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
     if socket_path.exists() {
-        // Try to connect to existing daemon
         match tokio::net::UnixStream::connect(socket_path).await {
             Ok(_) => {
                 return Err(anyhow!(
@@ -48,7 +47,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
             }
         }
         Err(_) => {
-            // pgrep not available, continue anyway
             println!("Could not check for existing processes (pgrep not available)");
         }
     }

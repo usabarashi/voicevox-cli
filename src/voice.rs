@@ -127,7 +127,6 @@ fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
         if path.is_file() && path.extension().map(|ext| ext == "vvm").unwrap_or(false) {
             vvm_files.push(path);
         } else if path.is_dir() {
-            // Recursively search subdirectories
             vvm_files.extend(find_vvm_files(&path)?);
         }
     }
@@ -234,14 +233,12 @@ pub async fn build_style_to_model_map_async(
     let mut style_map = HashMap::new();
     let models_dir = crate::paths::find_models_dir()?;
 
-    // First, get the initial state (no models loaded)
     let initial_speakers = core.get_speakers().unwrap_or_default();
     let initial_style_ids: HashSet<u32> = initial_speakers
         .iter()
         .flat_map(|s| s.styles.iter().map(|style| style.id))
         .collect();
 
-    // Process each model file in sorted order
     let mut model_files: Vec<_> = std::fs::read_dir(&models_dir)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
@@ -249,11 +246,9 @@ pub async fn build_style_to_model_map_async(
         .collect();
     model_files.sort();
 
-    // Keep track of cumulative style IDs
     let mut cumulative_style_ids = initial_style_ids.clone();
 
     for path in &model_files {
-        // Extract model ID from filename (e.g., "1.vvm" -> 1)
         let model_id = match path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -263,7 +258,6 @@ pub async fn build_style_to_model_map_async(
             None => continue,
         };
 
-        // Temporarily load the model to get its metadata
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
             eprintln!("  ✗ Failed to load model {model_id} for mapping: {e}");
             continue;
@@ -294,10 +288,8 @@ pub async fn build_style_to_model_map_async(
         }
     }
 
-    // Load all models to get complete speaker list
     let mut all_speakers = Vec::new();
 
-    // Re-load all models to get the complete speaker list
     for path in &model_files {
         let model_id = match path
             .file_stem()
@@ -313,12 +305,10 @@ pub async fn build_style_to_model_map_async(
         }
     }
 
-    // Get all speakers after loading all models
     if let Ok(speakers) = core.get_speakers() {
         all_speakers = speakers;
     }
 
-    // Unload all models except the preloaded ones
     for path in &model_files {
         if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
             eprintln!("  ✗ Failed to unload model after speaker collection: {e}");

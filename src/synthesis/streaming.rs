@@ -84,9 +84,7 @@ impl TextSplitter {
         while let Some(ch) = chars.next() {
             current_segment.push(ch);
 
-            // Check if we hit a delimiter
             if self.delimiters.contains(&ch) {
-                // Look ahead for consecutive punctuation
                 while let Some(&next_ch) = chars.peek() {
                     if self.delimiters.contains(&next_ch) {
                         current_segment.push(chars.next().unwrap());
@@ -97,23 +95,18 @@ impl TextSplitter {
 
                 segments.push(current_segment.clone());
                 current_segment.clear();
-            }
-            // Force split if segment is too long
-            else if current_segment.chars().count() >= self.max_length {
-                // Try to break at a natural boundary (space or punctuation)
+            } else if current_segment.chars().count() >= self.max_length {
                 if let Some(break_pos) = self.find_break_position(&current_segment) {
                     let (first, rest) = current_segment.split_at(break_pos);
                     segments.push(first.to_string());
                     current_segment = rest.to_string();
                 } else {
-                    // Force break at max length
                     segments.push(current_segment.clone());
                     current_segment.clear();
                 }
             }
         }
 
-        // Add remaining text
         if !current_segment.trim().is_empty() {
             segments.push(current_segment);
         }
@@ -121,12 +114,10 @@ impl TextSplitter {
         segments
     }
 
-    /// Find a good position to break text (at space or punctuation)
     fn find_break_position(&self, text: &str) -> Option<usize> {
         let chars: Vec<char> = text.chars().collect();
-        let target_pos = self.max_length * 3 / 4; // Try to break around 75% mark
+        let target_pos = self.max_length * 3 / 4;
 
-        // Look for space or punctuation near target position
         for i in (0..target_pos).rev() {
             if chars[i] == ' ' || chars[i] == '、' || chars[i] == ',' {
                 return Some(text.char_indices().nth(i + 1)?.0);

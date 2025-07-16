@@ -42,12 +42,12 @@ impl StreamingSynthesizer {
                 .daemon_client
                 .synthesize(segment, style_id)
                 .await
-                .with_context(|| format!("Failed to synthesize segment {}: {}", i, segment))?;
+                .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
 
             // Create decoder from WAV data
             let cursor = Cursor::new(wav_data);
             let source = Decoder::new(cursor)
-                .with_context(|| format!("Failed to decode audio for segment {}", i))?;
+                .with_context(|| format!("Failed to decode audio for segment {i}"))?;
 
             // Append to playback queue
             sink.append(source);

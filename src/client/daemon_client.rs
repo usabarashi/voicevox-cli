@@ -53,7 +53,7 @@ pub async fn daemon_mode(
     let mut stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
         .await
         .map_err(|_| anyhow!("Daemon connection timeout"))?
-        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+        .map_err(|e| anyhow!("Failed to connect to daemon: {e}"))?;
 
     let request = OwnedRequest::Synthesize {
         text: Cow::Owned(text.to_string()),
@@ -62,7 +62,7 @@ pub async fn daemon_mode(
     };
 
     let request_data =
-        bincode::serialize(&request).map_err(|e| anyhow!("Failed to serialize request: {}", e))?;
+        bincode::serialize(&request).map_err(|e| anyhow!("Failed to serialize request: {e}"))?;
 
     {
         let (_reader, writer) = stream.split();
@@ -70,7 +70,7 @@ pub async fn daemon_mode(
         framed_writer
             .send(request_data.into())
             .await
-            .map_err(|e| anyhow!("Failed to send request: {}", e))?;
+            .map_err(|e| anyhow!("Failed to send request: {e}"))?;
     }
 
     let response_frame = {
@@ -81,11 +81,11 @@ pub async fn daemon_mode(
             .await
             .map_err(|_| anyhow!("Daemon response timeout"))?
             .ok_or_else(|| anyhow!("Connection closed by daemon"))?
-            .map_err(|e| anyhow!("Failed to receive response: {}", e))?
+            .map_err(|e| anyhow!("Failed to receive response: {e}"))?
     };
 
     let response: OwnedResponse = bincode::deserialize(&response_frame)
-        .map_err(|e| anyhow!("Failed to deserialize response: {}", e))?;
+        .map_err(|e| anyhow!("Failed to deserialize response: {e}"))?;
 
     match response {
         OwnedResponse::SynthesizeResult { wav_data } => {
@@ -96,14 +96,14 @@ pub async fn daemon_mode(
             // Play audio if not quiet and no output file (like macOS say command)
             if !quiet && output_file.is_none() {
                 if let Err(e) = crate::client::audio::play_audio_from_memory(&wav_data) {
-                    eprintln!("Error: Audio playback failed: {}", e);
+                    eprintln!("Error: Audio playback failed: {e}");
                     return Err(e);
                 }
             }
 
             Ok(())
         }
-        OwnedResponse::Error { message } => Err(anyhow!("Daemon error: {}", message)),
+        OwnedResponse::Error { message } => Err(anyhow!("Daemon error: {message}")),
         _ => Err(anyhow!("Unexpected response from daemon")),
     }
 }
@@ -131,7 +131,7 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
                     for style in &speaker.styles {
                         println!("    {} (Style ID: {})", style.name, style.id);
                         if let Some(style_type) = &style.style_type {
-                            println!("        Type: {}", style_type);
+                            println!("        Type: {style_type}");
                         }
                     }
                     println!();
@@ -148,14 +148,14 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
                     for style in &speaker.styles {
                         let model_id = style_to_model
                             .get(&style.id)
-                            .map(|id| format!("{}", id))
+                            .map(|id| format!("{id}"))
                             .unwrap_or_else(|| "?".to_string());
                         println!(
-                            "    {} (Model: {}, Style ID: {})",
-                            style.name, model_id, style.id
+                            "    {} (Model: {model_id}, Style ID: {})",
+                            style.name, style.id
                         );
                         if let Some(style_type) = &style.style_type {
-                            println!("        Type: {}", style_type);
+                            println!("        Type: {style_type}");
                         }
                     }
                     println!();
@@ -163,7 +163,7 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
                 return Ok(());
             }
             OwnedResponse::Error { message } => {
-                return Err(anyhow!("Daemon error: {}", message));
+                return Err(anyhow!("Daemon error: {message}"));
             }
             _ => {
                 return Err(anyhow!("Unexpected response from daemon"));
@@ -242,14 +242,14 @@ async fn start_daemon_automatically() -> Result<()> {
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 if !stderr.is_empty() {
-                    eprintln!("Daemon startup error: {}", stderr);
+                    eprintln!("Daemon startup error: {stderr}");
                 }
                 Err(anyhow!("Daemon failed to start"))
             }
         }
         Err(e) => {
-            eprintln!("❌ Failed to execute daemon: {}", e);
-            Err(anyhow!("Failed to execute daemon: {}", e))
+            eprintln!("❌ Failed to execute daemon: {e}");
+            Err(anyhow!("Failed to execute daemon: {e}"))
         }
     }
 }
@@ -265,9 +265,8 @@ impl DaemonClient {
         let socket_path = get_socket_path();
         let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
             anyhow!(
-                "Failed to connect to daemon at {}: {}",
-                socket_path.display(),
-                e
+                "Failed to connect to daemon at {}: {e}",
+                socket_path.display()
             )
         })?;
 
@@ -293,7 +292,7 @@ impl DaemonClient {
             let response: OwnedResponse = bincode::deserialize(&response_data)?;
             match response {
                 OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
-                OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {}", message)),
+                OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {message}")),
                 _ => Err(anyhow!("Unexpected response type")),
             }
         } else {
@@ -316,9 +315,7 @@ impl DaemonClient {
             let response: OwnedResponse = bincode::deserialize(&response_data)?;
             match response {
                 OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
-                OwnedResponse::Error { message } => {
-                    Err(anyhow!("List speakers error: {}", message))
-                }
+                OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
                 _ => Err(anyhow!("Unexpected response type")),
             }
         } else {

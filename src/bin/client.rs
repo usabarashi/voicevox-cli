@@ -14,11 +14,11 @@ use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
 fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
     matches
         .get_one::<u32>("speaker-id")
-        .map(|&id| (id, format!("Style ID {}", id)))
+        .map(|&id| (id, format!("Style ID {id}")))
         .or_else(|| {
             matches
                 .get_one::<u32>("model")
-                .map(|&id| (id, format!("Model {} (Default Style)", id)))
+                .map(|&id| (id, format!("Model {id} (Default Style)")))
         })
         .map(Ok)
         .or_else(|| {
@@ -86,7 +86,7 @@ async fn standalone_mode(
 
     let core = VoicevoxCore::new()?;
     let model_id = voicevox_cli::voice::get_model_for_voice_id(style_id)
-        .ok_or_else(|| anyhow!("No model found for style ID {}", style_id))?;
+        .ok_or_else(|| anyhow!("No model found for style ID {style_id}"))?;
     core.load_specific_model(&model_id.to_string())?;
 
     let wav_data = core.synthesize(text, style_id)?;
@@ -94,7 +94,7 @@ async fn standalone_mode(
     match output_file {
         Some(file_path) => std::fs::write(file_path, &wav_data)?,
         None if !quiet => play_audio_from_memory(&wav_data).map_err(|e| {
-            eprintln!("Error: Audio playback failed: {}", e);
+            eprintln!("Error: Audio playback failed: {e}");
             e
         })?,
         _ => {}
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
     if matches.get_flag("list-models") {
         println!("Scanning for available voice models...");
         let models = scan_available_models().unwrap_or_else(|e| {
-            eprintln!("Error scanning models: {}", e);
+            eprintln!("Error scanning models: {e}");
             std::process::exit(1);
         });
 
@@ -255,13 +255,13 @@ async fn main() -> Result<()> {
                                 .file_name()
                                 .unwrap_or_default()
                                 .to_string_lossy();
-                            format!("  Model {}: {} ({} KB)", model.model_id, filename, size_kb)
+                            format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
                         }
                         Err(_) => {
                             format!("  Model {} ({})", model.model_id, model.file_path.display())
                         }
                     };
-                    println!("{}", model_info);
+                    println!("{model_info}");
                 }
 
                 use voicevox_cli::paths::find_openjtalk_dict;
@@ -276,7 +276,7 @@ async fn main() -> Result<()> {
                 }
             }
             Err(e) => {
-                eprintln!("Error scanning models: {}", e);
+                eprintln!("Error scanning models: {e}");
             }
         }
         return Ok(());
@@ -299,7 +299,7 @@ async fn main() -> Result<()> {
         let models = scan_available_models()?;
         for model in &models {
             if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {
-                println!("Warning: Failed to load model {}: {}", model.model_id, e);
+                println!("Warning: Failed to load model {}: {e}", model.model_id);
             }
         }
 
@@ -319,11 +319,11 @@ async fn main() -> Result<()> {
             for style in &speaker.styles {
                 let model_id = style_to_model.get(&style.id).copied().unwrap_or(style.id);
                 println!(
-                    "    {} (Model: {}, Style ID: {})",
-                    style.name, model_id, style.id
+                    "    {} (Model: {model_id}, Style ID: {})",
+                    style.name, style.id
                 );
                 if let Some(style_type) = &style.style_type {
-                    println!("        Type: {}", style_type);
+                    println!("        Type: {style_type}");
                 }
             }
             println!();
@@ -347,7 +347,7 @@ async fn main() -> Result<()> {
     let force_standalone = matches.get_flag("standalone");
 
     if !(0.5..=2.0).contains(&rate) {
-        return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {}", rate));
+        return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
     }
 
     let options = OwnedSynthesizeOptions {

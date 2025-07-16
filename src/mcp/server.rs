@@ -26,7 +26,7 @@ pub async fn run_mcp_server() -> Result<()> {
         let request: Value = match serde_json::from_str(&line) {
             Ok(req) => req,
             Err(e) => {
-                eprintln!("Failed to parse JSON-RPC: {}", e);
+                eprintln!("Failed to parse JSON-RPC: {e}");
                 let error_response = json!({
                     "jsonrpc": "2.0",
                     "error": {
@@ -193,7 +193,7 @@ async fn handle_request(request: Value) -> Value {
                                     "jsonrpc": "2.0",
                                     "error": {
                                         "code": -32603,
-                                        "message": format!("Synthesis error: {}", e)
+                                        "message": format!("Synthesis error: {e}")
                                     },
                                     "id": id
                                 }),
@@ -209,7 +209,7 @@ async fn handle_request(request: Value) -> Value {
                                 "jsonrpc": "2.0",
                                 "error": {
                                     "code": -32603,
-                                    "message": format!("Error getting voices: {}", e)
+                                    "message": format!("Error getting voices: {e}")
                                 },
                                 "id": id
                             }),
@@ -218,7 +218,7 @@ async fn handle_request(request: Value) -> Value {
                             "jsonrpc": "2.0",
                             "error": {
                                 "code": -32601,
-                                "message": format!("Unknown tool: {}", tool_name)
+                                "message": format!("Unknown tool: {tool_name}")
                             },
                             "id": id
                         }),
@@ -249,7 +249,7 @@ async fn handle_request(request: Value) -> Value {
             "jsonrpc": "2.0",
             "error": {
                 "code": -32601,
-                "message": format!("Method not found: {}", method)
+                "message": format!("Method not found: {method}")
             },
             "id": id
         }),

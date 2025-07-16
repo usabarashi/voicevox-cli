@@ -49,7 +49,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
 
     if status.success() {
         let _vvm_files = std::fs::read_dir(&target_dir)
-            .map_err(|e| anyhow!("Failed to read target directory: {}", e))?
+            .map_err(|e| anyhow!("Failed to read target directory: {e}"))?
             .filter_map(|entry| entry.ok())
             .filter(|entry| {
                 entry.path().is_file()
@@ -68,7 +68,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
                 "✅ Voice models successfully downloaded to: {}",
                 target_dir.display()
             );
-            println!("   Found {} VVM model files", vvm_count);
+            println!("   Found {vvm_count} VVM model files");
 
             cleanup_unnecessary_files(&target_dir);
 
@@ -138,8 +138,8 @@ fn process_cleanup_file(path: &std::path::PathBuf, unnecessary_extensions: &[&st
         })
     {
         std::fs::remove_file(path)
-            .map(|_| println!("   Cleaned up: {}", name))
-            .unwrap_or_else(|e| eprintln!("Warning: Failed to remove {}: {}", name, e))
+            .map(|_| println!("   Cleaned up: {name}"))
+            .unwrap_or_else(|e| eprintln!("Warning: Failed to remove {name}: {e}"))
     }
 }
 
@@ -151,12 +151,9 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
     if is_empty {
         if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
             std::fs::remove_dir(path)
-                .map(|_| println!("   Removed empty directory: {}", dir_name))
+                .map(|_| println!("   Removed empty directory: {dir_name}"))
                 .unwrap_or_else(|e| {
-                    eprintln!(
-                        "Warning: Failed to remove empty directory {}: {}",
-                        dir_name, e
-                    )
+                    eprintln!("Warning: Failed to remove empty directory {dir_name}: {e}")
                 })
         }
     }
@@ -195,7 +192,7 @@ pub async fn ensure_models_available() -> Result<()> {
                 Ok(())
             }
             Err(e) => {
-                eprintln!("❌ Voice models download failed: {}", e);
+                eprintln!("❌ Voice models download failed: {e}");
                 eprintln!(
                     "You can manually run: voicevox-download --only models --output {}",
                     get_default_voicevox_dir().display()
@@ -235,7 +232,7 @@ pub async fn update_models_only() -> Result<()> {
         Ok(exit_status) if exit_status.success() => {
             let vvm_count = count_vvm_files_recursive(&target_dir.join("models"));
             println!("✅ Voice models updated successfully!");
-            println!("   Found {} VVM model files", vvm_count);
+            println!("   Found {vvm_count} VVM model files");
             cleanup_unnecessary_files(&target_dir);
             Ok(())
         }
@@ -282,7 +279,7 @@ pub async fn update_dictionary_only() -> Result<()> {
 }
 
 pub async fn update_specific_model(model_id: u32) -> Result<()> {
-    println!("🔄 Updating model {} only...", model_id);
+    println!("🔄 Updating model {model_id} only...");
 
     let target_dir = std::env::var("HOME")
         .ok()
@@ -294,7 +291,7 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
-    println!("🔄 Downloading model {} only...", model_id);
+    println!("🔄 Downloading model {model_id} only...");
 
     // Fallback to models only for now
     let status = std::process::Command::new(&downloader_path)
@@ -306,7 +303,7 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
 
     match status {
         Ok(exit_status) if exit_status.success() => {
-            println!("✅ Model {} updated successfully!", model_id);
+            println!("✅ Model {model_id} updated successfully!");
             cleanup_unnecessary_files(&target_dir);
             Ok(())
         }
@@ -417,7 +414,7 @@ fn get_file_size(path: &PathBuf) -> Result<u64> {
 fn get_file_modified(path: &PathBuf) -> Result<String> {
     let metadata = std::fs::metadata(path)?;
     let modified = metadata.modified()?;
-    Ok(format!("{:?}", modified))
+    Ok(format!("{modified:?}"))
 }
 
 fn format_size(bytes: u64) -> String {
@@ -430,5 +427,5 @@ fn format_size(bytes: u64) -> String {
         unit_index += 1;
     }
 
-    format!("{:.1} {}", size, UNITS[unit_index])
+    format!("{size:.1} {}", UNITS[unit_index])
 }

@@ -48,8 +48,7 @@ impl DaemonState {
             return model_id;
         }
         eprintln!(
-            "Warning: Style {} not found in dynamic mapping, using style ID as model ID",
-            style_id
+            "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
         );
         style_id
     }
@@ -66,26 +65,25 @@ impl DaemonState {
                 let model_id = self.get_model_id_from_style(style_id).await;
 
                 if let Err(e) = self.core.load_specific_model(&model_id.to_string()) {
-                    eprintln!("Failed to load model {}: {}", model_id, e);
+                    eprintln!("Failed to load model {model_id}: {e}");
                     return OwnedResponse::Error {
                         message: Cow::Owned(format!(
-                            "Failed to load model {} for synthesis: {}",
-                            model_id, e
+                            "Failed to load model {model_id} for synthesis: {e}"
                         )),
                     };
                 }
 
-                println!("  ✓ Loaded model {} for synthesis", model_id);
+                println!("  ✓ Loaded model {model_id} for synthesis");
 
                 let synthesis_result = self.core.synthesize(&text, style_id);
                 if let Ok(models_dir) = crate::paths::find_models_dir() {
-                    let model_path = models_dir.join(format!("{}.vvm", model_id));
+                    let model_path = models_dir.join(format!("{model_id}.vvm"));
                     match self
                         .core
                         .unload_voice_model_by_path(model_path.to_str().unwrap_or(""))
                     {
-                        Ok(_) => println!("  ✓ Unloaded model {} after synthesis", model_id),
-                        Err(e) => eprintln!("  ✗ Failed to unload model {}: {}", model_id, e),
+                        Ok(_) => println!("  ✓ Unloaded model {model_id} after synthesis"),
+                        Err(e) => eprintln!("  ✗ Failed to unload model {model_id}: {e}"),
                     }
                 } else {
                     eprintln!("  ✗ Failed to find models directory for unload");
@@ -96,9 +94,9 @@ impl DaemonState {
                         wav_data: Cow::Owned(wav_data),
                     },
                     Err(e) => {
-                        eprintln!("Synthesis failed: {}", e);
+                        eprintln!("Synthesis failed: {e}");
                         OwnedResponse::Error {
-                            message: Cow::Owned(format!("Synthesis failed: {}", e)),
+                            message: Cow::Owned(format!("Synthesis failed: {e}")),
                         }
                     }
                 }
@@ -126,7 +124,7 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
                 Some(Ok(data)) => match bincode::deserialize::<DaemonRequest>(&data) {
                     Ok(req) => req,
                     Err(e) => {
-                        println!("Failed to deserialize request: {}", e);
+                        println!("Failed to deserialize request: {e}");
                         break;
                     }
                 },
@@ -146,12 +144,12 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
             match bincode::serialize(&response) {
                 Ok(response_data) => {
                     if let Err(e) = framed_writer.send(response_data.into()).await {
-                        println!("Failed to send response: {}", e);
+                        println!("Failed to send response: {e}");
                         break;
                     }
                 }
                 Err(e) => {
-                    println!("Failed to serialize response: {}", e);
+                    println!("Failed to serialize response: {e}");
                     break;
                 }
             }
@@ -188,12 +186,12 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
                     let state_clone = Arc::clone(&state);
                     tokio::spawn(async move {
                         if let Err(e) = handle_client(stream, state_clone).await {
-                            println!("Client handler error: {}", e);
+                            println!("Client handler error: {e}");
                         }
                     });
                 }
                 Err(e) => {
-                    println!("Failed to accept connection: {}", e);
+                    println!("Failed to accept connection: {e}");
                 }
             }
         }

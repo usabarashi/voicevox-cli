@@ -24,7 +24,7 @@ pub fn get_socket_path() -> PathBuf {
         ("VOICEVOX_SOCKET_PATH", ""),
         ("XDG_RUNTIME_DIR", SOCKET_FILENAME),
         ("XDG_STATE_HOME", SOCKET_FILENAME),
-        ("HOME", &format!(".local/state/{}", SOCKET_FILENAME)),
+        ("HOME", &format!(".local/state/{SOCKET_FILENAME}")),
     ];
 
     for (env_var, suffix) in &env_socket_paths {

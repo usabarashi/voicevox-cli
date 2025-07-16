@@ -28,7 +28,7 @@ pub struct VoicevoxCore {
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
         let onnxruntime = Onnxruntime::init_once()
-            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {}", e))?;
+            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
 
         let dict_path = find_openjtalk_dict()?;
 
@@ -37,14 +37,14 @@ impl VoicevoxCore {
                 .to_str()
                 .ok_or_else(|| anyhow!("Invalid OpenJTalk dictionary path"))?,
         )
-        .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {}", e))?;
+        .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {e}"))?;
 
         let synthesizer = Synthesizer::builder(onnxruntime)
             .text_analyzer(open_jtalk)
             .acceleration_mode(AccelerationMode::Cpu)
             .cpu_num_threads(0)
             .build()
-            .map_err(|e| anyhow!("Failed to create synthesizer: {}", e))?;
+            .map_err(|e| anyhow!("Failed to create synthesizer: {e}"))?;
 
         Ok(VoicevoxCore { synthesizer })
     }
@@ -75,7 +75,7 @@ impl CoreSynthesis for VoicevoxCore {
         self.synthesizer
             .tts(text, StyleId::new(style_id))
             .perform()
-            .map_err(|e| anyhow!("Speech synthesis failed for style_id {}: {}", style_id, e))
+            .map_err(|e| anyhow!("Speech synthesis failed for style_id {style_id}: {e}"))
     }
 
     fn get_speakers(&self) -> Result<Self::SpeakerData<'_>, Self::Error> {
@@ -121,31 +121,30 @@ impl CoreSynthesis for VoicevoxCore {
 impl VoicevoxCore {
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
         let models_dir = find_models_dir()?;
-        let model_path = models_dir.join(format!("{}.vvm", model_name));
+        let model_path = models_dir.join(format!("{model_name}.vvm"));
 
         if !model_path.exists() {
             return Err(anyhow!(
-                "Model not found: {}.vvm at {}",
-                model_name,
+                "Model not found: {model_name}.vvm at {}",
                 models_dir.display()
             ));
         }
 
         let model = VoiceModelFile::open(&model_path)
-            .map_err(|e| anyhow!("Failed to open model {}: {}", model_name, e))?;
+            .map_err(|e| anyhow!("Failed to open model {model_name}: {e}"))?;
 
         self.synthesizer
             .load_voice_model(&model)
-            .map_err(|e| anyhow!("Failed to load model {}: {}", model_name, e))
+            .map_err(|e| anyhow!("Failed to load model {model_name}: {e}"))
     }
 
     pub fn unload_voice_model_by_path(&self, model_path: &str) -> Result<()> {
         let model = VoiceModelFile::open(model_path)
-            .map_err(|e| anyhow!("Failed to open model file: {}", e))?;
+            .map_err(|e| anyhow!("Failed to open model file: {e}"))?;
         let voice_model_id = model.id();
 
         self.synthesizer
             .unload_voice_model(voice_model_id)
-            .map_err(|e| anyhow!("Failed to unload model: {}", e))
+            .map_err(|e| anyhow!("Failed to unload model: {e}"))
     }
 }

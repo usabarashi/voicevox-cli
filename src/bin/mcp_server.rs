@@ -49,7 +49,7 @@ async fn ensure_daemon_running() -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Could not execute daemon: {}", e);
+                    eprintln!("Could not execute daemon: {e}");
                     eprintln!("Please ensure voicevox-daemon is in your PATH");
                 }
             }
@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
 
     // Ensure daemon is running
     if let Err(e) = ensure_daemon_running().await {
-        eprintln!("Warning: Could not ensure daemon is running: {}", e);
+        eprintln!("Warning: Could not ensure daemon is running: {e}");
         eprintln!("MCP server will start anyway, but synthesis may fail");
     }
 

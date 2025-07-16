@@ -141,17 +141,17 @@ async fn main() -> Result<()> {
                         std::process::exit(0);
                     }
                     Ok(Some(status)) => {
-                        eprintln!("❌ Daemon failed to start: exit code {}", status);
+                        eprintln!("❌ Daemon failed to start: exit code {status}");
                         std::process::exit(1);
                     }
                     Err(e) => {
-                        eprintln!("❌ Failed to check daemon status: {}", e);
+                        eprintln!("❌ Failed to check daemon status: {e}");
                         std::process::exit(1);
                     }
                 }
             }
             Err(e) => {
-                eprintln!("❌ Failed to spawn daemon process: {}", e);
+                eprintln!("❌ Failed to spawn daemon process: {e}");
                 std::process::exit(1);
             }
         }
@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
 
     // Check for existing daemon process
     if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
-        eprintln!("{}", e);
+        eprintln!("{e}");
         std::process::exit(1);
     }
 
@@ -196,7 +196,7 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
 
                         match kill_result {
                             Ok(status) if status.success() => {
-                                println!("✅ Daemon stopped (PID: {})", pid_num);
+                                println!("✅ Daemon stopped (PID: {pid_num})");
 
                                 // Wait a moment then verify
                                 tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
@@ -207,14 +207,14 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
                                 }
                             }
                             _ => {
-                                println!("❌ Failed to stop daemon (PID: {})", pid_num);
-                                println!("   Try: kill -9 {}", pid_num);
+                                println!("❌ Failed to stop daemon (PID: {pid_num})");
+                                println!("   Try: kill -9 {pid_num}");
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    println!("❌ Failed to find daemon process: {}", e);
+                    println!("❌ Failed to find daemon process: {e}");
                     println!("   Try manual: pkill -f -u $(id -u) voicevox-daemon");
                 }
             }
@@ -242,7 +242,7 @@ async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
             // Additional process information
             if let Ok(pids) = voicevox_cli::daemon::process::find_daemon_processes() {
                 for pid_num in pids {
-                    println!("Process ID: {}", pid_num);
+                    println!("Process ID: {pid_num}");
 
                     // Get memory usage if possible
                     let ps_output = std::process::Command::new("ps")

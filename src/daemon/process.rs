@@ -16,7 +16,7 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
             Err(_) => {
                 println!("Removing stale socket file: {}", socket_path.display());
                 if let Err(e) = fs::remove_file(socket_path) {
-                    return Err(anyhow!("Failed to remove stale socket: {}", e));
+                    return Err(anyhow!("Failed to remove stale socket: {e}"));
                 }
             }
         }

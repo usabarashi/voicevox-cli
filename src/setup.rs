@@ -65,7 +65,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
             println!("⚠️  Automatic setup failed");
         }
         Err(e) => {
-            println!("⚠️  Could not run automatic setup: {}", e);
+            println!("⚠️  Could not run automatic setup: {e}");
         }
     }
 

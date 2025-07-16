@@ -4,10 +4,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::mcp::handlers;
 
-/// MCP server manifest
 const MCP_VERSION: &str = "2025-03-26";
 
-/// Run the MCP server using stdio
 pub async fn run_mcp_server() -> Result<()> {
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();

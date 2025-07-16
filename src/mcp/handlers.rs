@@ -61,10 +61,10 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
         drop(_stream);
 
         Ok(json!({
-            "status": "success",
-            "mode": "streaming",
-            "text_length": params.text.len(),
-            "style_id": params.style_id
+            "content": [{
+                "type": "text",
+                "text": format!("Successfully synthesized {} characters using style ID {} in streaming mode", params.text.len(), params.style_id)
+            }]
         }))
     } else {
         let mut client = DaemonClient::new()
@@ -79,11 +79,10 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
         play_audio_from_memory(&wav_data).context("Failed to play audio")?;
 
         Ok(json!({
-            "status": "success",
-            "mode": "non-streaming",
-            "text_length": params.text.len(),
-            "style_id": params.style_id,
-            "audio_size": wav_data.len()
+            "content": [{
+                "type": "text",
+                "text": format!("Successfully synthesized {} characters using style ID {} (audio size: {} bytes)", params.text.len(), params.style_id, wav_data.len())
+            }]
         }))
     }
 }
@@ -149,27 +148,27 @@ pub async fn handle_get_voices(arguments: Value) -> Result<Value> {
         })
         .collect();
 
-    let response = json!({
-        "speakers": filtered_speakers.iter().map(|speaker| {
-            json!({
-                "name": speaker.name,
-                "speaker_uuid": speaker.speaker_uuid,
-                "version": speaker.version,
-                "styles": speaker.styles.iter().map(|style| {
-                    json!({
-                        "name": style.name,
-                        "id": style.id,
-                        "type": style.style_type
-                    })
-                }).collect::<Vec<_>>()
-            })
-        }).collect::<Vec<_>>(),
-        "total_speakers": filtered_speakers.len(),
-        "filters_applied": {
-            "speaker_name": params.speaker_name,
-            "style_name": params.style_name
+    let mut result_text = String::new();
+    if filtered_speakers.is_empty() {
+        result_text.push_str("No speakers found matching the criteria.");
+    } else {
+        for speaker in &filtered_speakers {
+            result_text.push_str(&format!("Speaker: {}\n", speaker.name));
+            result_text.push_str("Styles:\n");
+            for style in &speaker.styles {
+                result_text.push_str(&format!("  - {} (ID: {})\n", style.name, style.id));
+            }
+            result_text.push('\n');
         }
-    });
-
-    Ok(response)
+        result_text.push_str(&format!(
+            "Total speakers found: {}",
+            filtered_speakers.len()
+        ));
+    }
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": result_text.trim()
+        }]
+    }))
 }

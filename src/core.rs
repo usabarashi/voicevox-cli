@@ -123,25 +123,20 @@ impl VoicevoxCore {
         let models_dir = find_models_dir()?;
         let model_path = models_dir.join(format!("{}.vvm", model_name));
 
-        model_path
-            .exists()
-            .then_some(())
-            .ok_or_else(|| {
-                anyhow!(
-                    "Model not found: {}.vvm at {}",
-                    model_name,
-                    models_dir.display()
-                )
-            })
-            .and_then(|_| {
-                VoiceModelFile::open(&model_path)
-                    .map_err(|e| anyhow!("Failed to open model {}: {}", model_name, e))
-            })
-            .and_then(|model| {
-                self.synthesizer
-                    .load_voice_model(&model)
-                    .map_err(|e| anyhow!("Failed to load model {}: {}", model_name, e))
-            })
+        if !model_path.exists() {
+            return Err(anyhow!(
+                "Model not found: {}.vvm at {}",
+                model_name,
+                models_dir.display()
+            ));
+        }
+
+        let model = VoiceModelFile::open(&model_path)
+            .map_err(|e| anyhow!("Failed to open model {}: {}", model_name, e))?;
+
+        self.synthesizer
+            .load_voice_model(&model)
+            .map_err(|e| anyhow!("Failed to load model {}: {}", model_name, e))
     }
 
     pub fn unload_voice_model_by_path(&self, model_path: &str) -> Result<()> {

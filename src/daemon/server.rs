@@ -65,50 +65,40 @@ impl DaemonState {
             } => {
                 let model_id = self.get_model_id_from_style(style_id).await;
 
-                match self.core.load_specific_model(&model_id.to_string()) {
-                    Ok(_) => {
-                        println!("  ✓ Loaded model {} for synthesis", model_id);
+                if let Err(e) = self.core.load_specific_model(&model_id.to_string()) {
+                    eprintln!("Failed to load model {}: {}", model_id, e);
+                    return OwnedResponse::Error {
+                        message: Cow::Owned(format!(
+                            "Failed to load model {} for synthesis: {}",
+                            model_id, e
+                        )),
+                    };
+                }
 
-                        let synthesis_result = self.core.synthesize(&text, style_id);
-                        match crate::paths::find_models_dir() {
-                            Ok(models_dir) => {
-                                let model_path = models_dir.join(format!("{}.vvm", model_id));
-                                match self
-                                    .core
-                                    .unload_voice_model_by_path(model_path.to_str().unwrap_or(""))
-                                {
-                                    Ok(_) => {
-                                        println!("  ✓ Unloaded model {} after synthesis", model_id)
-                                    }
-                                    Err(e) => {
-                                        eprintln!("  ✗ Failed to unload model {}: {}", model_id, e)
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("  ✗ Failed to find models directory for unload: {}", e);
-                            }
-                        }
+                println!("  ✓ Loaded model {} for synthesis", model_id);
 
-                        match synthesis_result {
-                            Ok(wav_data) => OwnedResponse::SynthesizeResult {
-                                wav_data: Cow::Owned(wav_data),
-                            },
-                            Err(e) => {
-                                eprintln!("Synthesis failed: {}", e);
-                                OwnedResponse::Error {
-                                    message: Cow::Owned(format!("Synthesis failed: {}", e)),
-                                }
-                            }
-                        }
+                let synthesis_result = self.core.synthesize(&text, style_id);
+                if let Ok(models_dir) = crate::paths::find_models_dir() {
+                    let model_path = models_dir.join(format!("{}.vvm", model_id));
+                    match self
+                        .core
+                        .unload_voice_model_by_path(model_path.to_str().unwrap_or(""))
+                    {
+                        Ok(_) => println!("  ✓ Unloaded model {} after synthesis", model_id),
+                        Err(e) => eprintln!("  ✗ Failed to unload model {}: {}", model_id, e),
                     }
+                } else {
+                    eprintln!("  ✗ Failed to find models directory for unload");
+                }
+
+                match synthesis_result {
+                    Ok(wav_data) => OwnedResponse::SynthesizeResult {
+                        wav_data: Cow::Owned(wav_data),
+                    },
                     Err(e) => {
-                        eprintln!("Failed to load model {}: {}", model_id, e);
+                        eprintln!("Synthesis failed: {}", e);
                         OwnedResponse::Error {
-                            message: Cow::Owned(format!(
-                                "Failed to load model {} for synthesis: {}",
-                                model_id, e
-                            )),
+                            message: Cow::Owned(format!("Synthesis failed: {}", e)),
                         }
                     }
                 }

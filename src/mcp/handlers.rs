@@ -78,20 +78,15 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
             "style_id": params.style_id
         }))
     } else {
-        // Non-streaming playback
-
-        // Connect to daemon
         let mut client = DaemonClient::new()
             .await
             .context("Failed to connect to VOICEVOX daemon. Is it running?")?;
 
-        // Synthesize
         let wav_data = client
             .synthesize(&params.text, params.style_id)
             .await
             .context("Synthesis failed")?;
 
-        // Play audio
         play_audio_from_memory(&wav_data).context("Failed to play audio")?;
 
         Ok(json!({
@@ -115,46 +110,31 @@ pub async fn handle_get_voices(arguments: Value) -> Result<Value> {
         .await
         .context("Failed to connect to VOICEVOX daemon. Is it running?")?;
 
-    // Get all speakers
     let speakers = client
         .list_speakers()
         .await
         .context("Failed to get speakers list")?;
 
-    // Apply filters
     let filtered_speakers: Vec<Speaker> = speakers
         .into_iter()
-        .filter(|speaker| {
-            // Filter by speaker name
-            if let Some(ref name_filter) = params.speaker_name {
-                if !speaker
+        .filter(|speaker| match &params.speaker_name {
+            Some(name_filter) => speaker
+                .name
+                .to_lowercase()
+                .contains(&name_filter.to_lowercase()),
+            None => true,
+        })
+        .filter(|speaker| match &params.style_name {
+            Some(style_filter) => speaker.styles.iter().any(|style| {
+                style
                     .name
                     .to_lowercase()
-                    .contains(&name_filter.to_lowercase())
-                {
-                    return false;
-                }
-            }
-            true
-        })
-        .filter(|speaker| {
-            // Filter by style name
-            if let Some(ref style_filter) = params.style_name {
-                let has_matching_style = speaker.styles.iter().any(|style| {
-                    style
-                        .name
-                        .to_lowercase()
-                        .contains(&style_filter.to_lowercase())
-                });
-                if !has_matching_style {
-                    return false;
-                }
-            }
-            true
+                    .contains(&style_filter.to_lowercase())
+            }),
+            None => true,
         })
         .collect();
 
-    // Format response
     let response = json!({
         "speakers": filtered_speakers.iter().map(|speaker| {
             json!({

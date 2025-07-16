@@ -267,32 +267,36 @@ pub async fn build_style_to_model_map_async(
         };
 
         // Temporarily load the model to get its metadata
-        match core.load_specific_model(&model_id.to_string()) {
-            Ok(_) => {
-                // Get speakers after loading this model
-                if let Ok(current_speakers) = core.get_speakers() {
-                    // Find new style IDs that this model introduced
-                    for speaker in current_speakers {
-                        for style in speaker.styles {
-                            if !cumulative_style_ids.contains(&style.id) {
-                                style_map.insert(style.id, model_id);
-                                cumulative_style_ids.insert(style.id);
-                            }
-                        }
-                    }
-                }
+        if let Err(e) = core.load_specific_model(&model_id.to_string()) {
+            eprintln!("  ✗ Failed to load model {} for mapping: {}", model_id, e);
+            continue;
+        }
 
-                // Unload the model to save memory
+        let current_speakers = match core.get_speakers() {
+            Ok(speakers) => speakers,
+            Err(_) => {
                 if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
-                    eprintln!(
-                        "  ✗ Failed to unload model {} after mapping: {}",
-                        model_id, e
-                    );
+                    eprintln!("  ✗ Failed to unload model {} after error: {}", model_id, e);
                 }
+                continue;
             }
-            Err(e) => {
-                eprintln!("  ✗ Failed to load model {} for mapping: {}", model_id, e);
+        };
+
+        for speaker in current_speakers {
+            for style in speaker.styles {
+                if cumulative_style_ids.contains(&style.id) {
+                    continue;
+                }
+                style_map.insert(style.id, model_id);
+                cumulative_style_ids.insert(style.id);
             }
+        }
+
+        if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+            eprintln!(
+                "  ✗ Failed to unload model {} after mapping: {}",
+                model_id, e
+            );
         }
     }
 

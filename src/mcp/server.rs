@@ -84,9 +84,7 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                 serde_json::to_value(result).unwrap(),
             ))
         }
-
         "notifications/initialized" => None,
-
         "tools/list" => {
             let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
             let result = ToolsListResult {
@@ -97,7 +95,6 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                 serde_json::to_value(result).unwrap(),
             ))
         }
-
         "tools/call" => {
             let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
             if let Some(params) = request.get("params") {
@@ -119,11 +116,19 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                                     id.clone(),
                                     serde_json::to_value(result).unwrap(),
                                 )),
-                                Err(e) => Some(JsonRpcResponse::error(
-                                    id.clone(),
-                                    INTERNAL_ERROR,
-                                    format!("Synthesis error: {e}"),
-                                )),
+                                Err(e) => {
+                                    let error_result = ToolCallResult {
+                                        content: vec![ToolContent {
+                                            content_type: "text".to_string(),
+                                            text: format!("Synthesis error: {e}"),
+                                        }],
+                                        is_error: Some(true),
+                                    };
+                                    Some(JsonRpcResponse::success(
+                                        id.clone(),
+                                        serde_json::to_value(error_result).unwrap(),
+                                    ))
+                                }
                             }
                         }
                         "get_voices" => match handlers::handle_get_voices(arguments).await {
@@ -131,11 +136,19 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                                 id.clone(),
                                 serde_json::to_value(result).unwrap(),
                             )),
-                            Err(e) => Some(JsonRpcResponse::error(
-                                id.clone(),
-                                INTERNAL_ERROR,
-                                format!("Error getting voices: {e}"),
-                            )),
+                            Err(e) => {
+                                let error_result = ToolCallResult {
+                                    content: vec![ToolContent {
+                                        content_type: "text".to_string(),
+                                        text: format!("Error getting voices: {e}"),
+                                    }],
+                                    is_error: Some(true),
+                                };
+                                Some(JsonRpcResponse::success(
+                                    id.clone(),
+                                    serde_json::to_value(error_result).unwrap(),
+                                ))
+                            }
                         },
                         _ => Some(JsonRpcResponse::error(
                             id.clone(),
@@ -158,7 +171,6 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                 ))
             }
         }
-
         _ => {
             let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
             Some(JsonRpcResponse::error(

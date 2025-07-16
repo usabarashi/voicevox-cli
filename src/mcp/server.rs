@@ -14,9 +14,6 @@ pub async fn run_mcp_server() -> Result<()> {
     let reader = BufReader::new(stdin);
     let mut lines = reader.lines();
 
-    eprintln!("VOICEVOX MCP Server v{} started", env!("CARGO_PKG_VERSION"));
-    eprintln!("Waiting for JSON-RPC messages on stdin...");
-
     while let Some(line) = lines.next_line().await? {
         if line.trim().is_empty() {
             continue;
@@ -24,12 +21,11 @@ pub async fn run_mcp_server() -> Result<()> {
 
         let raw_request: Value = match serde_json::from_str(&line) {
             Ok(req) => req,
-            Err(e) => {
-                eprintln!("Failed to parse JSON-RPC: {e}");
+            Err(_) => {
                 let id = serde_json::from_str::<Value>(&line)
                     .ok()
                     .and_then(|v| v.get("id").cloned())
-                    .unwrap_or(Value::Null);
+                    .unwrap_or(Value::Number(serde_json::Number::from(0)));
                 let error_response =
                     JsonRpcResponse::error(id, PARSE_ERROR, "Parse error".to_string());
                 stdout
@@ -44,8 +40,10 @@ pub async fn run_mcp_server() -> Result<()> {
         let response = if raw_request.get("method").is_some() {
             handle_request(raw_request).await
         } else {
-            eprintln!("Invalid JSON-RPC request");
-            let id = raw_request.get("id").cloned().unwrap_or(Value::Null);
+            let id = raw_request
+                .get("id")
+                .cloned()
+                .unwrap_or(Value::Number(serde_json::Number::from(0)));
             JsonRpcResponse::error(id, INVALID_REQUEST, "Invalid request".to_string())
         };
 
@@ -55,12 +53,14 @@ pub async fn run_mcp_server() -> Result<()> {
         stdout.flush().await?;
     }
 
-    eprintln!("EOF on stdin, shutting down MCP server...");
     Ok(())
 }
 
 async fn handle_request(request: Value) -> JsonRpcResponse {
-    let id = request.get("id").cloned().unwrap_or(Value::Null);
+    let id = request
+        .get("id")
+        .cloned()
+        .unwrap_or(Value::Number(serde_json::Number::from(0)));
     let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
     match method {
@@ -75,21 +75,6 @@ async fn handle_request(request: Value) -> JsonRpcResponse {
                     tools: serde_json::Map::new(),
                 },
             };
-
-            tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                let notification = JsonRpcNotification {
-                    jsonrpc: "2.0".to_string(),
-                    method: "initialized".to_string(),
-                    params: None,
-                };
-                if let Ok(notif_str) = serde_json::to_string(&notification) {
-                    let mut stdout = tokio::io::stdout();
-                    let _ = stdout.write_all(notif_str.as_bytes()).await;
-                    let _ = stdout.write_all(b"\n").await;
-                    let _ = stdout.flush().await;
-                }
-            });
 
             JsonRpcResponse::success(id, serde_json::to_value(result).unwrap())
         }

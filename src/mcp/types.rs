@@ -110,6 +110,8 @@ pub struct ToolInputSchema {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ToolCallResult {
     pub content: Vec<ToolContent>,
+    #[serde(rename = "isError", skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

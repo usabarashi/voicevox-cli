@@ -70,6 +70,7 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
                     params.style_id
                 ),
             }],
+            is_error: Some(false),
         })
     } else {
         let mut client = DaemonClient::new()
@@ -93,6 +94,7 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
                     wav_data.len()
                 ),
             }],
+            is_error: Some(false),
         })
     }
 }
@@ -180,5 +182,6 @@ pub async fn handle_get_voices(arguments: Value) -> Result<ToolCallResult> {
             content_type: "text".to_string(),
             text: result_text.trim().to_string(),
         }],
+        is_error: Some(false),
     })
 }

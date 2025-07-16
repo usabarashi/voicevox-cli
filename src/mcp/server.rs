@@ -37,34 +37,37 @@ pub async fn run_mcp_server() -> Result<()> {
             }
         };
 
-        let response = if raw_request.get("method").is_some() {
-            handle_request(raw_request).await
+        if raw_request.get("method").is_some() {
+            if let Some(response) = handle_request(raw_request).await {
+                let response_str = serde_json::to_string(&response)?;
+                stdout.write_all(response_str.as_bytes()).await?;
+                stdout.write_all(b"\n").await?;
+                stdout.flush().await?;
+            }
         } else {
             let id = raw_request
                 .get("id")
                 .cloned()
                 .unwrap_or(Value::Number(serde_json::Number::from(0)));
-            JsonRpcResponse::error(id, INVALID_REQUEST, "Invalid request".to_string())
-        };
-
-        let response_str = serde_json::to_string(&response)?;
-        stdout.write_all(response_str.as_bytes()).await?;
-        stdout.write_all(b"\n").await?;
-        stdout.flush().await?;
+            let response =
+                JsonRpcResponse::error(id, INVALID_REQUEST, "Invalid request".to_string());
+            let response_str = serde_json::to_string(&response)?;
+            stdout.write_all(response_str.as_bytes()).await?;
+            stdout.write_all(b"\n").await?;
+            stdout.flush().await?;
+        }
     }
 
     Ok(())
 }
 
-async fn handle_request(request: Value) -> JsonRpcResponse {
-    let id = request
-        .get("id")
-        .cloned()
-        .unwrap_or(Value::Number(serde_json::Number::from(0)));
+async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
+    let id = request.get("id").cloned();
     let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
     match method {
         "initialize" => {
+            let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
             let result = InitializeResult {
                 protocol_version: MCP_VERSION.to_string(),
                 server_info: ServerInfo {
@@ -76,21 +79,27 @@ async fn handle_request(request: Value) -> JsonRpcResponse {
                 },
             };
 
-            JsonRpcResponse::success(id, serde_json::to_value(result).unwrap())
+            Some(JsonRpcResponse::success(
+                id,
+                serde_json::to_value(result).unwrap(),
+            ))
         }
 
-        "notifications/initialized" => {
-            JsonRpcResponse::success(id, serde_json::Value::Object(serde_json::Map::new()))
-        }
+        "notifications/initialized" => None,
 
         "tools/list" => {
+            let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
             let result = ToolsListResult {
                 tools: get_tool_definitions(),
             };
-            JsonRpcResponse::success(id, serde_json::to_value(result).unwrap())
+            Some(JsonRpcResponse::success(
+                id,
+                serde_json::to_value(result).unwrap(),
+            ))
         }
 
         "tools/call" => {
+            let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
             if let Some(params) = request.get("params") {
                 if let Some(params_obj) = params.as_object() {
                     let tool_name = params_obj
@@ -106,42 +115,57 @@ async fn handle_request(request: Value) -> JsonRpcResponse {
                     match tool_name {
                         "text_to_speech" => {
                             match handlers::handle_text_to_speech(arguments).await {
-                                Ok(result) => JsonRpcResponse::success(
+                                Ok(result) => Some(JsonRpcResponse::success(
                                     id.clone(),
                                     serde_json::to_value(result).unwrap(),
-                                ),
-                                Err(e) => JsonRpcResponse::error(
+                                )),
+                                Err(e) => Some(JsonRpcResponse::error(
                                     id.clone(),
                                     INTERNAL_ERROR,
                                     format!("Synthesis error: {e}"),
-                                ),
+                                )),
                             }
                         }
                         "get_voices" => match handlers::handle_get_voices(arguments).await {
-                            Ok(result) => JsonRpcResponse::success(
+                            Ok(result) => Some(JsonRpcResponse::success(
                                 id.clone(),
                                 serde_json::to_value(result).unwrap(),
-                            ),
-                            Err(e) => JsonRpcResponse::error(
+                            )),
+                            Err(e) => Some(JsonRpcResponse::error(
                                 id.clone(),
                                 INTERNAL_ERROR,
                                 format!("Error getting voices: {e}"),
-                            ),
+                            )),
                         },
-                        _ => JsonRpcResponse::error(
+                        _ => Some(JsonRpcResponse::error(
                             id.clone(),
                             METHOD_NOT_FOUND,
                             format!("Unknown tool: {tool_name}"),
-                        ),
+                        )),
                     }
                 } else {
-                    JsonRpcResponse::error(id.clone(), INVALID_PARAMS, "Invalid params".to_string())
+                    Some(JsonRpcResponse::error(
+                        id.clone(),
+                        INVALID_PARAMS,
+                        "Invalid params".to_string(),
+                    ))
                 }
             } else {
-                JsonRpcResponse::error(id.clone(), INVALID_PARAMS, "Missing params".to_string())
+                Some(JsonRpcResponse::error(
+                    id.clone(),
+                    INVALID_PARAMS,
+                    "Missing params".to_string(),
+                ))
             }
         }
 
-        _ => JsonRpcResponse::error(id, METHOD_NOT_FOUND, format!("Method not found: {method}")),
+        _ => {
+            let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
+            Some(JsonRpcResponse::error(
+                id,
+                METHOD_NOT_FOUND,
+                format!("Method not found: {method}"),
+            ))
+        }
     }
 }

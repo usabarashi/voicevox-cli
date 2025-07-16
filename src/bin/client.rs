@@ -76,7 +76,6 @@ async fn standalone_mode(
     output_file: Option<&String>,
     quiet: bool,
 ) -> Result<()> {
-    // Check for models before initializing core
     if voicevox_cli::paths::find_models_dir_client().is_err() {
         if !quiet {
             println!("🎭 Voice models not found. Setting up VOICEVOX...");

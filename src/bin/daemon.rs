@@ -59,7 +59,6 @@ async fn main() -> Result<()> {
 
     let matches = app.get_matches();
 
-    // Determine socket path
     let socket_path = if let Some(custom_path) = matches.get_one::<String>("socket-path") {
         PathBuf::from(custom_path)
     } else {
@@ -73,7 +72,6 @@ async fn main() -> Result<()> {
     let status = matches.get_flag("status");
     let restart = matches.get_flag("restart");
 
-    // Handle daemon operations
     if stop {
         return handle_stop_daemon(&socket_path).await;
     }
@@ -84,42 +82,34 @@ async fn main() -> Result<()> {
 
     if restart {
         println!("🔄 Restarting daemon...");
-        let _ = handle_stop_daemon(&socket_path).await; // Ignore errors if not running
+        let _ = handle_stop_daemon(&socket_path).await;
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        // Continue to start logic below
     }
 
-    // Default behavior is start (if no operation specified or explicit --start)
-    if !start && !restart {
-        // If no operation flags are specified, show help for daemon operations
-        if !foreground && !detach {
-            println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
-            println!("\nDaemon Operations:");
-            println!("  --start     Start the daemon (default)");
-            println!("  --stop      Stop the running daemon");
-            println!("  --status    Check daemon status");
-            println!("  --restart   Restart the daemon");
-            println!("\nExecution Modes:");
-            println!("  --foreground Run in foreground (for development)");
-            println!("  --detach     Run as background process");
-            println!("\nUse --help for all options");
-            return Ok(());
-        }
+    if !start && !restart && !foreground && !detach {
+        println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
+        println!("\nDaemon Operations:");
+        println!("  --start     Start the daemon (default)");
+        println!("  --stop      Stop the running daemon");
+        println!("  --status    Check daemon status");
+        println!("  --restart   Restart the daemon");
+        println!("\nExecution Modes:");
+        println!("  --foreground Run in foreground (for development)");
+        println!("  --detach     Run as background process");
+        println!("\nUse --help for all options");
+        return Ok(());
     }
 
-    // Handle detach mode - fork process and exit parent
     if detach && !foreground {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
 
         println!("Starting daemon in detached mode...");
 
-        // Prepare args for child process (without --detach)
         let mut args: Vec<String> = std::env::args().collect();
         args.retain(|arg| arg != "--detach" && arg != "-d");
-        args.push("--foreground".to_string()); // Child runs in foreground
+        args.push("--foreground".to_string());
 
-        // Spawn detached child process
         let child = Command::new(&args[0])
             .args(&args[1..])
             .stdin(Stdio::null())

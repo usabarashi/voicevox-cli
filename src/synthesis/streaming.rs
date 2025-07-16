@@ -28,31 +28,25 @@ impl StreamingSynthesizer {
         style_id: u32,
         sink: &Sink,
     ) -> Result<()> {
-        // Split text into segments
         let segments = self.text_splitter.split(text);
 
-        // Process each segment
         for (i, segment) in segments.iter().enumerate() {
             if segment.trim().is_empty() {
                 continue;
             }
 
-            // Synthesize segment
             let wav_data = self
                 .daemon_client
                 .synthesize(segment, style_id)
                 .await
                 .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
 
-            // Create decoder from WAV data
             let cursor = Cursor::new(wav_data);
             let source = Decoder::new(cursor)
                 .with_context(|| format!("Failed to decode audio for segment {i}"))?;
 
-            // Append to playback queue
             sink.append(source);
 
-            // Ensure playback starts for first segment
             if i == 0 {
                 sink.play();
             }

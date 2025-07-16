@@ -73,10 +73,8 @@ pub fn find_models_dir() -> Result<PathBuf> {
     for dir in &search_dirs {
         let candidate = dir.join(MODELS_SUBDIR);
         if candidate.exists() && candidate.is_dir() {
-            // Check if vvms subdirectory exists and has .vvm files
             let vvms_dir = candidate.join(VVM_SUBDIR);
             if vvms_dir.exists() && vvms_dir.is_dir() {
-                // Check if there are any .vvm files in vvms/
                 if let Ok(entries) = std::fs::read_dir(&vvms_dir) {
                     let has_vvm = entries.filter_map(Result::ok).any(|entry| {
                         entry

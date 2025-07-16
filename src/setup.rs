@@ -19,7 +19,6 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
     let exe_path = match std::env::current_exe() {
         Ok(path) => path,
         Err(_) => {
-            // If we can't get current executable, skip auto-setup
             return show_manual_setup_instructions(&target_dir);
         }
     };

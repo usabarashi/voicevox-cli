@@ -14,7 +14,6 @@ use crate::voice::Speaker;
 use std::borrow::Cow;
 
 fn find_daemon_binary() -> PathBuf {
-    // Try current executable directory first
     if let Ok(current_exe) = std::env::current_exe() {
         let mut daemon_path = current_exe.clone();
         daemon_path.set_file_name("voicevox-daemon");
@@ -23,7 +22,6 @@ fn find_daemon_binary() -> PathBuf {
         }
     }
 
-    // Try fallback paths
     let fallbacks = vec![
         PathBuf::from("./target/debug/voicevox-daemon"),
         PathBuf::from("./target/release/voicevox-daemon"),
@@ -41,7 +39,6 @@ fn find_daemon_binary() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("voicevox-daemon"))
 }
 
-// Communicate with daemon
 pub async fn daemon_mode(
     text: &str,
     style_id: u32,
@@ -93,7 +90,6 @@ pub async fn daemon_mode(
                 std::fs::write(output_file, &wav_data)?;
             }
 
-            // Play audio if not quiet and no output file (like macOS say command)
             if !quiet && output_file.is_none() {
                 if let Err(e) = crate::client::audio::play_audio_from_memory(&wav_data) {
                     eprintln!("Error: Audio playback failed: {e}");
@@ -108,7 +104,6 @@ pub async fn daemon_mode(
     }
 }
 
-// List speakers via daemon
 pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     let stream = UnixStream::connect(socket_path).await?;
     let (reader, writer) = stream.into_split();

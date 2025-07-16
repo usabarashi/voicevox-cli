@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use crate::mcp::handlers;
 
 /// MCP server manifest
-const MCP_VERSION: &str = "0.1.0";
+const MCP_VERSION: &str = "2025-03-26";
 
 /// Run the MCP server using stdio
 pub async fn run_mcp_server() -> Result<()> {
@@ -76,6 +76,12 @@ async fn handle_request(request: Value) -> Value {
 
     match method {
         "initialize" => {
+            if let Some(params) = request.get("params") {
+                if let Some(client_version) = params.get("protocolVersion").and_then(|v| v.as_str())
+                {
+                    eprintln!("Client requested protocol version: {client_version}");
+                }
+            }
             let result = json!({
                 "protocolVersion": MCP_VERSION,
                 "serverInfo": {

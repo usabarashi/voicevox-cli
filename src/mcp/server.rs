@@ -1,8 +1,10 @@
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::mcp::handlers;
+use crate::mcp::tools::get_tool_definitions;
+use crate::mcp::types::*;
 
 const MCP_VERSION: &str = "2025-03-26";
 
@@ -20,18 +22,16 @@ pub async fn run_mcp_server() -> Result<()> {
             continue;
         }
 
-        let request: Value = match serde_json::from_str(&line) {
+        let raw_request: Value = match serde_json::from_str(&line) {
             Ok(req) => req,
             Err(e) => {
                 eprintln!("Failed to parse JSON-RPC: {e}");
-                let error_response = json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32700,
-                        "message": "Parse error"
-                    },
-                    "id": null
-                });
+                let id = serde_json::from_str::<Value>(&line)
+                    .ok()
+                    .and_then(|v| v.get("id").cloned())
+                    .unwrap_or(Value::Null);
+                let error_response =
+                    JsonRpcResponse::error(id, PARSE_ERROR, "Parse error".to_string());
                 stdout
                     .write_all(serde_json::to_string(&error_response)?.as_bytes())
                     .await?;
@@ -41,18 +41,12 @@ pub async fn run_mcp_server() -> Result<()> {
             }
         };
 
-        let response = if request.get("method").is_some() {
-            handle_request(request).await
+        let response = if raw_request.get("method").is_some() {
+            handle_request(raw_request).await
         } else {
             eprintln!("Invalid JSON-RPC request");
-            json!({
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32600,
-                    "message": "Invalid request"
-                },
-                "id": null
-            })
+            let id = raw_request.get("id").cloned().unwrap_or(Value::Null);
+            JsonRpcResponse::error(id, INVALID_REQUEST, "Invalid request".to_string())
         };
 
         let response_str = serde_json::to_string(&response)?;
@@ -65,29 +59,30 @@ pub async fn run_mcp_server() -> Result<()> {
     Ok(())
 }
 
-async fn handle_request(request: Value) -> Value {
+async fn handle_request(request: Value) -> JsonRpcResponse {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
     match method {
         "initialize" => {
-            let result = json!({
-                "protocolVersion": MCP_VERSION,
-                "serverInfo": {
-                    "name": "voicevox-mcp",
-                    "version": env!("CARGO_PKG_VERSION")
+            let result = InitializeResult {
+                protocol_version: MCP_VERSION.to_string(),
+                server_info: ServerInfo {
+                    name: "voicevox-mcp".to_string(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
                 },
-                "capabilities": {
-                    "tools": {}
-                }
-            });
+                capabilities: ServerCapabilities {
+                    tools: serde_json::Map::new(),
+                },
+            };
 
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                let notification = json!({
-                    "jsonrpc": "2.0",
-                    "method": "initialized"
-                });
+                let notification = JsonRpcNotification {
+                    jsonrpc: "2.0".to_string(),
+                    method: "initialized".to_string(),
+                    params: None,
+                };
                 if let Ok(notif_str) = serde_json::to_string(&notification) {
                     let mut stdout = tokio::io::stdout();
                     let _ = stdout.write_all(notif_str.as_bytes()).await;
@@ -96,70 +91,14 @@ async fn handle_request(request: Value) -> Value {
                 }
             });
 
-            json!({
-                "jsonrpc": "2.0",
-                "result": result,
-                "id": id
-            })
+            JsonRpcResponse::success(id, serde_json::to_value(result).unwrap())
         }
 
         "tools/list" => {
-            let tools = json!({
-                "tools": [
-                    {
-                        "name": "text_to_speech",
-                        "description": "Convert Japanese text to speech (TTS) and play on server",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "text": {
-                                    "type": "string",
-                                    "description": "Japanese text to synthesize"
-                                },
-                                "style_id": {
-                                    "type": "integer",
-                                    "description": "Voice style ID (e.g., 3 for Zundamon Normal)"
-                                },
-                                "rate": {
-                                    "type": "number",
-                                    "description": "Speech rate (0.5-2.0)",
-                                    "minimum": 0.5,
-                                    "maximum": 2.0,
-                                    "default": 1.0
-                                },
-                                "streaming": {
-                                    "type": "boolean",
-                                    "description": "Enable streaming playback for lower latency",
-                                    "default": true
-                                }
-                            },
-                            "required": ["text", "style_id"]
-                        }
-                    },
-                    {
-                        "name": "get_voices",
-                        "description": "Get available voices with optional filtering",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "speaker_name": {
-                                    "type": "string",
-                                    "description": "Filter by speaker name (partial match)"
-                                },
-                                "style_name": {
-                                    "type": "string",
-                                    "description": "Filter by style name (partial match)"
-                                }
-                            }
-                        }
-                    }
-                ]
-            });
-            json!({
-                "jsonrpc": "2.0",
-                "result": tools,
-                "id": id
-            })
+            let result = ToolsListResult {
+                tools: get_tool_definitions(),
+            };
+            JsonRpcResponse::success(id, serde_json::to_value(result).unwrap())
         }
 
         "tools/call" => {
@@ -178,74 +117,42 @@ async fn handle_request(request: Value) -> Value {
                     match tool_name {
                         "text_to_speech" => {
                             match handlers::handle_text_to_speech(arguments).await {
-                                Ok(result) => json!({
-                                    "jsonrpc": "2.0",
-                                    "result": result,
-                                    "id": id
-                                }),
-                                Err(e) => json!({
-                                    "jsonrpc": "2.0",
-                                    "error": {
-                                        "code": -32603,
-                                        "message": format!("Synthesis error: {e}")
-                                    },
-                                    "id": id
-                                }),
+                                Ok(result) => JsonRpcResponse::success(
+                                    id.clone(),
+                                    serde_json::to_value(result).unwrap(),
+                                ),
+                                Err(e) => JsonRpcResponse::error(
+                                    id.clone(),
+                                    INTERNAL_ERROR,
+                                    format!("Synthesis error: {e}"),
+                                ),
                             }
                         }
                         "get_voices" => match handlers::handle_get_voices(arguments).await {
-                            Ok(result) => json!({
-                                "jsonrpc": "2.0",
-                                "result": result,
-                                "id": id
-                            }),
-                            Err(e) => json!({
-                                "jsonrpc": "2.0",
-                                "error": {
-                                    "code": -32603,
-                                    "message": format!("Error getting voices: {e}")
-                                },
-                                "id": id
-                            }),
+                            Ok(result) => JsonRpcResponse::success(
+                                id.clone(),
+                                serde_json::to_value(result).unwrap(),
+                            ),
+                            Err(e) => JsonRpcResponse::error(
+                                id.clone(),
+                                INTERNAL_ERROR,
+                                format!("Error getting voices: {e}"),
+                            ),
                         },
-                        _ => json!({
-                            "jsonrpc": "2.0",
-                            "error": {
-                                "code": -32601,
-                                "message": format!("Unknown tool: {tool_name}")
-                            },
-                            "id": id
-                        }),
+                        _ => JsonRpcResponse::error(
+                            id.clone(),
+                            METHOD_NOT_FOUND,
+                            format!("Unknown tool: {tool_name}"),
+                        ),
                     }
                 } else {
-                    json!({
-                        "jsonrpc": "2.0",
-                        "error": {
-                            "code": -32602,
-                            "message": "Invalid params"
-                        },
-                        "id": id
-                    })
+                    JsonRpcResponse::error(id.clone(), INVALID_PARAMS, "Invalid params".to_string())
                 }
             } else {
-                json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32602,
-                        "message": "Missing params"
-                    },
-                    "id": id
-                })
+                JsonRpcResponse::error(id.clone(), INVALID_PARAMS, "Missing params".to_string())
             }
         }
 
-        _ => json!({
-            "jsonrpc": "2.0",
-            "error": {
-                "code": -32601,
-                "message": format!("Method not found: {method}")
-            },
-            "id": id
-        }),
+        _ => JsonRpcResponse::error(id, METHOD_NOT_FOUND, format!("Method not found: {method}")),
     }
 }

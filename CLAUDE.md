@@ -8,9 +8,9 @@ VOICEVOX CLI - Command-line text-to-speech tool using VOICEVOX Core 0.16.0.
 
 ## Architecture
 
-- **Client-server model**: Unix socket IPC between CLI client and daemon
-- **No caching**: Models loaded/unloaded per request
-- **MCP support**: JSON-RPC 2.0 server for AI assistants
+- Client-server model with Unix socket IPC
+- Dynamic VVM model loading per request
+- MCP server for AI assistant integration
 
 ## Structure
 
@@ -20,9 +20,13 @@ src/
 │   ├── client.rs        # voicevox-say
 │   ├── daemon.rs        # voicevox-daemon
 │   └── mcp_server.rs    # voicevox-mcp-server
-├── client/              # Client-side functionality
-├── daemon/              # Server-side functionality
-├── mcp/                 # MCP protocol implementation
+├── client/              # Client implementation
+├── daemon/              # Daemon implementation
+├── mcp/                 # MCP implementation
+│   ├── server.rs        # JSON-RPC server
+│   ├── handlers.rs      # Tool handlers
+│   ├── tools.rs         # Tool definitions
+│   └── types.rs         # Protocol types
 ├── synthesis/           # Audio synthesis
 ├── core.rs              # VOICEVOX Core wrapper
 ├── voice.rs             # Voice management
@@ -30,17 +34,25 @@ src/
 └── ipc.rs               # IPC protocol
 ```
 
-## Key Implementation Details
+## MCP Implementation
 
-- **Voice Discovery**: Dynamic scanning of VVM files
-- **Audio Playback**: rodio with system command fallbacks
-- **Streaming**: Text split at Japanese punctuation
-- **Error Handling**: Silent on success, stderr on error
+Protocol: Model Context Protocol 2025-03-26 over JSON-RPC 2.0 via stdio
+
+Methods:
+- `initialize`: Server initialization
+- `notifications/initialized`: Client ready notification
+- `tools/list`: List available tools
+- `tools/call`: Execute tool
+
+Tools:
+- `text_to_speech`: Synthesize Japanese text with voice style ID
+- `get_voices`: List available voices with optional filtering
 
 ## Usage
 
 ```bash
 voicevox-daemon --start
 voicevox-say "テキスト"
-voicevox-mcp-server  # For AI assistants
+voicevox-say --speaker-id 3 "テキスト"
+voicevox-mcp-server
 ```

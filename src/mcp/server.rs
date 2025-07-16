@@ -79,6 +79,10 @@ async fn handle_request(request: Value) -> JsonRpcResponse {
             JsonRpcResponse::success(id, serde_json::to_value(result).unwrap())
         }
 
+        "notifications/initialized" => {
+            JsonRpcResponse::success(id, serde_json::Value::Object(serde_json::Map::new()))
+        }
+
         "tools/list" => {
             let result = ToolsListResult {
                 tools: get_tool_definitions(),

@@ -31,13 +31,10 @@ struct GetVoicesParams {
     style_name: Option<String>,
 }
 
-/// Handle text_to_speech tool call
 pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
-    // Parse parameters
     let params: SynthesizeParams =
         serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
 
-    // Validate parameters
     if params.text.trim().is_empty() {
         return Err(anyhow!("Text cannot be empty"));
     }
@@ -47,28 +44,20 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
     }
 
     if params.streaming {
-        // Streaming playback
-
-        // Create audio output - IMPORTANT: _stream must be kept alive
         let (_stream, stream_handle) =
             OutputStream::try_default().context("Failed to create audio output stream")?;
         let sink = Sink::try_new(&stream_handle).context("Failed to create audio sink")?;
 
-        // Create streaming synthesizer
         let mut synthesizer = StreamingSynthesizer::new()
             .await
             .context("Failed to create streaming synthesizer")?;
 
-        // Perform streaming synthesis
         synthesizer
             .synthesize_streaming(&params.text, params.style_id, &sink)
             .await
             .context("Streaming synthesis failed")?;
 
-        // Wait for playback to complete
         sink.sleep_until_end();
-
-        // Keep _stream alive until here
         drop(_stream);
 
         Ok(json!({
@@ -99,21 +88,46 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
     }
 }
 
-/// Handle get_voices tool call
 pub async fn handle_get_voices(arguments: Value) -> Result<Value> {
-    // Parse parameters
+    use crate::ipc::{DaemonRequest, OwnedResponse};
+    use crate::paths::get_socket_path;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::net::UnixStream;
+    use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
+
     let params: GetVoicesParams =
         serde_json::from_value(arguments).context("Invalid parameters for get_voices")?;
 
-    // Connect to daemon
-    let mut client = DaemonClient::new()
+    let socket_path = get_socket_path();
+    let stream = UnixStream::connect(&socket_path)
         .await
         .context("Failed to connect to VOICEVOX daemon. Is it running?")?;
 
-    let speakers = client
-        .list_speakers()
-        .await
-        .context("Failed to get speakers list")?;
+    let (reader, writer) = stream.into_split();
+    let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
+    let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
+
+    let request = DaemonRequest::ListSpeakers;
+    let request_data = bincode::serialize(&request)?;
+    framed_writer.send(request_data.into()).await?;
+
+    let speakers = if let Some(response_frame) = framed_reader.next().await {
+        let response_frame = response_frame?;
+        let response: OwnedResponse = bincode::deserialize(&response_frame)?;
+
+        match response {
+            OwnedResponse::SpeakersList { speakers } => speakers.into_owned(),
+            OwnedResponse::SpeakersListWithModels { speakers, .. } => speakers.into_owned(),
+            OwnedResponse::Error { message } => {
+                return Err(anyhow!("Daemon error: {message}"));
+            }
+            _ => {
+                return Err(anyhow!("Unexpected response from daemon"));
+            }
+        }
+    } else {
+        return Err(anyhow!("No response from daemon"));
+    };
 
     let filtered_speakers: Vec<Speaker> = speakers
         .into_iter()

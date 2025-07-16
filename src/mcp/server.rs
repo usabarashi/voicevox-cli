@@ -22,7 +22,6 @@ pub async fn run_mcp_server() -> Result<()> {
             continue;
         }
 
-        // Parse JSON-RPC request
         let request: Value = match serde_json::from_str(&line) {
             Ok(req) => req,
             Err(e) => {
@@ -44,7 +43,6 @@ pub async fn run_mcp_server() -> Result<()> {
             }
         };
 
-        // Handle request
         let response = if request.get("method").is_some() {
             handle_request(request).await
         } else {
@@ -59,7 +57,6 @@ pub async fn run_mcp_server() -> Result<()> {
             })
         };
 
-        // Send response
         let response_str = serde_json::to_string(&response)?;
         stdout.write_all(response_str.as_bytes()).await?;
         stdout.write_all(b"\n").await?;
@@ -76,12 +73,6 @@ async fn handle_request(request: Value) -> Value {
 
     match method {
         "initialize" => {
-            if let Some(params) = request.get("params") {
-                if let Some(client_version) = params.get("protocolVersion").and_then(|v| v.as_str())
-                {
-                    eprintln!("Client requested protocol version: {client_version}");
-                }
-            }
             let result = json!({
                 "protocolVersion": MCP_VERSION,
                 "serverInfo": {
@@ -93,7 +84,6 @@ async fn handle_request(request: Value) -> Value {
                 }
             });
 
-            // Send initialized notification after response
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 let notification = json!({

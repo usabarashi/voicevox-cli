@@ -25,7 +25,7 @@ fn find_daemon_binary() -> PathBuf {
     let fallbacks = vec![
         PathBuf::from("./target/debug/voicevox-daemon"),
         PathBuf::from("./target/release/voicevox-daemon"),
-        PathBuf::from("voicevox-daemon"), // In PATH
+        PathBuf::from("voicevox-daemon"),
     ];
 
     fallbacks
@@ -169,7 +169,6 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     Err(anyhow!("Failed to get speakers from daemon"))
 }
 
-// Start daemon process if not already running (with user confirmation)
 pub async fn start_daemon_with_confirmation() -> Result<()> {
     let socket_path = get_socket_path();
 
@@ -196,7 +195,6 @@ Would you like to start the daemon automatically? [Y/n]: "
     }
 }
 
-// Start daemon process if not already running (automatic, no confirmation)
 pub async fn start_daemon_if_needed() -> Result<()> {
     let socket_path = get_socket_path();
 
@@ -212,7 +210,6 @@ async fn start_daemon_automatically() -> Result<()> {
 
     println!("🔄 Starting VOICEVOX daemon automatically...");
 
-    // Start daemon with --start --detach for background operation
     let output = ProcessCommand::new(&daemon_path)
         .args(["--start", "--detach"])
         .output();
@@ -220,10 +217,8 @@ async fn start_daemon_automatically() -> Result<()> {
     match output {
         Ok(output) => {
             if output.status.success() {
-                // Give daemon time to start
                 tokio::time::sleep(Duration::from_millis(2000)).await;
 
-                // Verify daemon is running
                 match UnixStream::connect(&socket_path).await {
                     Ok(_) => {
                         println!("✅ VOICEVOX daemon started successfully");
@@ -249,13 +244,11 @@ async fn start_daemon_automatically() -> Result<()> {
     }
 }
 
-/// Client for communicating with VOICEVOX daemon
 pub struct DaemonClient {
     stream: UnixStream,
 }
 
 impl DaemonClient {
-    /// Create a new daemon client
     pub async fn new() -> Result<Self> {
         let socket_path = get_socket_path();
         let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
@@ -268,7 +261,6 @@ impl DaemonClient {
         Ok(Self { stream })
     }
 
-    /// Synthesize text to speech
     pub async fn synthesize(&mut self, text: &str, style_id: u32) -> Result<Vec<u8>> {
         let request = OwnedRequest::Synthesize {
             text: Cow::Owned(text.to_string()),
@@ -276,12 +268,10 @@ impl DaemonClient {
             options: OwnedSynthesizeOptions::default(),
         };
 
-        // Send request
         let request_data = bincode::serialize(&request)?;
         let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
         framed_writer.send(request_data.into()).await?;
 
-        // Receive response
         let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
         if let Some(Ok(response_data)) = framed_reader.next().await {
             let response: OwnedResponse = bincode::deserialize(&response_data)?;
@@ -295,16 +285,13 @@ impl DaemonClient {
         }
     }
 
-    /// List available speakers
     pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
         let request = OwnedRequest::ListSpeakers;
 
-        // Send request
         let request_data = bincode::serialize(&request)?;
         let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
         framed_writer.send(request_data.into()).await?;
 
-        // Receive response
         let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
         if let Some(Ok(response_data)) = framed_reader.next().await {
             let response: OwnedResponse = bincode::deserialize(&response_data)?;

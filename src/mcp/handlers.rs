@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Context, Result};
 use rodio::{OutputStream, Sink};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
+use crate::mcp::types::{ToolCallResult, ToolContent};
 use crate::synthesis::StreamingSynthesizer;
 use crate::voice::Speaker;
 
@@ -31,7 +32,7 @@ struct GetVoicesParams {
     style_name: Option<String>,
 }
 
-pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
+pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
     let params: SynthesizeParams =
         serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
 
@@ -60,12 +61,16 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
         sink.sleep_until_end();
         drop(_stream);
 
-        Ok(json!({
-            "content": [{
-                "type": "text",
-                "text": format!("Successfully synthesized {} characters using style ID {} in streaming mode", params.text.len(), params.style_id)
-            }]
-        }))
+        Ok(ToolCallResult {
+            content: vec![ToolContent {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Successfully synthesized {} characters using style ID {} in streaming mode",
+                    params.text.len(),
+                    params.style_id
+                ),
+            }],
+        })
     } else {
         let mut client = DaemonClient::new()
             .await
@@ -78,16 +83,21 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<Value> {
 
         play_audio_from_memory(&wav_data).context("Failed to play audio")?;
 
-        Ok(json!({
-            "content": [{
-                "type": "text",
-                "text": format!("Successfully synthesized {} characters using style ID {} (audio size: {} bytes)", params.text.len(), params.style_id, wav_data.len())
-            }]
-        }))
+        Ok(ToolCallResult {
+            content: vec![ToolContent {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Successfully synthesized {} characters using style ID {} (audio size: {} bytes)",
+                    params.text.len(),
+                    params.style_id,
+                    wav_data.len()
+                ),
+            }],
+        })
     }
 }
 
-pub async fn handle_get_voices(arguments: Value) -> Result<Value> {
+pub async fn handle_get_voices(arguments: Value) -> Result<ToolCallResult> {
     use crate::ipc::{DaemonRequest, OwnedResponse};
     use crate::paths::get_socket_path;
     use futures_util::{SinkExt, StreamExt};
@@ -165,10 +175,10 @@ pub async fn handle_get_voices(arguments: Value) -> Result<Value> {
             filtered_speakers.len()
         ));
     }
-    Ok(json!({
-        "content": [{
-            "type": "text",
-            "text": result_text.trim()
-        }]
-    }))
+    Ok(ToolCallResult {
+        content: vec![ToolContent {
+            content_type: "text".to_string(),
+            text: result_text.trim().to_string(),
+        }],
+    })
 }

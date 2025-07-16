@@ -134,8 +134,6 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
 }
 
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
-    // Priority 1: Build-time embedded path (set via OPENJTALK_DICT_PATH in build.rs)
-    // This is embedded at compile time and is the preferred method for Nix builds
     if let Some(embedded_path) = option_env!("VOICEVOX_OPENJTALK_DICT_EMBEDDED") {
         let dict_path = PathBuf::from(embedded_path);
         if dict_path.exists() && dict_path.is_dir() {
@@ -143,7 +141,6 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         }
     }
 
-    // Priority 2: Runtime environment variable (for development/testing)
     if let Ok(path) = std::env::var("VOICEVOX_OPENJTALK_DICT") {
         let dict_path = PathBuf::from(path);
         if dict_path.exists() && dict_path.is_dir() {
@@ -151,10 +148,8 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         }
     }
 
-    // Priority 3: Relative to executable (for installed binaries)
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_dir) = current_exe.parent() {
-            // Standard installation path relative to binary
             let installed_path = exe_dir
                 .join("../share/voicevox")
                 .join(OPENJTALK_DICT_SUBDIR);
@@ -163,8 +158,6 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
             }
         }
     }
-
-    // Priority 4: User data directory
     if let Some(data_dir) = dirs::data_local_dir() {
         let user_dict_path = data_dir.join("voicevox").join(OPENJTALK_DICT_SUBDIR);
         if user_dict_path.exists() && user_dict_path.is_dir() {

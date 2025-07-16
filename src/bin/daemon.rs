@@ -115,15 +115,13 @@ async fn main() -> Result<()> {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .process_group(0) // Create new process group
+            .process_group(0)
             .spawn();
 
         match child {
             Ok(mut child) => {
-                // Give child time to start
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-                // Check if child is still running
                 match child.try_wait() {
                     Ok(None) => {
                         println!("✅ VOICEVOX daemon started successfully in background");
@@ -147,68 +145,59 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Check for existing daemon process
     if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
         eprintln!("{e}");
         std::process::exit(1);
     }
 
-    // Display startup banner
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
     println!("Starting user daemon...");
     println!("Socket: {} (user-specific)", socket_path.display());
     println!("Models: Load and unload per request (no caching)");
 
-    // Run the daemon
     voicevox_cli::daemon::run_daemon(socket_path, foreground).await
 }
 
-/// Handle daemon stop operation
 async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
     println!("🛑 Stopping VOICEVOX daemon...");
 
-    // Check if daemon is running
     match UnixStream::connect(socket_path).await {
-        Ok(_) => {
-            // Daemon is running, find and stop it
-            match voicevox_cli::daemon::process::find_daemon_processes() {
-                Ok(pids) => {
-                    if pids.is_empty() {
-                        println!("❌ No daemon process found");
-                        return Ok(());
-                    }
+        Ok(_) => match voicevox_cli::daemon::process::find_daemon_processes() {
+            Ok(pids) => {
+                if pids.is_empty() {
+                    println!("❌ No daemon process found");
+                    return Ok(());
+                }
 
-                    for pid_num in pids {
-                        let kill_result = std::process::Command::new("kill")
-                            .arg("-TERM")
-                            .arg(pid_num.to_string())
-                            .status();
+                for pid_num in pids {
+                    let kill_result = std::process::Command::new("kill")
+                        .arg("-TERM")
+                        .arg(pid_num.to_string())
+                        .status();
 
-                        match kill_result {
-                            Ok(status) if status.success() => {
-                                println!("✅ Daemon stopped (PID: {pid_num})");
+                    match kill_result {
+                        Ok(status) if status.success() => {
+                            println!("✅ Daemon stopped (PID: {pid_num})");
 
-                                // Wait a moment then verify
-                                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
-                                match UnixStream::connect(socket_path).await {
-                                    Err(_) => println!("✅ Socket cleanup confirmed"),
-                                    Ok(_) => println!("⚠️  Daemon may still be running"),
-                                }
+                            match UnixStream::connect(socket_path).await {
+                                Err(_) => println!("✅ Socket cleanup confirmed"),
+                                Ok(_) => println!("⚠️  Daemon may still be running"),
                             }
-                            _ => {
-                                println!("❌ Failed to stop daemon (PID: {pid_num})");
-                                println!("   Try: kill -9 {pid_num}");
-                            }
+                        }
+                        _ => {
+                            println!("❌ Failed to stop daemon (PID: {pid_num})");
+                            println!("   Try: kill -9 {pid_num}");
                         }
                     }
                 }
-                Err(e) => {
-                    println!("❌ Failed to find daemon process: {e}");
-                    println!("   Try manual: pkill -f -u $(id -u) voicevox-daemon");
-                }
             }
-        }
+            Err(e) => {
+                println!("❌ Failed to find daemon process: {e}");
+                println!("   Try manual: pkill -f -u $(id -u) voicevox-daemon");
+            }
+        },
         Err(_) => {
             println!("❌ Daemon is not running");
             println!("   Socket: {}", socket_path.display());
@@ -218,23 +207,19 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Handle daemon status check
 async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
     println!("📊 VOICEVOX Daemon Status");
     println!("========================");
 
-    // Check socket connectivity
     match UnixStream::connect(socket_path).await {
         Ok(_) => {
             println!("Status: ✅ Running and responsive");
             println!("Socket: {}", socket_path.display());
 
-            // Additional process information
             if let Ok(pids) = voicevox_cli::daemon::process::find_daemon_processes() {
                 for pid_num in pids {
                     println!("Process ID: {pid_num}");
 
-                    // Get memory usage if possible
                     let ps_output = std::process::Command::new("ps")
                         .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
                         .output();

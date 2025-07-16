@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
 
     if let Some(voice_name) = matches.get_one::<String>("voice") {
         if voice_name == "?" {
-            resolve_voice_dynamic("?")?; // This exits internally
+            resolve_voice_dynamic("?")?;
         }
     }
 
@@ -294,7 +294,6 @@ async fn main() -> Result<()> {
         println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
 
-        // Load all available models for listing speakers
         let models = scan_available_models()?;
         for model in &models {
             if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {
@@ -305,9 +304,7 @@ async fn main() -> Result<()> {
         println!("All available speakers and styles from loaded models:");
         let speakers = core.get_speakers()?;
 
-        // Build dynamic style-to-model mapping by scanning loaded models
         println!("Building style-to-model mapping...");
-        // For standalone mode, we can't easily determine exact mappings since all models are loaded
         let style_to_model: HashMap<u32, u32> = speakers
             .iter()
             .flat_map(|s| s.styles.iter().map(|style| (style.id, style.id)))
@@ -337,7 +334,6 @@ async fn main() -> Result<()> {
         ));
     }
 
-    // Voice resolution: speaker-id → model → voice-name → default
     let (style_id, _voice_description) = resolve_voice_from_args(&matches)?;
 
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
@@ -354,7 +350,6 @@ async fn main() -> Result<()> {
         ..Default::default()
     };
 
-    // Try daemon mode first, regardless of model availability
     if !force_standalone {
         let socket_path = matches
             .get_one::<String>("socket-path")

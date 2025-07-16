@@ -80,6 +80,6 @@ pub fn find_daemon_processes() -> Result<Vec<u32>> {
                 Ok(vec![])
             }
         }
-        Err(_) => Ok(vec![]), // pgrep not available
+        Err(_) => Ok(vec![]),
     }
 }

@@ -293,7 +293,6 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading model {model_id} only...");
 
-    // Fallback to models only for now
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")

@@ -1,5 +1,3 @@
-//! VOICEVOX CLI - Japanese text-to-speech using VOICEVOX Core
-
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

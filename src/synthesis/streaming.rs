@@ -4,7 +4,6 @@ use std::io::Cursor;
 
 use crate::client::DaemonClient;
 
-/// Streaming synthesizer that processes text in chunks for lower latency
 pub struct StreamingSynthesizer {
     daemon_client: DaemonClient,
     text_splitter: TextSplitter,
@@ -21,7 +20,6 @@ impl StreamingSynthesizer {
         })
     }
 
-    /// Synthesize text with streaming playback
     pub async fn synthesize_streaming(
         &mut self,
         text: &str,
@@ -56,12 +54,9 @@ impl StreamingSynthesizer {
     }
 }
 
-/// Text splitter for breaking text into synthesizable segments
 #[derive(Debug, Clone)]
 pub struct TextSplitter {
-    /// Sentence-ending punctuation marks
     delimiters: Vec<char>,
-    /// Maximum segment length
     max_length: usize,
 }
 
@@ -75,7 +70,6 @@ impl Default for TextSplitter {
 }
 
 impl TextSplitter {
-    /// Split text into segments suitable for streaming synthesis
     pub fn split(&self, text: &str) -> Vec<String> {
         let mut segments = Vec::new();
         let mut current_segment = String::new();

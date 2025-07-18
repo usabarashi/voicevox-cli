@@ -54,7 +54,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Find daemon processes for the current user
 pub fn find_daemon_processes() -> Result<Vec<u32>> {
     match process::Command::new("pgrep")
         .arg("-f")

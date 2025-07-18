@@ -31,7 +31,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 })
                 .as_object()
-                .unwrap()
+                .unwrap_or(&serde_json::Map::new())
                 .clone(),
                 required: Some(vec!["text".to_string(), "style_id".to_string()]),
             },
@@ -52,7 +52,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 })
                 .as_object()
-                .unwrap()
+                .unwrap_or(&serde_json::Map::new())
                 .clone(),
                 required: None,
             },

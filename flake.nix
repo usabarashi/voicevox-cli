@@ -318,6 +318,10 @@
             type = "app";
             program = "${voicevox-cli}/bin/voicevox-daemon";
           };
+          voicevox-mcp-server = {
+            type = "app";
+            program = "${voicevox-cli}/bin/voicevox-mcp-server";
+          };
 
           # CI Task Runner - All checks in one command
           ci = {

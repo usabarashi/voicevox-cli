@@ -87,7 +87,9 @@ impl TextSplitter {
             if self.delimiters.contains(&ch) {
                 while let Some(&next_ch) = chars.peek() {
                     if self.delimiters.contains(&next_ch) {
-                        current_segment.push(chars.next().unwrap());
+                        if let Some(next_ch) = chars.next() {
+                            current_segment.push(next_ch);
+                        }
                     } else {
                         break;
                     }

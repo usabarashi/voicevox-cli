@@ -14,47 +14,60 @@ pub async fn run_mcp_server() -> Result<()> {
     let reader = BufReader::new(stdin);
     let mut lines = reader.lines();
 
-    while let Some(line) = lines.next_line().await? {
-        if line.trim().is_empty() {
-            continue;
-        }
+    let mut shutdown = tokio::spawn(async {
+        let _ = tokio::signal::ctrl_c().await;
+    });
 
-        let raw_request: Value = match serde_json::from_str(&line) {
-            Ok(req) => req,
-            Err(_) => {
-                let id = serde_json::from_str::<Value>(&line)
-                    .ok()
-                    .and_then(|v| v.get("id").cloned())
-                    .unwrap_or(Value::Number(serde_json::Number::from(0)));
-                let error_response =
-                    JsonRpcResponse::error(id, PARSE_ERROR, "Parse error".to_string());
-                stdout
-                    .write_all(serde_json::to_string(&error_response)?.as_bytes())
-                    .await?;
-                stdout.write_all(b"\n").await?;
-                stdout.flush().await?;
-                continue;
-            }
-        };
+    loop {
+        tokio::select! {
+            line = lines.next_line() => {
+                match line? {
+                    Some(line) if !line.trim().is_empty() => {
+                        let raw_request: Value = match serde_json::from_str(&line) {
+                            Ok(req) => req,
+                            Err(_) => {
+                                let id = serde_json::from_str::<Value>(&line)
+                                    .ok()
+                                    .and_then(|v| v.get("id").cloned())
+                                    .unwrap_or(Value::Number(serde_json::Number::from(0)));
+                                let error_response =
+                                    JsonRpcResponse::error(id, PARSE_ERROR, "Parse error".to_string());
+                                if let Ok(response_str) = serde_json::to_string(&error_response) {
+                                    let _ = stdout.write_all(response_str.as_bytes()).await;
+                                    let _ = stdout.write_all(b"\n").await;
+                                    let _ = stdout.flush().await;
+                                }
+                                continue;
+                            }
+                        };
 
-        if raw_request.get("method").is_some() {
-            if let Some(response) = handle_request(raw_request).await {
-                let response_str = serde_json::to_string(&response)?;
-                stdout.write_all(response_str.as_bytes()).await?;
-                stdout.write_all(b"\n").await?;
-                stdout.flush().await?;
+                        if raw_request.get("method").is_some() {
+                            if let Some(response) = handle_request(raw_request).await {
+                                if let Ok(response_str) = serde_json::to_string(&response) {
+                                    let _ = stdout.write_all(response_str.as_bytes()).await;
+                                    let _ = stdout.write_all(b"\n").await;
+                                    let _ = stdout.flush().await;
+                                }
+                            }
+                        } else {
+                            let id = raw_request
+                                .get("id")
+                                .cloned()
+                                .unwrap_or(Value::Number(serde_json::Number::from(0)));
+                            let response =
+                                JsonRpcResponse::error(id, INVALID_REQUEST, "Invalid request".to_string());
+                            if let Ok(response_str) = serde_json::to_string(&response) {
+                                let _ = stdout.write_all(response_str.as_bytes()).await;
+                                let _ = stdout.write_all(b"\n").await;
+                                let _ = stdout.flush().await;
+                            }
+                        }
+                    }
+                    None => break,
+                    _ => continue,
+                }
             }
-        } else {
-            let id = raw_request
-                .get("id")
-                .cloned()
-                .unwrap_or(Value::Number(serde_json::Number::from(0)));
-            let response =
-                JsonRpcResponse::error(id, INVALID_REQUEST, "Invalid request".to_string());
-            let response_str = serde_json::to_string(&response)?;
-            stdout.write_all(response_str.as_bytes()).await?;
-            stdout.write_all(b"\n").await?;
-            stdout.flush().await?;
+            _ = &mut shutdown => break,
         }
     }
 
@@ -79,10 +92,14 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                 },
             };
 
-            Some(JsonRpcResponse::success(
-                id,
-                serde_json::to_value(result).unwrap(),
-            ))
+            match serde_json::to_value(result) {
+                Ok(value) => Some(JsonRpcResponse::success(id, value)),
+                Err(_) => Some(JsonRpcResponse::error(
+                    id,
+                    INTERNAL_ERROR,
+                    "Failed to serialize response".to_string(),
+                )),
+            }
         }
         "notifications/initialized" => None,
         "tools/list" => {
@@ -90,10 +107,14 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
             let result = ToolsListResult {
                 tools: get_tool_definitions(),
             };
-            Some(JsonRpcResponse::success(
-                id,
-                serde_json::to_value(result).unwrap(),
-            ))
+            match serde_json::to_value(result) {
+                Ok(value) => Some(JsonRpcResponse::success(id, value)),
+                Err(_) => Some(JsonRpcResponse::error(
+                    id,
+                    INTERNAL_ERROR,
+                    "Failed to serialize response".to_string(),
+                )),
+            }
         }
         "tools/call" => {
             let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
@@ -112,10 +133,14 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                     match tool_name {
                         "text_to_speech" => {
                             match handlers::handle_text_to_speech(arguments).await {
-                                Ok(result) => Some(JsonRpcResponse::success(
-                                    id.clone(),
-                                    serde_json::to_value(result).unwrap(),
-                                )),
+                                Ok(result) => match serde_json::to_value(result) {
+                                    Ok(value) => Some(JsonRpcResponse::success(id.clone(), value)),
+                                    Err(_) => Some(JsonRpcResponse::error(
+                                        id.clone(),
+                                        INTERNAL_ERROR,
+                                        "Failed to serialize response".to_string(),
+                                    )),
+                                },
                                 Err(e) => {
                                     let error_result = ToolCallResult {
                                         content: vec![ToolContent {
@@ -124,18 +149,28 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                                         }],
                                         is_error: Some(true),
                                     };
-                                    Some(JsonRpcResponse::success(
-                                        id.clone(),
-                                        serde_json::to_value(error_result).unwrap(),
-                                    ))
+                                    match serde_json::to_value(error_result) {
+                                        Ok(value) => {
+                                            Some(JsonRpcResponse::success(id.clone(), value))
+                                        }
+                                        Err(_) => Some(JsonRpcResponse::error(
+                                            id.clone(),
+                                            INTERNAL_ERROR,
+                                            "Failed to serialize error response".to_string(),
+                                        )),
+                                    }
                                 }
                             }
                         }
                         "get_voices" => match handlers::handle_get_voices(arguments).await {
-                            Ok(result) => Some(JsonRpcResponse::success(
-                                id.clone(),
-                                serde_json::to_value(result).unwrap(),
-                            )),
+                            Ok(result) => match serde_json::to_value(result) {
+                                Ok(value) => Some(JsonRpcResponse::success(id.clone(), value)),
+                                Err(_) => Some(JsonRpcResponse::error(
+                                    id.clone(),
+                                    INTERNAL_ERROR,
+                                    "Failed to serialize response".to_string(),
+                                )),
+                            },
                             Err(e) => {
                                 let error_result = ToolCallResult {
                                     content: vec![ToolContent {
@@ -144,10 +179,14 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                                     }],
                                     is_error: Some(true),
                                 };
-                                Some(JsonRpcResponse::success(
-                                    id.clone(),
-                                    serde_json::to_value(error_result).unwrap(),
-                                ))
+                                match serde_json::to_value(error_result) {
+                                    Ok(value) => Some(JsonRpcResponse::success(id.clone(), value)),
+                                    Err(_) => Some(JsonRpcResponse::error(
+                                        id.clone(),
+                                        INTERNAL_ERROR,
+                                        "Failed to serialize error response".to_string(),
+                                    )),
+                                }
                             }
                         },
                         _ => Some(JsonRpcResponse::error(

@@ -1,10 +1,16 @@
 use anyhow::{anyhow, Context, Result};
+use futures_util::{SinkExt, StreamExt};
 use rodio::{OutputStream, Sink};
 use serde::Deserialize;
 use serde_json::Value;
+use tokio::net::UnixStream;
+use tokio::time::{timeout, Duration as TokioDuration};
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
+use crate::ipc::{DaemonRequest, OwnedResponse};
 use crate::mcp::types::{ToolCallResult, ToolContent};
+use crate::paths::get_socket_path;
 use crate::synthesis::StreamingSynthesizer;
 use crate::voice::Speaker;
 
@@ -73,9 +79,18 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
             is_error: Some(false),
         })
     } else {
-        let mut client = DaemonClient::new()
-            .await
-            .context("Failed to connect to VOICEVOX daemon. Is it running?")?;
+        let mut client = match DaemonClient::new().await {
+            Ok(client) => client,
+            Err(e) => {
+                return Ok(ToolCallResult {
+                    content: vec![ToolContent {
+                        content_type: "text".to_string(),
+                        text: format!("Failed to connect to VOICEVOX daemon: {}", e),
+                    }],
+                    is_error: Some(true),
+                });
+            }
+        };
 
         let wav_data = client
             .synthesize(&params.text, params.style_id)
@@ -100,18 +115,14 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
 }
 
 pub async fn handle_get_voices(arguments: Value) -> Result<ToolCallResult> {
-    use crate::ipc::{DaemonRequest, OwnedResponse};
-    use crate::paths::get_socket_path;
-    use futures_util::{SinkExt, StreamExt};
-    use tokio::net::UnixStream;
-    use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
-
     let params: GetVoicesParams =
         serde_json::from_value(arguments).context("Invalid parameters for get_voices")?;
 
     let socket_path = get_socket_path();
-    let stream = UnixStream::connect(&socket_path)
+    let connect_timeout = TokioDuration::from_secs(5);
+    let stream = timeout(connect_timeout, UnixStream::connect(&socket_path))
         .await
+        .map_err(|_| anyhow!("Connection timeout after 5 seconds"))?
         .context("Failed to connect to VOICEVOX daemon. Is it running?")?;
 
     let (reader, writer) = stream.into_split();

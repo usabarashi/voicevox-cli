@@ -85,7 +85,7 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
                 return Ok(ToolCallResult {
                     content: vec![ToolContent {
                         content_type: "text".to_string(),
-                        text: format!("Failed to connect to VOICEVOX daemon: {}", e),
+                        text: format!("Failed to connect to VOICEVOX daemon: {e}"),
                     }],
                     is_error: Some(true),
                 });

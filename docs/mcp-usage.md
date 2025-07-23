@@ -48,7 +48,7 @@ Converts Japanese text to speech (TTS) and plays it on the server.
 }
 ```
 
-### 2. `get_voices`
+### 2. `list_voice_styles`
 
 Retrieves available voices with optional filtering.
 
@@ -62,7 +62,7 @@ Retrieves available voices with optional filtering.
   "jsonrpc": "2.0",
   "method": "tools/call",
   "params": {
-    "name": "get_voices",
+    "name": "list_voice_styles",
     "arguments": {
       "speaker_name": "ずんだもん"
     }
@@ -103,5 +103,5 @@ Streaming is recommended for longer texts to reduce perceived wait time.
 
 Common errors:
 - "Failed to connect to daemon": Start the VOICEVOX daemon first
-- "Invalid style_id": Use `get_voices` to see available style IDs
+- "Invalid style_id": Use `list_voice_styles` to see available style IDs
 - "Audio device not available": Check system audio settings

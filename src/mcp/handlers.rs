@@ -33,7 +33,7 @@ fn default_streaming() -> bool {
 }
 
 #[derive(Debug, Deserialize)]
-struct GetVoicesParams {
+struct ListVoiceStylesParams {
     speaker_name: Option<String>,
     style_name: Option<String>,
 }
@@ -114,9 +114,9 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
     }
 }
 
-pub async fn handle_get_voices(arguments: Value) -> Result<ToolCallResult> {
-    let params: GetVoicesParams =
-        serde_json::from_value(arguments).context("Invalid parameters for get_voices")?;
+pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult> {
+    let params: ListVoiceStylesParams =
+        serde_json::from_value(arguments).context("Invalid parameters for list_voice_styles")?;
 
     let socket_path = get_socket_path();
     let connect_timeout = TokioDuration::from_secs(5);

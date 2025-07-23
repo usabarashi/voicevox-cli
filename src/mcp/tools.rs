@@ -37,8 +37,8 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             },
         },
         ToolDefinition {
-            name: "get_voices".to_string(),
-            description: "Get available voices with optional filtering".to_string(),
+            name: "list_voice_styles".to_string(),
+            description: "List available voice styles with optional filtering".to_string(),
             input_schema: ToolInputSchema {
                 schema_type: "object".to_string(),
                 properties: json!({

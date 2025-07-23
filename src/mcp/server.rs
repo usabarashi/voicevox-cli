@@ -162,33 +162,37 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                                 }
                             }
                         }
-                        "get_voices" => match handlers::handle_get_voices(arguments).await {
-                            Ok(result) => match serde_json::to_value(result) {
-                                Ok(value) => Some(JsonRpcResponse::success(id.clone(), value)),
-                                Err(_) => Some(JsonRpcResponse::error(
-                                    id.clone(),
-                                    INTERNAL_ERROR,
-                                    "Failed to serialize response".to_string(),
-                                )),
-                            },
-                            Err(e) => {
-                                let error_result = ToolCallResult {
-                                    content: vec![ToolContent {
-                                        content_type: "text".to_string(),
-                                        text: format!("Error getting voices: {e}"),
-                                    }],
-                                    is_error: Some(true),
-                                };
-                                match serde_json::to_value(error_result) {
+                        "list_voice_styles" => {
+                            match handlers::handle_list_voice_styles(arguments).await {
+                                Ok(result) => match serde_json::to_value(result) {
                                     Ok(value) => Some(JsonRpcResponse::success(id.clone(), value)),
                                     Err(_) => Some(JsonRpcResponse::error(
                                         id.clone(),
                                         INTERNAL_ERROR,
-                                        "Failed to serialize error response".to_string(),
+                                        "Failed to serialize response".to_string(),
                                     )),
+                                },
+                                Err(e) => {
+                                    let error_result = ToolCallResult {
+                                        content: vec![ToolContent {
+                                            content_type: "text".to_string(),
+                                            text: format!("Error getting voices: {e}"),
+                                        }],
+                                        is_error: Some(true),
+                                    };
+                                    match serde_json::to_value(error_result) {
+                                        Ok(value) => {
+                                            Some(JsonRpcResponse::success(id.clone(), value))
+                                        }
+                                        Err(_) => Some(JsonRpcResponse::error(
+                                            id.clone(),
+                                            INTERNAL_ERROR,
+                                            "Failed to serialize error response".to_string(),
+                                        )),
+                                    }
                                 }
                             }
-                        },
+                        }
                         _ => Some(JsonRpcResponse::error(
                             id.clone(),
                             METHOD_NOT_FOUND,

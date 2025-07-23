@@ -46,7 +46,7 @@ Methods:
 
 Tools:
 - `text_to_speech`: Synthesize Japanese text with voice style ID
-- `get_voices`: List available voices with optional filtering
+- `list_voice_styles`: List available voice styles with optional filtering
 
 ## Usage
 

@@ -132,7 +132,7 @@ voicevox-mcp-server  # Communicates via stdin/stdout
 
 Available tools:
 - `text_to_speech`: Convert Japanese text to speech (TTS)
-- `get_voices`: List available voices
+- `list_voice_styles`: List available voice styles
 
 [See detailed MCP documentation](docs/mcp-usage.md)
 

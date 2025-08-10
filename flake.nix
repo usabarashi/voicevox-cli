@@ -179,26 +179,26 @@
           };
 
           doCheck = false;
-          
+
           # Pre-configure phase to setup build environment
           preConfigure = ''
             # Create ORT cache directory structure that build.rs expects
             export HOME=$PWD/build-home
             mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib
-            
+
             # Copy ONNX Runtime libraries to expected location
             if [ -d "${voicevoxResources}/voicevox_core/lib" ]; then
               cp -r ${voicevoxResources}/voicevox_core/lib/* \
                 $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib/
             fi
-            
+
             # Also create include directory
             mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include
             if [ -d "${voicevoxResources}/voicevox_core/include" ]; then
               cp -r ${voicevoxResources}/voicevox_core/include/* \
                 $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include/
             fi
-            
+
             # Create VERSION_NUMBER file that voicevox-ort-sys expects
             echo "1.17.3" > $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/VERSION_NUMBER
           '';
@@ -207,17 +207,17 @@
             # Rust tools
             rustfmt
             clippy
-            
+
             # Build tools
             pkg-config
             cmake
             gnumake
-            
+
             # Autotools (for dependencies)
             autoconf
             automake
             libtool
-            
+
             # Version control (required by some build scripts)
             git
             cacert
@@ -232,11 +232,11 @@
           preBuild = ''
             # Run full CI checks before build
             ${pkgs.bash}/bin/bash ${./scripts/ci.sh} --build-phase || exit 1
-            
+
             # Git SSL configuration
             export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            
+
             # OpenJTalk configuration
             # Used by build.rs to embed dictionary path at compile time
             export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
@@ -272,7 +272,7 @@
             # Install binaries
             cp ${voicevoxResources}/bin/voicevox-download $out/bin/
             install -m755 ${./scripts/voicevox-setup-models.sh} $out/bin/voicevox-setup-models
-            
+
             # Install OpenJTalk dictionary to standard location
             mkdir -p $out/share/voicevox
             if [ -d "${voicevoxResources}/openjtalk_dict" ]; then
@@ -294,6 +294,138 @@
             --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
             --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
           chmod +x $out/bin/voicevox-auto-setup
+        '';
+
+        # Serena index creation wrapper
+        serenaIndexWrapper = pkgs.writeShellScriptBin "serena-index" ''
+          # Get the directory where this script is invoked from
+          PROJECT_DIR="$(pwd)"
+
+          # Create fake home directory structure in project
+          export HOME="$PROJECT_DIR/.project-home"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export UV_CACHE_DIR="$HOME/.cache/uv"
+          export UV_TOOL_DIR="$HOME/.local/uv/tools"
+
+          # Create necessary directories
+          mkdir -p "$HOME/.serena/logs"
+          mkdir -p "$XDG_DATA_HOME/uv"
+          mkdir -p "$XDG_CACHE_HOME"
+
+          echo "Creating Serena index for project..."
+          echo "HOME: $HOME"
+          echo "Project: $PROJECT_DIR"
+
+          # Run serena index command with all paths pointing to project directory
+          exec ${pkgs.uv}/bin/uvx \
+              --cache-dir "$UV_CACHE_DIR" \
+              --from git+https://github.com/oraios/serena \
+              serena project index
+        '';
+
+        # Serena MCP server wrapper with project-local paths
+        serenaMcpWrapper = pkgs.writeShellScriptBin "serena-mcp-wrapper" ''
+          # Get the directory where this script is invoked from
+          PROJECT_DIR="$(pwd)"
+
+          # Create fake home directory structure in project
+          export HOME="$PROJECT_DIR/.project-home"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export UV_CACHE_DIR="$HOME/.cache/uv"
+          export UV_TOOL_DIR="$HOME/.local/uv/tools"
+
+          # Create necessary directories
+          mkdir -p "$HOME/.serena/logs"
+          mkdir -p "$XDG_DATA_HOME/uv"
+          mkdir -p "$XDG_CACHE_HOME"
+
+          echo "Starting Serena MCP server with project-local paths..."
+          echo "HOME: $HOME"
+          echo "Project: $PROJECT_DIR"
+
+          # Run serena with all paths pointing to project directory
+          exec ${pkgs.uv}/bin/uvx \
+              --cache-dir "$UV_CACHE_DIR" \
+              --from git+https://github.com/oraios/serena \
+              serena start-mcp-server \
+              --context ide-assistant \
+              --enable-web-dashboard false \
+              --project "$PROJECT_DIR"
+        '';
+
+        # Serena memory management wrapper
+        serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
+          # Get the directory where this script is invoked from
+          PROJECT_DIR="$(pwd)"
+
+          # Create fake home directory structure in project
+          export HOME="$PROJECT_DIR/.project-home"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export UV_CACHE_DIR="$HOME/.cache/uv"
+          export UV_TOOL_DIR="$HOME/.local/uv/tools"
+
+          # Create necessary directories
+          mkdir -p "$HOME/.serena/logs"
+          mkdir -p "$XDG_DATA_HOME/uv"
+          mkdir -p "$XDG_CACHE_HOME"
+
+          # Handle memory commands
+          case "$1" in
+            write)
+              if [ -z "$2" ] || [ -z "$3" ]; then
+                echo "Usage: serena-memory write <memory-name> <content>"
+                exit 1
+              fi
+              echo "Writing memory: $2"
+              exec ${pkgs.uv}/bin/uvx \
+                  --cache-dir "$UV_CACHE_DIR" \
+                  --from git+https://github.com/oraios/serena \
+                  serena memory write "$2" "$3"
+              ;;
+            read)
+              if [ -z "$2" ]; then
+                echo "Usage: serena-memory read <memory-name>"
+                exit 1
+              fi
+              exec ${pkgs.uv}/bin/uvx \
+                  --cache-dir "$UV_CACHE_DIR" \
+                  --from git+https://github.com/oraios/serena \
+                  serena memory read "$2"
+              ;;
+            list)
+              exec ${pkgs.uv}/bin/uvx \
+                  --cache-dir "$UV_CACHE_DIR" \
+                  --from git+https://github.com/oraios/serena \
+                  serena memory list
+              ;;
+            delete)
+              if [ -z "$2" ]; then
+                echo "Usage: serena-memory delete <memory-name>"
+                exit 1
+              fi
+              echo "Deleting memory: $2"
+              exec ${pkgs.uv}/bin/uvx \
+                  --cache-dir "$UV_CACHE_DIR" \
+                  --from git+https://github.com/oraios/serena \
+                  serena memory delete "$2"
+              ;;
+            *)
+              echo "Serena Memory Management"
+              echo ""
+              echo "Usage:"
+              echo "  serena-memory write <name> <content>  - Save a memory"
+              echo "  serena-memory read <name>             - Read a memory"
+              echo "  serena-memory list                    - List all memories"
+              echo "  serena-memory delete <name>           - Delete a memory"
+              echo ""
+              echo "Example:"
+              echo "  serena-memory write architecture 'This project uses daemon-client model'"
+              exit 1
+              ;;
+          esac
         '';
 
       in
@@ -322,9 +454,11 @@
           # CI Task Runner - All checks in one command
           ci = {
             type = "app";
-            program = toString (pkgs.writeShellScript "ci-runner" ''
-              exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
-            '');
+            program = toString (
+              pkgs.writeShellScript "ci-runner" ''
+                exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
+              ''
+            );
           };
         };
 
@@ -336,10 +470,16 @@
             rustfmt
             clippy
             rust-analyzer
-            
+
             # Build tools
             pkg-config
             cmake
+
+            # MCP
+            uv
+            serenaIndexWrapper
+            serenaMcpWrapper
+            serenaMemoryWrapper
           ];
 
           shellHook = ''
@@ -350,6 +490,9 @@
             echo "  cargo run --bin voicevox-say       - Run client"
             echo "  nix build                          - Build with Nix"
             echo "  nix run                            - Run voicevox-say directly"
+            echo "  serena-index                       - Create Serena index for the project"
+            echo "  serena-mcp-wrapper                 - Start Serena MCP server"
+            echo "  serena-memory                      - Manage project memories"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
           '';

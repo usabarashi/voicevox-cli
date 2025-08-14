@@ -78,9 +78,9 @@ impl Config {
     }
 
     fn config_path() -> Result<Option<PathBuf>> {
-        if let Ok(home) = std::env::var("HOME") {
-            let config_dir = Path::new(&home).join(".config").join("voicevox-cli");
-            Ok(Some(config_dir.join("config.toml")))
+        if let Some(config_dir) = dirs::config_dir() {
+            let app_config_dir = config_dir.join("voicevox-cli");
+            Ok(Some(app_config_dir.join("config.toml")))
         } else {
             Ok(None)
         }

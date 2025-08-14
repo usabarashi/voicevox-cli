@@ -33,12 +33,17 @@ async fn ensure_daemon_running() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("Failed to get executable directory"))?
                 .join("voicevox-daemon");
 
-            if let Ok(output) = Command::new(&daemon_path).arg("--start").output() {
-                if output.status.success() {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
+            let output = Command::new(&daemon_path).arg("--start").output()?;
+            if output.status.success() {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(anyhow::anyhow!(
+                    "Failed to start daemon. Stderr: {}",
+                    stderr
+                ))
             }
-            Ok(())
         }
     }
 }
@@ -52,7 +57,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let _ = ensure_daemon_running().await;
+    ensure_daemon_running().await?;
     voicevox_cli::mcp::run_mcp_server().await?;
 
     Ok(())

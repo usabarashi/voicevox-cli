@@ -121,6 +121,21 @@ voicevox-say --status             # Check installation status
 
 **Important**: This version is designed exclusively for Apple Silicon Macs with Nix package manager. NixOS, Linux, Intel Mac, and Windows are not supported.
 
+## MCP Server (AI Assistant Integration)
+
+Enable AI assistants to use VOICEVOX for Japanese speech synthesis:
+
+```bash
+# Start MCP server
+voicevox-mcp-server  # Communicates via stdin/stdout
+```
+
+Available tools:
+- `text_to_speech`: Convert Japanese text to speech (TTS)
+- `list_voice_styles`: List available voice styles
+
+[See detailed MCP documentation](docs/mcp-usage.md)
+
 ## Troubleshooting
 
 ### Common Issues

@@ -21,6 +21,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -28,11 +32,15 @@
       self,
       nixpkgs,
       flake-utils,
+      fenix,
     }:
     flake-utils.lib.eachSystem [ "aarch64-darwin" ] (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+
+        # Read rust-toolchain.toml to ensure consistency
+        rustToolchain = fenix.packages.${system}.stable;
 
         # VOICEVOX Core libraries for static linking
         voicevoxCore = pkgs.fetchurl {
@@ -149,7 +157,7 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage {
+        voicevox-cli = pkgs.rustPlatform.buildRustPackage rec {
           pname = "voicevox-cli";
           version = "0.1.0";
 
@@ -180,6 +188,9 @@
 
           doCheck = false;
 
+          # Force offline mode to ensure reproducible builds
+          CARGO_NET_OFFLINE = true;
+
           # Pre-configure phase to setup build environment
           preConfigure = ''
             # Create ORT cache directory structure that build.rs expects
@@ -204,9 +215,8 @@
           '';
 
           nativeBuildInputs = with pkgs; [
-            # Rust tools
-            rustfmt
-            clippy
+            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
+            rustToolchain.defaultToolchain
 
             # Build tools
             pkg-config
@@ -307,6 +317,7 @@
           export XDG_CACHE_HOME="$HOME/.cache"
           export UV_CACHE_DIR="$HOME/.cache/uv"
           export UV_TOOL_DIR="$HOME/.local/uv/tools"
+          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
 
           # Create necessary directories
           mkdir -p "$HOME/.serena/logs"
@@ -335,6 +346,7 @@
           export XDG_CACHE_HOME="$HOME/.cache"
           export UV_CACHE_DIR="$HOME/.cache/uv"
           export UV_TOOL_DIR="$HOME/.local/uv/tools"
+          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
 
           # Create necessary directories
           mkdir -p "$HOME/.serena/logs"
@@ -366,6 +378,7 @@
           export XDG_CACHE_HOME="$HOME/.cache"
           export UV_CACHE_DIR="$HOME/.cache/uv"
           export UV_TOOL_DIR="$HOME/.local/uv/tools"
+          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
 
           # Create necessary directories
           mkdir -p "$HOME/.serena/logs"
@@ -450,12 +463,18 @@
             type = "app";
             program = "${voicevox-cli}/bin/voicevox-daemon";
           };
+          voicevox-mcp-server = {
+            type = "app";
+            program = "${voicevox-cli}/bin/voicevox-mcp-server";
+          };
 
           # CI Task Runner - All checks in one command
           ci = {
             type = "app";
             program = toString (
               pkgs.writeShellScript "ci-runner" ''
+                # Pass the project directory to the CI script
+                export PROJECT_DIR="${toString ./.}"
                 exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
               ''
             );
@@ -463,13 +482,12 @@
         };
 
         devShells.default = pkgs.mkShell {
+          CARGO_HOME = "./.project-home/.cargo";
+
           buildInputs = with pkgs; [
-            # Rust toolchain
-            cargo
-            rustc
-            rustfmt
-            clippy
-            rust-analyzer
+            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
+            rustToolchain.defaultToolchain
+            cargo-audit
 
             # Build tools
             pkg-config
@@ -483,6 +501,9 @@
           ];
 
           shellHook = ''
+            # Create project-home directory for CARGO_HOME
+            mkdir -p .project-home
+            
             echo "VOICEVOX CLI Development Environment (Apple Silicon)"
             echo "Available commands:"
             echo "  cargo build --bin voicevox-say     - Build client"

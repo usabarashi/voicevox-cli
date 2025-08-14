@@ -11,9 +11,8 @@ pub struct StreamingSynthesizer {
 
 impl StreamingSynthesizer {
     pub async fn new() -> Result<Self> {
-        let daemon_client = DaemonClient::new().await?;
+        let daemon_client = DaemonClient::new_with_auto_start().await?;
         let text_splitter = TextSplitter::default();
-
         Ok(Self {
             daemon_client,
             text_splitter,

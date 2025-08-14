@@ -42,76 +42,85 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
     let params: SynthesizeParams =
         serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
 
-    if params.text.trim().is_empty() {
-        return Err(anyhow!("Text cannot be empty"));
-    }
+    (!params.text.trim().is_empty())
+        .then_some(())
+        .ok_or_else(|| anyhow!("Text cannot be empty"))?;
 
-    if params.rate < 0.5 || params.rate > 2.0 {
-        return Err(anyhow!("Rate must be between 0.5 and 2.0"));
-    }
+    (0.5..=2.0)
+        .contains(&params.rate)
+        .then_some(())
+        .ok_or_else(|| anyhow!("Rate must be between 0.5 and 2.0"))?;
 
     if params.streaming {
-        let (_stream, stream_handle) =
-            OutputStream::try_default().context("Failed to create audio output stream")?;
-        let sink = Sink::try_new(&stream_handle).context("Failed to create audio sink")?;
-
-        let mut synthesizer = StreamingSynthesizer::new()
-            .await
-            .context("Failed to create streaming synthesizer")?;
-
-        synthesizer
-            .synthesize_streaming(&params.text, params.style_id, &sink)
-            .await
-            .context("Streaming synthesis failed")?;
-
-        sink.sleep_until_end();
-        drop(_stream);
-
-        Ok(ToolCallResult {
-            content: vec![ToolContent {
-                content_type: "text".to_string(),
-                text: format!(
-                    "Successfully synthesized {} characters using style ID {} in streaming mode",
-                    params.text.len(),
-                    params.style_id
-                ),
-            }],
-            is_error: Some(false),
-        })
+        handle_streaming_synthesis(params).await
     } else {
-        let mut client = match DaemonClient::new().await {
-            Ok(client) => client,
-            Err(e) => {
-                return Ok(ToolCallResult {
-                    content: vec![ToolContent {
-                        content_type: "text".to_string(),
-                        text: format!("Failed to connect to VOICEVOX daemon: {e}"),
-                    }],
-                    is_error: Some(true),
-                });
-            }
-        };
-
-        let wav_data = client
-            .synthesize(&params.text, params.style_id)
-            .await
-            .context("Synthesis failed")?;
-
-        play_audio_from_memory(&wav_data).context("Failed to play audio")?;
-
-        Ok(ToolCallResult {
-            content: vec![ToolContent {
-                content_type: "text".to_string(),
-                text: format!(
-                    "Successfully synthesized {} characters using style ID {} (audio size: {} bytes)",
-                    params.text.len(),
-                    params.style_id,
-                    wav_data.len()
-                ),
-            }],
-            is_error: Some(false),
-        })
+        handle_daemon_synthesis(params).await
     }
+}
+
+async fn handle_streaming_synthesis(params: SynthesizeParams) -> Result<ToolCallResult> {
+    let (_stream, stream_handle) =
+        OutputStream::try_default().context("Failed to create audio output stream")?;
+    let sink = Sink::try_new(&stream_handle).context("Failed to create audio sink")?;
+
+    let mut synthesizer = StreamingSynthesizer::new()
+        .await
+        .context("Failed to create streaming synthesizer")?;
+
+    synthesizer
+        .synthesize_streaming(&params.text, params.style_id, &sink)
+        .await
+        .context("Streaming synthesis failed")?;
+
+    sink.sleep_until_end();
+    drop(_stream);
+
+    Ok(ToolCallResult {
+        content: vec![ToolContent {
+            content_type: "text".to_string(),
+            text: format!(
+                "Successfully synthesized {} characters using style ID {} in streaming mode",
+                params.text.len(),
+                params.style_id
+            ),
+        }],
+        is_error: Some(false),
+    })
+}
+
+async fn handle_daemon_synthesis(params: SynthesizeParams) -> Result<ToolCallResult> {
+    let mut client = match DaemonClient::new_with_auto_start().await {
+        Ok(client) => client,
+        Err(e) => {
+            return Ok(ToolCallResult {
+                content: vec![ToolContent {
+                    content_type: "text".to_string(),
+                    text: format!("Failed to connect to VOICEVOX daemon: {e}"),
+                }],
+                is_error: Some(true),
+            });
+        }
+    };
+
+    let wav_data = client
+        .synthesize(&params.text, params.style_id)
+        .await
+        .context("Synthesis failed")?;
+
+    play_audio_from_memory(&wav_data).context("Failed to play audio")?;
+
+    Ok(ToolCallResult {
+        content: vec![ToolContent {
+            content_type: "text".to_string(),
+            text: format!(
+                "Successfully synthesized {} characters using style ID {} (audio size: {} bytes)",
+                params.text.len(),
+                params.style_id,
+                wav_data.len()
+            ),
+        }],
+        is_error: Some(false),
+    })
 }
 
 pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult> {

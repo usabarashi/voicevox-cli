@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 use std::time::Duration;
@@ -169,46 +168,9 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     Err(anyhow!("Failed to get speakers from daemon"))
 }
 
-pub async fn start_daemon_with_confirmation() -> Result<()> {
-    let socket_path = get_socket_path();
-
-    if UnixStream::connect(&socket_path).await.is_ok() {
-        return Ok(());
-    }
-
-    print!(
-        "VOICEVOX daemon is not running.
-Would you like to start the daemon automatically? [Y/n]: "
-    );
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-
-    if input.is_empty() || input == "y" || input == "yes" {
-        start_daemon_automatically().await
-    } else {
-        Err(anyhow!(
-            "Daemon startup declined by user. Use 'voicevox-daemon --start' to start manually."
-        ))
-    }
-}
-
-pub async fn start_daemon_if_needed() -> Result<()> {
-    let socket_path = get_socket_path();
-
-    if UnixStream::connect(&socket_path).await.is_ok() {
-        return Ok(());
-    }
-
-    start_daemon_automatically().await
-}
 async fn start_daemon_automatically() -> Result<()> {
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary();
-
-    println!("🔄 Starting VOICEVOX daemon automatically...");
 
     let output = ProcessCommand::new(&daemon_path)
         .args(["--start", "--detach"])
@@ -217,30 +179,30 @@ async fn start_daemon_automatically() -> Result<()> {
     match output {
         Ok(output) => {
             if output.status.success() {
-                tokio::time::sleep(Duration::from_millis(2000)).await;
+                // Poll for daemon readiness with exponential backoff
+                let max_retries = 10;
+                let mut retry_delay = Duration::from_millis(100);
 
-                match UnixStream::connect(&socket_path).await {
-                    Ok(_) => {
-                        println!("✅ VOICEVOX daemon started successfully");
-                        Ok(())
-                    }
-                    Err(_) => {
-                        eprintln!("❌ Daemon started but not responding on socket");
-                        Err(anyhow!("Daemon not responding after startup"))
+                for attempt in 0..max_retries {
+                    match UnixStream::connect(&socket_path).await {
+                        Ok(_) => return Ok(()),
+                        Err(_) if attempt < max_retries - 1 => {
+                            tokio::time::sleep(retry_delay).await;
+                            retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
+                        }
+                        Err(_) => {}
                     }
                 }
+
+                Err(anyhow!(
+                    "Daemon not responding after {} attempts",
+                    max_retries
+                ))
             } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                if !stderr.is_empty() {
-                    eprintln!("Daemon startup error: {stderr}");
-                }
                 Err(anyhow!("Daemon failed to start"))
             }
         }
-        Err(e) => {
-            eprintln!("❌ Failed to execute daemon: {e}");
-            Err(anyhow!("Failed to execute daemon: {e}"))
-        }
+        Err(e) => Err(anyhow!("Failed to execute daemon: {e}")),
     }
 }
 
@@ -259,6 +221,51 @@ impl DaemonClient {
         })?;
 
         Ok(Self { stream })
+    }
+
+    /// Creates a new DaemonClient with automatic daemon startup if not running.
+    ///
+    /// This method attempts to connect to an existing daemon first. If the connection
+    /// fails, it checks for available models and automatically starts the daemon
+    /// without user interaction.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(DaemonClient)` - Successfully connected to daemon (existing or newly started)
+    /// * `Err` - No models available or daemon startup failed
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// * No VOICEVOX models are found in the models directory
+    /// * The daemon fails to start
+    /// * The daemon starts but doesn't respond to connections
+    ///
+    /// # Note
+    ///
+    /// This is a non-interactive method suitable for use in automated environments
+    /// like MCP servers or streaming synthesizers. For interactive CLI use, consider
+    /// using `new()` with appropriate user prompts.
+    pub async fn new_with_auto_start() -> Result<Self> {
+        let socket_path = get_socket_path();
+        match UnixStream::connect(&socket_path).await {
+            Ok(stream) => Ok(Self { stream }),
+            Err(_) => {
+                crate::voice::has_available_models()
+                    .then_some(())
+                    .ok_or_else(|| anyhow!(
+                        "No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory."
+                    ))?;
+                start_daemon_automatically().await?;
+                let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+                    anyhow!(
+                        "Daemon started but failed to connect at {}: {e}",
+                        socket_path.display()
+                    )
+                })?;
+                Ok(Self { stream })
+            }
+        }
     }
 
     pub async fn synthesize(&mut self, text: &str, style_id: u32) -> Result<Vec<u8>> {

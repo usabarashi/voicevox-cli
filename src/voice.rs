@@ -112,6 +112,31 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     Ok(result)
 }
 
+/// Checks if any VOICEVOX models are available in the models directory.
+///
+/// This function scans the models directory for `.vvm` files and returns
+/// `true` if at least one model is found, `false` otherwise.
+///
+/// # Returns
+///
+/// * `true` - At least one voice model is available
+/// * `false` - No models found or error occurred during scanning
+///
+/// # Example
+///
+/// ```no_run
+/// if has_available_models() {
+///     println!("Models are available");
+/// } else {
+///     println!("Please download models first");
+/// }
+/// ```
+pub fn has_available_models() -> bool {
+    scan_available_models()
+        .map(|models| !models.is_empty())
+        .unwrap_or(false)
+}
+
 fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Ok(Vec::new());

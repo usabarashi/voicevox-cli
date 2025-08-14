@@ -2,10 +2,11 @@ use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
-use voicevox_cli::client::daemon_client::start_daemon_with_confirmation;
-use voicevox_cli::client::*;
+use voicevox_cli::client::{
+    daemon_mode, ensure_models_available, get_input_text, list_speakers_daemon,
+    play_audio_from_memory, DaemonClient,
+};
 use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
@@ -37,37 +38,39 @@ async fn try_daemon_with_retry(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    let initial_result = daemon_mode(
-        text,
-        style_id,
-        options.clone(),
-        output_file,
-        quiet,
-        socket_path,
-    )
-    .await;
+    let has_models = voicevox_cli::paths::find_models_dir().is_ok();
+    let daemon_running = tokio::net::UnixStream::connect(socket_path).await.is_ok();
+    match (has_models, daemon_running) {
+        (false, false) => {
+            if !quiet {
+                println!("🎭 Voice models not found. Setting up VOICEVOX...");
+            }
+            ensure_models_available().await?;
+            if !quiet {
+                println!("🔄 Starting VOICEVOX daemon...");
+            }
+            let _ = DaemonClient::new_with_auto_start().await?; // Auto-start daemon
+            daemon_mode(text, style_id, options, output_file, quiet, socket_path).await
+        }
 
-    if initial_result.is_ok() {
-        return Ok(());
+        (false, true) => {
+            if !quiet {
+                println!("⚠️ Daemon is running but models not found. Setting up models...");
+            }
+            ensure_models_available().await?;
+            daemon_mode(text, style_id, options, output_file, quiet, socket_path).await
+        }
+
+        (true, false) => {
+            if !quiet {
+                println!("🔄 Starting VOICEVOX daemon...");
+            }
+            let _ = DaemonClient::new_with_auto_start().await?; // Auto-start daemon
+            daemon_mode(text, style_id, options, output_file, quiet, socket_path).await
+        }
+
+        (true, true) => daemon_mode(text, style_id, options, output_file, quiet, socket_path).await,
     }
-
-    let error = initial_result.unwrap_err();
-    let error_msg = error.to_string();
-
-    if !error_msg.contains("Failed to connect to daemon")
-        && !error_msg.contains("Daemon connection timeout")
-    {
-        return Err(error);
-    }
-
-    if voicevox_cli::paths::find_models_dir_client().is_err() && !quiet {
-        println!("🎭 Voice models not found. Setting up VOICEVOX...");
-        ensure_models_available().await?;
-    }
-
-    start_daemon_with_confirmation().await?;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    daemon_mode(text, style_id, options, output_file, quiet, socket_path).await
 }
 
 async fn standalone_mode(
@@ -76,7 +79,7 @@ async fn standalone_mode(
     output_file: Option<&String>,
     quiet: bool,
 ) -> Result<()> {
-    if voicevox_cli::paths::find_models_dir_client().is_err() {
+    if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
             println!("🎭 Voice models not found. Setting up VOICEVOX...");
         }

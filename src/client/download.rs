@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
-use crate::paths::get_default_voicevox_dir;
+use crate::paths::{find_models_dir, get_default_voicevox_dir};
 
 /// Launches VOICEVOX downloader for voice models with direct user interaction
 pub async fn launch_downloader_for_user() -> Result<()> {
@@ -159,10 +159,23 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
     }
 }
 
+/// Ensures VOICEVOX voice models are available, prompting for download if needed.
+///
+/// This function checks if voice models are already installed. If not, it prompts
+/// the user interactively to download them. The user must accept the VOICEVOX
+/// license terms for each voice character.
+///
+/// # Returns
+///
+/// * `Ok(())` - Models are available or successfully downloaded
+/// * `Err` - User declined download or download failed
+///
+/// # Note
+///
+/// This function requires user interaction and should not be used in
+/// non-interactive environments (e.g., MCP server, automated scripts).
 pub async fn ensure_models_available() -> Result<()> {
-    use crate::paths::find_models_dir_client;
-
-    if find_models_dir_client().is_ok() {
+    if find_models_dir().is_ok() {
         return Ok(());
     }
 

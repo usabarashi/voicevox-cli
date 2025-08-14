@@ -11,6 +11,7 @@ VOICEVOX CLI - Command-line text-to-speech tool using VOICEVOX Core 0.16.0.
 - Client-server model with Unix socket IPC
 - Dynamic VVM model loading per request
 - MCP server for AI assistant integration
+- Automatic daemon startup with exponential backoff polling (100ms-1s, max 10 retries)
 
 ## Structure
 

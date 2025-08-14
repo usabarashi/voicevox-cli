@@ -38,7 +38,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        
+
         # Read rust-toolchain.toml to ensure consistency
         rustToolchain = fenix.packages.${system}.stable;
 
@@ -317,6 +317,7 @@
           export XDG_CACHE_HOME="$HOME/.cache"
           export UV_CACHE_DIR="$HOME/.cache/uv"
           export UV_TOOL_DIR="$HOME/.local/uv/tools"
+          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
 
           # Create necessary directories
           mkdir -p "$HOME/.serena/logs"
@@ -345,6 +346,7 @@
           export XDG_CACHE_HOME="$HOME/.cache"
           export UV_CACHE_DIR="$HOME/.cache/uv"
           export UV_TOOL_DIR="$HOME/.local/uv/tools"
+          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
 
           # Create necessary directories
           mkdir -p "$HOME/.serena/logs"
@@ -376,6 +378,7 @@
           export XDG_CACHE_HOME="$HOME/.cache"
           export UV_CACHE_DIR="$HOME/.cache/uv"
           export UV_TOOL_DIR="$HOME/.local/uv/tools"
+          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
 
           # Create necessary directories
           mkdir -p "$HOME/.serena/logs"
@@ -470,6 +473,8 @@
             type = "app";
             program = toString (
               pkgs.writeShellScript "ci-runner" ''
+                # Pass the project directory to the CI script
+                export PROJECT_DIR="${toString ./.}"
                 exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
               ''
             );
@@ -477,9 +482,12 @@
         };
 
         devShells.default = pkgs.mkShell {
+          CARGO_HOME = "./.project-home/.cargo";
+
           buildInputs = with pkgs; [
             # Use fenix-provided rust toolchain that matches rust-toolchain.toml
             rustToolchain.defaultToolchain
+            cargo-audit
 
             # Build tools
             pkg-config
@@ -493,6 +501,9 @@
           ];
 
           shellHook = ''
+            # Create project-home directory for CARGO_HOME
+            mkdir -p .project-home
+            
             echo "VOICEVOX CLI Development Environment (Apple Silicon)"
             echo "Available commands:"
             echo "  cargo build --bin voicevox-say     - Build client"

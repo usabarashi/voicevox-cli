@@ -42,7 +42,7 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
     exit 1
   fi
 else
-  nix develop --command cargo ci-fmt
+  nix develop --command cargo fmt --check
 fi
 
 echo ""
@@ -50,7 +50,7 @@ echo "🧹 Running clippy analysis..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
   cargo clippy --all-targets --all-features -- -D warnings || (echo "❌ Clippy warnings detected. Fix them before building." && exit 1)
 else
-  nix develop --command cargo ci-clippy
+  nix develop --command cargo clippy --all-targets --all-features -- -D warnings
 fi
 
 echo ""
@@ -62,12 +62,21 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
   # During build, scripts are in the source directory
   SCRIPT_DIR="scripts"
 else
-  # Outside build, scripts are relative to ci.sh
-  SCRIPT_DIR="$(dirname "$0")"
+  # Use PROJECT_DIR if set by Nix, otherwise get from ci.sh location
+  if [[ -n "$PROJECT_DIR" ]]; then
+    SCRIPT_DIR="$PROJECT_DIR/scripts"
+  else
+    SCRIPT_DIR="$(dirname "$0")"
+  fi
 fi
 
 if [[ -d "$SCRIPT_DIR" ]]; then
-  test -f "$SCRIPT_DIR/voicevox-setup-models.sh" || (echo "❌ Missing voicevox-setup-models.sh" && exit 1)
+  # Check with more detailed error message
+  if [[ ! -f "$SCRIPT_DIR/voicevox-setup-models.sh" ]]; then
+    echo "❌ Missing voicevox-setup-models.sh in $SCRIPT_DIR"
+    ls -la "$SCRIPT_DIR" || echo "Directory contents unavailable"
+    exit 1
+  fi
   test -f "$SCRIPT_DIR/voicevox-auto-setup.sh" || (echo "❌ Missing voicevox-auto-setup.sh" && exit 1)
 
   # Validate all scripts

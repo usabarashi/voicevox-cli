@@ -99,7 +99,7 @@ async fn handle_streaming_synthesis(params: SynthesizeParams) -> Result<ToolCall
 }
 
 async fn handle_daemon_synthesis(params: SynthesizeParams) -> Result<ToolCallResult> {
-    let mut client = match DaemonClient::new_with_auto_start().await {
+    let mut client = match DaemonClient::new().await {
         Ok(client) => client,
         Err(e) => {
             return Ok(ToolCallResult {
@@ -142,7 +142,7 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
     let params: ListVoiceStylesParams =
         serde_json::from_value(arguments).context("Invalid parameters for list_voice_styles")?;
 
-    let mut client = DaemonClient::new_with_auto_start()
+    let mut client = DaemonClient::new()
         .await
         .context("Failed to connect to VOICEVOX daemon. Is it running?")?;
 

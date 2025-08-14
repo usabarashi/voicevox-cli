@@ -125,6 +125,8 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
 /// # Example
 ///
 /// ```no_run
+/// use voicevox_cli::voice::has_available_models;
+///
 /// if has_available_models() {
 ///     println!("Models are available");
 /// } else {

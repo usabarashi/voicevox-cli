@@ -120,14 +120,13 @@ fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
     let mut vvm_files = Vec::new();
 
     let entries = std::fs::read_dir(dir)
-        .map_err(|e| anyhow!("Failed to read directory {}: {}", dir.display(), e))?;
+        .map_err(|e| anyhow!("Failed to read directory {}: {e}", dir.display()))?;
 
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         if path.is_file() && path.extension().map(|ext| ext == "vvm").unwrap_or(false) {
             vvm_files.push(path);
         } else if path.is_dir() {
-            // Recursively search subdirectories
             vvm_files.extend(find_vvm_files(&path)?);
         }
     }
@@ -157,7 +156,7 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
     voicevox-say --speaker-id 3 "text"
     voicevox-say --model 3 "text"
 "#;
-        println!("{}", HELP_TEXT);
+        println!("{HELP_TEXT}");
         std::process::exit(0);
     }
 
@@ -166,7 +165,7 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
         .parse::<u32>()
         .ok()
         .filter(|&id| id > 0 && id < 1000)
-        .map(|style_id| (style_id, format!("Style ID {}", style_id)))
+        .map(|style_id| (style_id, format!("Style ID {style_id}")))
         .map(Ok)
         .unwrap_or_else(|| try_resolve_from_available_models(voice_input))
 }
@@ -174,8 +173,7 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
 fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
     let available_models = scan_available_models().map_err(|e| {
         anyhow!(
-            "Failed to scan available models: {}. Use --speaker-id for direct ID specification.",
-            e
+            "Failed to scan available models: {e}. Use --speaker-id for direct ID specification."
         )
     })?;
 
@@ -189,7 +187,7 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
         .parse::<u32>()
         .ok()
         .filter(|&model_id| available_models.iter().any(|m| m.model_id == model_id))
-        .map(|model_id| (model_id, format!("Model {} (Default Style)", model_id)))
+        .map(|model_id| (model_id, format!("Model {model_id} (Default Style)")))
         .map(Ok)
         .unwrap_or_else(|| {
             let model_suggestions = available_models
@@ -200,13 +198,11 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
                 .join(", ");
 
             Err(anyhow!(
-                "Voice '{}' not found. Available options:\n  \
+                "Voice '{voice_input}' not found. Available options:\n  \
                 Use --speaker-id N for direct style ID\n  \
-                Use --model N for model selection (e.g., {})\n  \
+                Use --model N for model selection (e.g., {model_suggestions})\n  \
                 Use --list-models to see all {} available models\n  \
                 Use --list-speakers for detailed speaker information",
-                voice_input,
-                model_suggestions,
                 available_models.len()
             ))
         })
@@ -237,14 +233,12 @@ pub async fn build_style_to_model_map_async(
     let mut style_map = HashMap::new();
     let models_dir = crate::paths::find_models_dir()?;
 
-    // First, get the initial state (no models loaded)
     let initial_speakers = core.get_speakers().unwrap_or_default();
     let initial_style_ids: HashSet<u32> = initial_speakers
         .iter()
         .flat_map(|s| s.styles.iter().map(|style| style.id))
         .collect();
 
-    // Process each model file in sorted order
     let mut model_files: Vec<_> = std::fs::read_dir(&models_dir)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
@@ -252,54 +246,8 @@ pub async fn build_style_to_model_map_async(
         .collect();
     model_files.sort();
 
-    // Keep track of cumulative style IDs
     let mut cumulative_style_ids = initial_style_ids.clone();
 
-    for path in &model_files {
-        // Extract model ID from filename (e.g., "1.vvm" -> 1)
-        let model_id = match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u32>().ok())
-        {
-            Some(id) => id,
-            None => continue,
-        };
-
-        // Temporarily load the model to get its metadata
-        match core.load_specific_model(&model_id.to_string()) {
-            Ok(_) => {
-                // Get speakers after loading this model
-                if let Ok(current_speakers) = core.get_speakers() {
-                    // Find new style IDs that this model introduced
-                    for speaker in current_speakers {
-                        for style in speaker.styles {
-                            if !cumulative_style_ids.contains(&style.id) {
-                                style_map.insert(style.id, model_id);
-                                cumulative_style_ids.insert(style.id);
-                            }
-                        }
-                    }
-                }
-
-                // Unload the model to save memory
-                if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
-                    eprintln!(
-                        "  ✗ Failed to unload model {} after mapping: {}",
-                        model_id, e
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("  ✗ Failed to load model {} for mapping: {}", model_id, e);
-            }
-        }
-    }
-
-    // Load all models to get complete speaker list
-    let mut all_speakers = Vec::new();
-
-    // Re-load all models to get the complete speaker list
     for path in &model_files {
         let model_id = match path
             .file_stem()
@@ -311,22 +259,59 @@ pub async fn build_style_to_model_map_async(
         };
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!(
-                "  ✗ Failed to reload model {} for speakers: {}",
-                model_id, e
-            );
+            eprintln!("  ✗ Failed to load model {model_id} for mapping: {e}");
+            continue;
+        }
+
+        let current_speakers = match core.get_speakers() {
+            Ok(speakers) => speakers,
+            Err(_) => {
+                if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+                    eprintln!("  ✗ Failed to unload model {model_id} after error: {e}");
+                }
+                continue;
+            }
+        };
+
+        for speaker in current_speakers {
+            for style in speaker.styles {
+                if cumulative_style_ids.contains(&style.id) {
+                    continue;
+                }
+                style_map.insert(style.id, model_id);
+                cumulative_style_ids.insert(style.id);
+            }
+        }
+
+        if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+            eprintln!("  ✗ Failed to unload model {model_id} after mapping: {e}");
         }
     }
 
-    // Get all speakers after loading all models
+    let mut all_speakers = Vec::new();
+
+    for path in &model_files {
+        let model_id = match path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            Some(id) => id,
+            None => continue,
+        };
+
+        if let Err(e) = core.load_specific_model(&model_id.to_string()) {
+            eprintln!("  ✗ Failed to reload model {model_id} for speakers: {e}");
+        }
+    }
+
     if let Ok(speakers) = core.get_speakers() {
         all_speakers = speakers;
     }
 
-    // Unload all models except the preloaded ones
     for path in &model_files {
         if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
-            eprintln!("  ✗ Failed to unload model after speaker collection: {}", e);
+            eprintln!("  ✗ Failed to unload model after speaker collection: {e}");
         }
     }
 

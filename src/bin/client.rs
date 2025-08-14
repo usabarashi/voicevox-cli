@@ -11,15 +11,14 @@ use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
 
-// Resolve voice ID from command line arguments with fallback chain
 fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
     matches
         .get_one::<u32>("speaker-id")
-        .map(|&id| (id, format!("Style ID {}", id)))
+        .map(|&id| (id, format!("Style ID {id}")))
         .or_else(|| {
             matches
                 .get_one::<u32>("model")
-                .map(|&id| (id, format!("Model {} (Default Style)", id)))
+                .map(|&id| (id, format!("Model {id} (Default Style)")))
         })
         .map(Ok)
         .or_else(|| {
@@ -38,7 +37,6 @@ async fn try_daemon_with_retry(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    // First attempt to connect to daemon
     let initial_result = daemon_mode(
         text,
         style_id,
@@ -49,35 +47,27 @@ async fn try_daemon_with_retry(
     )
     .await;
 
-    match initial_result {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            // Check if error is connection-related (daemon not running)
-            let is_connection_error = e.to_string().contains("Failed to connect to daemon")
-                || e.to_string().contains("Daemon connection timeout");
-
-            if is_connection_error {
-                // Check if models exist before starting daemon
-                if voicevox_cli::paths::find_models_dir_client().is_err() {
-                    // Models not found, this is likely first run
-                    if !quiet {
-                        println!("🎭 Voice models not found. Setting up VOICEVOX...");
-                    }
-                    ensure_models_available().await?;
-                }
-
-                // Try to start daemon
-                start_daemon_with_confirmation().await?;
-                tokio::time::sleep(Duration::from_secs(5)).await;
-
-                // Retry daemon mode after starting daemon
-                return daemon_mode(text, style_id, options, output_file, quiet, socket_path).await;
-            }
-
-            // For other errors, just propagate them
-            Err(e)
-        }
+    if initial_result.is_ok() {
+        return Ok(());
     }
+
+    let error = initial_result.unwrap_err();
+    let error_msg = error.to_string();
+
+    if !error_msg.contains("Failed to connect to daemon")
+        && !error_msg.contains("Daemon connection timeout")
+    {
+        return Err(error);
+    }
+
+    if voicevox_cli::paths::find_models_dir_client().is_err() && !quiet {
+        println!("🎭 Voice models not found. Setting up VOICEVOX...");
+        ensure_models_available().await?;
+    }
+
+    start_daemon_with_confirmation().await?;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    daemon_mode(text, style_id, options, output_file, quiet, socket_path).await
 }
 
 async fn standalone_mode(
@@ -86,7 +76,6 @@ async fn standalone_mode(
     output_file: Option<&String>,
     quiet: bool,
 ) -> Result<()> {
-    // Check for models before initializing core
     if voicevox_cli::paths::find_models_dir_client().is_err() {
         if !quiet {
             println!("🎭 Voice models not found. Setting up VOICEVOX...");
@@ -95,21 +84,19 @@ async fn standalone_mode(
     }
 
     let core = VoicevoxCore::new()?;
-    // In standalone mode, we need to load the specific model for the style
     let model_id = voicevox_cli::voice::get_model_for_voice_id(style_id)
-        .ok_or_else(|| anyhow!("No model found for style ID {}", style_id))?;
+        .ok_or_else(|| anyhow!("No model found for style ID {style_id}"))?;
     core.load_specific_model(&model_id.to_string())?;
 
     let wav_data = core.synthesize(text, style_id)?;
 
-    // Handle output
     match output_file {
         Some(file_path) => std::fs::write(file_path, &wav_data)?,
         None if !quiet => play_audio_from_memory(&wav_data).map_err(|e| {
-            eprintln!("Error: Audio playback failed: {}", e);
+            eprintln!("Error: Audio playback failed: {e}");
             e
         })?,
-        _ => {} // quiet mode with no output file
+        _ => {}
     }
 
     Ok(())
@@ -216,14 +203,14 @@ async fn main() -> Result<()> {
 
     if let Some(voice_name) = matches.get_one::<String>("voice") {
         if voice_name == "?" {
-            resolve_voice_dynamic("?")?; // This exits internally
+            resolve_voice_dynamic("?")?;
         }
     }
 
     if matches.get_flag("list-models") {
         println!("Scanning for available voice models...");
         let models = scan_available_models().unwrap_or_else(|e| {
-            eprintln!("Error scanning models: {}", e);
+            eprintln!("Error scanning models: {e}");
             std::process::exit(1);
         });
 
@@ -267,13 +254,13 @@ async fn main() -> Result<()> {
                                 .file_name()
                                 .unwrap_or_default()
                                 .to_string_lossy();
-                            format!("  Model {}: {} ({} KB)", model.model_id, filename, size_kb)
+                            format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
                         }
                         Err(_) => {
                             format!("  Model {} ({})", model.model_id, model.file_path.display())
                         }
                     };
-                    println!("{}", model_info);
+                    println!("{model_info}");
                 }
 
                 use voicevox_cli::paths::find_openjtalk_dict;
@@ -288,7 +275,7 @@ async fn main() -> Result<()> {
                 }
             }
             Err(e) => {
-                eprintln!("Error scanning models: {}", e);
+                eprintln!("Error scanning models: {e}");
             }
         }
         return Ok(());
@@ -307,21 +294,17 @@ async fn main() -> Result<()> {
         println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
 
-        // Load all available models for listing speakers
         let models = scan_available_models()?;
         for model in &models {
             if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {
-                println!("Warning: Failed to load model {}: {}", model.model_id, e);
+                println!("Warning: Failed to load model {}: {e}", model.model_id);
             }
         }
 
         println!("All available speakers and styles from loaded models:");
         let speakers = core.get_speakers()?;
 
-        // Build dynamic style-to-model mapping by scanning loaded models
         println!("Building style-to-model mapping...");
-        // For standalone mode, we can't easily determine exact mappings since all models are loaded
-        // Just create a simple mapping where style_id maps to itself
         let style_to_model: HashMap<u32, u32> = speakers
             .iter()
             .flat_map(|s| s.styles.iter().map(|style| (style.id, style.id)))
@@ -332,11 +315,11 @@ async fn main() -> Result<()> {
             for style in &speaker.styles {
                 let model_id = style_to_model.get(&style.id).copied().unwrap_or(style.id);
                 println!(
-                    "    {} (Model: {}, Style ID: {})",
-                    style.name, model_id, style.id
+                    "    {} (Model: {model_id}, Style ID: {})",
+                    style.name, style.id
                 );
                 if let Some(style_type) = &style.style_type {
-                    println!("        Type: {}", style_type);
+                    println!("        Type: {style_type}");
                 }
             }
             println!();
@@ -351,7 +334,6 @@ async fn main() -> Result<()> {
         ));
     }
 
-    // Voice resolution: speaker-id → model → voice-name → default
     let (style_id, _voice_description) = resolve_voice_from_args(&matches)?;
 
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
@@ -360,7 +342,7 @@ async fn main() -> Result<()> {
     let force_standalone = matches.get_flag("standalone");
 
     if !(0.5..=2.0).contains(&rate) {
-        return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {}", rate));
+        return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
     }
 
     let options = OwnedSynthesizeOptions {
@@ -368,7 +350,6 @@ async fn main() -> Result<()> {
         ..Default::default()
     };
 
-    // Try daemon mode first, regardless of model availability
     if !force_standalone {
         let socket_path = matches
             .get_one::<String>("socket-path")

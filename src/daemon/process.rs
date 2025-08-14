@@ -5,7 +5,6 @@ use std::process;
 
 pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
     if socket_path.exists() {
-        // Try to connect to existing daemon
         match tokio::net::UnixStream::connect(socket_path).await {
             Ok(_) => {
                 return Err(anyhow!(
@@ -16,7 +15,7 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
             Err(_) => {
                 println!("Removing stale socket file: {}", socket_path.display());
                 if let Err(e) = fs::remove_file(socket_path) {
-                    return Err(anyhow!("Failed to remove stale socket: {}", e));
+                    return Err(anyhow!("Failed to remove stale socket: {e}"));
                 }
             }
         }
@@ -48,7 +47,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
             }
         }
         Err(_) => {
-            // pgrep not available, continue anyway
             println!("Could not check for existing processes (pgrep not available)");
         }
     }
@@ -56,7 +54,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Find daemon processes for the current user
 pub fn find_daemon_processes() -> Result<Vec<u32>> {
     match process::Command::new("pgrep")
         .arg("-f")
@@ -82,6 +79,6 @@ pub fn find_daemon_processes() -> Result<Vec<u32>> {
                 Ok(vec![])
             }
         }
-        Err(_) => Ok(vec![]), // pgrep not available
+        Err(_) => Ok(vec![]),
     }
 }

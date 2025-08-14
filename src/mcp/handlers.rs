@@ -36,14 +36,30 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
     let params: SynthesizeParams =
         serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
 
-    (!params.text.trim().is_empty())
+    let text = params.text.trim();
+    (!text.is_empty())
         .then_some(())
         .ok_or_else(|| anyhow!("Text cannot be empty"))?;
+
+    const MAX_TEXT_LENGTH: usize = 10_000;
+    (text.len() <= MAX_TEXT_LENGTH)
+        .then_some(())
+        .ok_or_else(|| {
+            anyhow!(
+                "Text too long: {} characters (max: {})",
+                text.len(),
+                MAX_TEXT_LENGTH
+            )
+        })?;
 
     (0.5..=2.0)
         .contains(&params.rate)
         .then_some(())
         .ok_or_else(|| anyhow!("Rate must be between 0.5 and 2.0"))?;
+
+    (params.style_id <= 1000)
+        .then_some(())
+        .ok_or_else(|| anyhow!("Invalid style_id: {}", params.style_id))?;
 
     if params.streaming {
         handle_streaming_synthesis(params).await
@@ -176,4 +192,70 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
         }],
         is_error: Some(false),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_text_to_speech_empty_text() {
+        let args = json!({
+            "text": "",
+            "style_id": 3,
+            "streaming": false
+        });
+
+        let result = handle_text_to_speech(args).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Text cannot be empty"));
+    }
+
+    #[tokio::test]
+    async fn test_text_to_speech_text_too_long() {
+        let long_text = "あ".repeat(10_001);
+        let args = json!({
+            "text": long_text,
+            "style_id": 3,
+            "streaming": false
+        });
+
+        let result = handle_text_to_speech(args).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Text too long"));
+    }
+
+    #[tokio::test]
+    async fn test_text_to_speech_invalid_rate() {
+        let args = json!({
+            "text": "テスト",
+            "style_id": 3,
+            "rate": 3.0,
+            "streaming": false
+        });
+
+        let result = handle_text_to_speech(args).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Rate must be between 0.5 and 2.0"));
+    }
+
+    #[tokio::test]
+    async fn test_text_to_speech_invalid_style_id() {
+        let args = json!({
+            "text": "テスト",
+            "style_id": 1001,
+            "streaming": false
+        });
+
+        let result = handle_text_to_speech(args).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid style_id"));
+    }
 }

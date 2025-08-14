@@ -32,9 +32,10 @@ impl StreamingSynthesizer {
                 continue;
             }
 
+            let options = crate::ipc::OwnedSynthesizeOptions::default();
             let wav_data = self
                 .daemon_client
-                .synthesize(segment, style_id)
+                .synthesize(segment, style_id, options)
                 .await
                 .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
 

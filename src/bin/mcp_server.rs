@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use std::process::Command;
+use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use voicevox_cli::paths::get_socket_path;
 
@@ -33,7 +33,7 @@ async fn ensure_daemon_running() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("Failed to get executable directory"))?
                 .join("voicevox-daemon");
 
-            let output = Command::new(&daemon_path).arg("--start").output()?;
+            let output = Command::new(&daemon_path).arg("--start").output().await?;
             if output.status.success() {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 Ok(())

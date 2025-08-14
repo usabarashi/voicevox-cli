@@ -1,16 +1,10 @@
 use anyhow::{anyhow, Context, Result};
-use futures_util::{SinkExt, StreamExt};
 use rodio::{OutputStream, Sink};
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::net::UnixStream;
-use tokio::time::{timeout, Duration as TokioDuration};
-use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
-use crate::ipc::{DaemonRequest, OwnedResponse};
 use crate::mcp::types::{ToolCallResult, ToolContent};
-use crate::paths::get_socket_path;
 use crate::synthesis::StreamingSynthesizer;
 use crate::voice::Speaker;
 
@@ -102,8 +96,13 @@ async fn handle_daemon_synthesis(params: SynthesizeParams) -> Result<ToolCallRes
         }
     };
 
+    let options = crate::ipc::OwnedSynthesizeOptions {
+        rate: params.rate,
+        ..Default::default()
+    };
+
     let wav_data = client
-        .synthesize(&params.text, params.style_id)
+        .synthesize(&params.text, params.style_id, options)
         .await
         .context("Synthesis failed")?;
 
@@ -127,38 +126,11 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
     let params: ListVoiceStylesParams =
         serde_json::from_value(arguments).context("Invalid parameters for list_voice_styles")?;
 
-    let socket_path = get_socket_path();
-    let connect_timeout = TokioDuration::from_secs(5);
-    let stream = timeout(connect_timeout, UnixStream::connect(&socket_path))
+    let mut client = DaemonClient::new_with_auto_start()
         .await
-        .map_err(|_| anyhow!("Connection timeout after 5 seconds"))?
         .context("Failed to connect to VOICEVOX daemon. Is it running?")?;
 
-    let (reader, writer) = stream.into_split();
-    let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
-    let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
-
-    let request = DaemonRequest::ListSpeakers;
-    let request_data = bincode::serialize(&request)?;
-    framed_writer.send(request_data.into()).await?;
-
-    let speakers = if let Some(response_frame) = framed_reader.next().await {
-        let response_frame = response_frame?;
-        let response: OwnedResponse = bincode::deserialize(&response_frame)?;
-
-        match response {
-            OwnedResponse::SpeakersList { speakers } => speakers.into_owned(),
-            OwnedResponse::SpeakersListWithModels { speakers, .. } => speakers.into_owned(),
-            OwnedResponse::Error { message } => {
-                return Err(anyhow!("Daemon error: {message}"));
-            }
-            _ => {
-                return Err(anyhow!("Unexpected response from daemon"));
-            }
-        }
-    } else {
-        return Err(anyhow!("No response from daemon"));
-    };
+    let speakers = client.list_speakers().await?;
 
     let filtered_speakers: Vec<Speaker> = speakers
         .into_iter()

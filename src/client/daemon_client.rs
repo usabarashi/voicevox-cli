@@ -268,11 +268,16 @@ impl DaemonClient {
         }
     }
 
-    pub async fn synthesize(&mut self, text: &str, style_id: u32) -> Result<Vec<u8>> {
+    pub async fn synthesize(
+        &mut self,
+        text: &str,
+        style_id: u32,
+        options: OwnedSynthesizeOptions,
+    ) -> Result<Vec<u8>> {
         let request = OwnedRequest::Synthesize {
             text: Cow::Owned(text.to_string()),
             style_id,
-            options: OwnedSynthesizeOptions::default(),
+            options,
         };
 
         let request_data = bincode::serialize(&request)?;
@@ -304,6 +309,7 @@ impl DaemonClient {
             let response: OwnedResponse = bincode::deserialize(&response_data)?;
             match response {
                 OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
+                OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers.into_owned()),
                 OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
                 _ => Err(anyhow!("Unexpected response type")),
             }

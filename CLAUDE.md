@@ -17,21 +17,37 @@ VOICEVOX CLI - Command-line text-to-speech tool using VOICEVOX Core 0.16.0.
 
 ```
 src/
+├── lib.rs               # Library entry point
 ├── bin/
 │   ├── client.rs        # voicevox-say
 │   ├── daemon.rs        # voicevox-daemon
 │   └── mcp_server.rs    # voicevox-mcp-server
 ├── client/              # Client implementation
+│   ├── mod.rs           # Module definitions
+│   ├── audio.rs         # Audio playback
+│   ├── daemon_client.rs # Daemon client connection
+│   ├── download.rs      # Model downloader
+│   └── input.rs         # Input handling
 ├── daemon/              # Daemon implementation
+│   ├── mod.rs           # Module definitions
+│   ├── server.rs        # Unix socket server
+│   └── process.rs       # Process management
 ├── mcp/                 # MCP implementation
+│   ├── mod.rs           # Module definitions
 │   ├── server.rs        # JSON-RPC server
 │   ├── handlers.rs      # Tool handlers
 │   ├── tools.rs         # Tool definitions
 │   └── types.rs         # Protocol types
 ├── synthesis/           # Audio synthesis
+│   ├── mod.rs           # Module definitions
+│   └── streaming.rs     # Streaming synthesis
+├── core/                # Core functionality
+├── ipc/                 # IPC utilities
+├── config.rs            # Configuration
 ├── core.rs              # VOICEVOX Core wrapper
 ├── voice.rs             # Voice management
 ├── paths.rs             # Path utilities
+├── setup.rs             # Setup utilities
 └── ipc.rs               # IPC protocol
 ```
 

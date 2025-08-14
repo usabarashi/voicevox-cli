@@ -21,6 +21,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -28,11 +32,15 @@
       self,
       nixpkgs,
       flake-utils,
+      fenix,
     }:
     flake-utils.lib.eachSystem [ "aarch64-darwin" ] (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        
+        # Read rust-toolchain.toml to ensure consistency
+        rustToolchain = fenix.packages.${system}.stable;
 
         # VOICEVOX Core libraries for static linking
         voicevoxCore = pkgs.fetchurl {
@@ -149,7 +157,7 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage {
+        voicevox-cli = pkgs.rustPlatform.buildRustPackage rec {
           pname = "voicevox-cli";
           version = "0.1.0";
 
@@ -180,6 +188,9 @@
 
           doCheck = false;
 
+          # Force offline mode to ensure reproducible builds
+          CARGO_NET_OFFLINE = true;
+
           # Pre-configure phase to setup build environment
           preConfigure = ''
             # Create ORT cache directory structure that build.rs expects
@@ -204,9 +215,8 @@
           '';
 
           nativeBuildInputs = with pkgs; [
-            # Rust tools
-            rustfmt
-            clippy
+            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
+            rustToolchain.defaultToolchain
 
             # Build tools
             pkg-config
@@ -468,12 +478,8 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            # Rust toolchain
-            cargo
-            rustc
-            rustfmt
-            clippy
-            rust-analyzer
+            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
+            rustToolchain.defaultToolchain
 
             # Build tools
             pkg-config

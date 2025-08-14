@@ -69,7 +69,7 @@ fi
 if [[ -d "$SCRIPT_DIR" ]]; then
   test -f "$SCRIPT_DIR/voicevox-setup-models.sh" || (echo "❌ Missing voicevox-setup-models.sh" && exit 1)
   test -f "$SCRIPT_DIR/voicevox-auto-setup.sh" || (echo "❌ Missing voicevox-auto-setup.sh" && exit 1)
-  
+
   # Validate all scripts
   echo "Validating all scripts..."
   for script in "$SCRIPT_DIR"/*.sh; do

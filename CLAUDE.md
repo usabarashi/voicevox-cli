@@ -41,8 +41,6 @@ src/
 ├── synthesis/           # Audio synthesis
 │   ├── mod.rs           # Module definitions
 │   └── streaming.rs     # Streaming synthesis
-├── core/                # Core functionality
-├── ipc/                 # IPC utilities
 ├── config.rs            # Configuration
 ├── core.rs              # VOICEVOX Core wrapper
 ├── voice.rs             # Voice management

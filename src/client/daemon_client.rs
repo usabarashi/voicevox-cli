@@ -225,6 +225,33 @@ impl DaemonClient {
         Ok(Self { stream })
     }
 
+    pub async fn connect_with_retry() -> Result<Self> {
+        use crate::daemon::startup;
+
+        let mut last_error = None;
+        let mut retry_delay = startup::initial_retry_delay();
+
+        for attempt in 0..startup::MAX_CONNECT_ATTEMPTS {
+            match Self::new().await {
+                Ok(client) => return Ok(client),
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < startup::MAX_CONNECT_ATTEMPTS - 1 {
+                        tokio::time::sleep(retry_delay).await;
+                        retry_delay = (retry_delay * 2).min(startup::max_retry_delay());
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            anyhow!(
+                "Failed to connect to daemon after {} attempts",
+                startup::MAX_CONNECT_ATTEMPTS
+            )
+        }))
+    }
+
     /// Creates a new DaemonClient with automatic daemon startup if not running.
     ///
     /// This method attempts to connect to an existing daemon first. If the connection

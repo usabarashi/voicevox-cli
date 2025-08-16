@@ -16,8 +16,13 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> DaemonResult<
 async fn handle_existing_socket(socket_path: &PathBuf) -> DaemonResult<()> {
     match tokio::net::UnixStream::connect(socket_path).await {
         Ok(_) => {
-            let pids = find_daemon_processes().unwrap_or_default();
-            let pid = pids.first().copied().unwrap_or(0);
+            let pid = match find_daemon_processes() {
+                Ok(pids) => pids.first().copied().unwrap_or(0),
+                Err(e) => {
+                    eprintln!("Warning: Failed to find daemon processes: {}", e);
+                    0
+                }
+            };
             Err(DaemonError::AlreadyRunning { pid })
         }
         Err(_) => remove_stale_socket(socket_path),

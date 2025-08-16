@@ -83,27 +83,11 @@ impl TextSplitter {
             current_segment.push(ch);
 
             if self.delimiters.contains(&ch) {
-                while let Some(&next_ch) = chars.peek() {
-                    if self.delimiters.contains(&next_ch) {
-                        if let Some(next_ch) = chars.next() {
-                            current_segment.push(next_ch);
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
+                self.consume_consecutive_delimiters(&mut chars, &mut current_segment);
                 segments.push(current_segment.clone());
                 current_segment.clear();
             } else if current_segment.chars().count() >= self.max_length {
-                if let Some(break_pos) = self.find_break_position(&current_segment) {
-                    let (first, rest) = current_segment.split_at(break_pos);
-                    segments.push(first.to_string());
-                    current_segment = rest.to_string();
-                } else {
-                    segments.push(current_segment.clone());
-                    current_segment.clear();
-                }
+                self.handle_long_segment(&mut segments, &mut current_segment);
             }
         }
 
@@ -112,6 +96,32 @@ impl TextSplitter {
         }
 
         segments
+    }
+
+    fn consume_consecutive_delimiters(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        current_segment: &mut String,
+    ) {
+        while let Some(&next_ch) = chars.peek() {
+            if !self.delimiters.contains(&next_ch) {
+                break;
+            }
+            if let Some(next_ch) = chars.next() {
+                current_segment.push(next_ch);
+            }
+        }
+    }
+
+    fn handle_long_segment(&self, segments: &mut Vec<String>, current_segment: &mut String) {
+        if let Some(break_pos) = self.find_break_position(current_segment) {
+            let (first, rest) = current_segment.split_at(break_pos);
+            segments.push(first.to_string());
+            *current_segment = rest.to_string();
+        } else {
+            segments.push(current_segment.clone());
+            current_segment.clear();
+        }
     }
 
     fn find_break_position(&self, text: &str) -> Option<usize> {

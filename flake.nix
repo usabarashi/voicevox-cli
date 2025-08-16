@@ -368,24 +368,28 @@
 
         # Serena memory management wrapper
         serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
+          set -euo pipefail
+          
           ${serenaEnvSetup}
 
           # Handle memory commands
-          case "$1" in
+          case "''${1:-}" in
             write)
-              if [ -z "$2" ] || [ -z "$3" ]; then
-                echo "Usage: serena-memory write <memory-name> <content>"
+              if [ $# -lt 3 ]; then
+                echo "Error: write command requires at least 2 arguments" >&2
+                echo "Usage: serena-memory write <memory-name> <content>" >&2
                 exit 1
               fi
-              echo "Writing memory: $2"
-              # Shift twice to get all remaining args as content
               MEMORY_NAME="$2"
+              echo "Writing memory: $MEMORY_NAME"
+              # Shift twice to get all remaining args as content
               shift 2
               ${runSerenaCommand} memory write "$MEMORY_NAME" "$*"
               ;;
             read)
-              if [ -z "$2" ]; then
-                echo "Usage: serena-memory read <memory-name>"
+              if [ $# -lt 2 ]; then
+                echo "Error: read command requires 1 argument" >&2
+                echo "Usage: serena-memory read <memory-name>" >&2
                 exit 1
               fi
               ${runSerenaCommand} memory read "$2"
@@ -394,8 +398,9 @@
               ${runSerenaCommand} memory list
               ;;
             delete)
-              if [ -z "$2" ]; then
-                echo "Usage: serena-memory delete <memory-name>"
+              if [ $# -lt 2 ]; then
+                echo "Error: delete command requires 1 argument" >&2
+                echo "Usage: serena-memory delete <memory-name>" >&2
                 exit 1
               fi
               echo "Deleting memory: $2"

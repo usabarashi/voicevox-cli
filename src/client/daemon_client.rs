@@ -297,6 +297,22 @@ impl DaemonClient {
         }
     }
 
+    async fn send_request_and_receive_response(&mut self, request: OwnedRequest) -> Result<OwnedResponse> {
+        let request_data = bincode::serialize(&request)?;
+        {
+            let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
+            framed_writer.send(request_data.into()).await?;
+        }
+
+        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
+        if let Some(Ok(response_data)) = framed_reader.next().await {
+            let response: OwnedResponse = bincode::deserialize(&response_data)?;
+            Ok(response)
+        } else {
+            Err(anyhow!("No response from daemon"))
+        }
+    }
+
     pub async fn synthesize(
         &mut self,
         text: &str,
@@ -309,45 +325,23 @@ impl DaemonClient {
             options,
         };
 
-        let request_data = bincode::serialize(&request)?;
-        {
-            let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
-            framed_writer.send(request_data.into()).await?;
-        }
-
-        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
-        if let Some(Ok(response_data)) = framed_reader.next().await {
-            let response: OwnedResponse = bincode::deserialize(&response_data)?;
-            match response {
-                OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
-                OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {message}")),
-                _ => Err(anyhow!("Unexpected response type")),
-            }
-        } else {
-            Err(anyhow!("No response from daemon"))
+        let response = self.send_request_and_receive_response(request).await?;
+        match response {
+            OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
+            OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {message}")),
+            _ => Err(anyhow!("Unexpected response type")),
         }
     }
 
     pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
         let request = OwnedRequest::ListSpeakers;
-
-        let request_data = bincode::serialize(&request)?;
-        {
-            let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
-            framed_writer.send(request_data.into()).await?;
-        }
-
-        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
-        if let Some(Ok(response_data)) = framed_reader.next().await {
-            let response: OwnedResponse = bincode::deserialize(&response_data)?;
-            match response {
-                OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
-                OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers.into_owned()),
-                OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
-                _ => Err(anyhow!("Unexpected response type")),
-            }
-        } else {
-            Err(anyhow!("No response from daemon"))
+        
+        let response = self.send_request_and_receive_response(request).await?;
+        match response {
+            OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
+            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers.into_owned()),
+            OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
+            _ => Err(anyhow!("Unexpected response type")),
         }
     }
 }

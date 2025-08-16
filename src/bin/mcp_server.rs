@@ -112,8 +112,8 @@ async fn handle_already_running(socket_path: &std::path::Path) -> DaemonResult<(
         }
         Err(e) => {
             eprintln!("Warning: Failed to find daemon processes: {}", e);
-            Err(DaemonError::NotResponding {
-                attempts: startup::ALREADY_RUNNING_RETRIES,
+            Err(DaemonError::StartupFailed {
+                message: format!("Failed to find daemon processes: {}", e),
             })
         }
     }

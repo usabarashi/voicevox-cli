@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::time::timeout;
-use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
+use tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
@@ -302,13 +302,10 @@ impl DaemonClient {
         request: OwnedRequest,
     ) -> Result<OwnedResponse> {
         let request_data = bincode::serialize(&request)?;
-        {
-            let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
-            framed_writer.send(request_data.into()).await?;
-        }
-
-        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
-        if let Some(Ok(response_data)) = framed_reader.next().await {
+        let mut framed = Framed::new(&mut self.stream, LengthDelimitedCodec::new());
+        framed.send(request_data.into()).await?;
+        if let Some(response_frame) = framed.next().await {
+            let response_data = response_frame?;
             let response: OwnedResponse = bincode::deserialize(&response_data)?;
             Ok(response)
         } else {

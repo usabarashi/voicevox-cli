@@ -3,6 +3,7 @@ use rodio::{Decoder, Sink};
 use std::io::Cursor;
 
 use crate::client::DaemonClient;
+use crate::config::Config;
 
 pub struct StreamingSynthesizer {
     daemon_client: DaemonClient,
@@ -12,7 +13,8 @@ pub struct StreamingSynthesizer {
 impl StreamingSynthesizer {
     pub async fn new() -> Result<Self> {
         let daemon_client = DaemonClient::connect_with_retry().await?;
-        let text_splitter = TextSplitter::default();
+        let config = Config::load().unwrap_or_default();
+        let text_splitter = TextSplitter::from_config(&config.text_splitter);
         Ok(Self {
             daemon_client,
             text_splitter,
@@ -74,6 +76,20 @@ impl Default for TextSplitter {
 }
 
 impl TextSplitter {
+    pub fn from_config(config: &crate::config::TextSplitterConfig) -> Self {
+        // Convert string delimiters to chars
+        let delimiters: Vec<char> = config
+            .delimiters
+            .iter()
+            .filter_map(|s| s.chars().next())
+            .collect();
+
+        Self {
+            delimiters,
+            max_length: config.max_length,
+        }
+    }
+
     pub fn split(&self, text: &str) -> Vec<String> {
         let mut segments = Vec::new();
         let mut current_segment = String::new();

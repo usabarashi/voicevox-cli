@@ -7,6 +7,8 @@ use crate::client::{audio::play_audio_from_memory, DaemonClient};
 use crate::mcp::types::{ToolCallResult, ToolContent};
 use crate::synthesis::StreamingSynthesizer;
 
+const MAX_STYLE_ID: u32 = 1000;
+
 #[derive(Debug, Deserialize)]
 struct SynthesizeParams {
     text: String,
@@ -56,9 +58,15 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
         .then_some(())
         .ok_or_else(|| anyhow!("Rate must be between 0.5 and 2.0"))?;
 
-    (params.style_id <= 1000)
+    (params.style_id <= MAX_STYLE_ID)
         .then_some(())
-        .ok_or_else(|| anyhow!("Invalid style_id: {}", params.style_id))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "Invalid style_id: {} (max: {})",
+                params.style_id,
+                MAX_STYLE_ID
+            )
+        })?;
 
     if params.streaming {
         handle_streaming_synthesis(params).await
@@ -260,7 +268,7 @@ mod tests {
     async fn test_text_to_speech_invalid_style_id() {
         let args = json!({
             "text": "テスト",
-            "style_id": 1001,
+            "style_id": MAX_STYLE_ID + 1,
             "streaming": false
         });
 

@@ -81,32 +81,23 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
     match method {
         "initialize" => {
             let id = id.unwrap_or(Value::Number(serde_json::Number::from(0)));
-            match crate::client::daemon_client::DaemonClient::new_with_auto_start().await {
-                Ok(_) => {
-                    let result = InitializeResult {
-                        protocol_version: MCP_VERSION.to_string(),
-                        server_info: ServerInfo {
-                            name: "voicevox-mcp".to_string(),
-                            version: env!("CARGO_PKG_VERSION").to_string(),
-                        },
-                        capabilities: ServerCapabilities {
-                            tools: serde_json::Map::new(),
-                        },
-                    };
+            let result = InitializeResult {
+                protocol_version: MCP_VERSION.to_string(),
+                server_info: ServerInfo {
+                    name: "voicevox-mcp".to_string(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                },
+                capabilities: ServerCapabilities {
+                    tools: serde_json::Map::new(),
+                },
+            };
 
-                    match serde_json::to_value(result) {
-                        Ok(value) => Some(JsonRpcResponse::success(id, value)),
-                        Err(_) => Some(JsonRpcResponse::error(
-                            id,
-                            INTERNAL_ERROR,
-                            "Failed to serialize response".to_string(),
-                        )),
-                    }
-                }
-                Err(e) => Some(JsonRpcResponse::error(
+            match serde_json::to_value(result) {
+                Ok(value) => Some(JsonRpcResponse::success(id, value)),
+                Err(_) => Some(JsonRpcResponse::error(
                     id,
                     INTERNAL_ERROR,
-                    format!("Failed to initialize VOICEVOX daemon: {}", e),
+                    "Failed to serialize response".to_string(),
                 )),
             }
         }

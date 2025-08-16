@@ -98,8 +98,36 @@ async fn handle_streaming_synthesis(params: SynthesizeParams) -> Result<ToolCall
     })
 }
 
+async fn connect_with_retry() -> Result<DaemonClient> {
+    use crate::daemon::startup;
+
+    let mut last_error = None;
+    let mut retry_delay = startup::initial_retry_delay();
+
+    for attempt in 0..startup::MAX_CONNECT_ATTEMPTS {
+        match DaemonClient::new().await {
+            Ok(client) => return Ok(client),
+            Err(e) => {
+                last_error = Some(e);
+                if attempt < startup::MAX_CONNECT_ATTEMPTS - 1 {
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(startup::max_retry_delay());
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        anyhow!(
+            "Failed to connect to daemon after {} attempts",
+            startup::MAX_CONNECT_ATTEMPTS
+        )
+    }))
+}
+
 async fn handle_daemon_synthesis(params: SynthesizeParams) -> Result<ToolCallResult> {
-    let mut client = match DaemonClient::new().await {
+    // Try to connect with retries
+    let mut client = match connect_with_retry().await {
         Ok(client) => client,
         Err(e) => {
             return Ok(ToolCallResult {

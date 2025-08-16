@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 use std::path::PathBuf;
 
 use tokio::net::UnixStream;
-use voicevox_cli::daemon::check_and_prevent_duplicate;
+use voicevox_cli::daemon::{check_and_prevent_duplicate, exit_codes as exit_daemon, DaemonError};
 use voicevox_cli::paths::get_socket_path;
 
 #[tokio::main]
@@ -146,8 +146,28 @@ async fn main() -> Result<()> {
     }
 
     if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
-        eprintln!("{e}");
-        std::process::exit(1);
+        let exit_code = match e {
+            DaemonError::AlreadyRunning { pid } => {
+                eprintln!("❌ VOICEVOX daemon is already running (PID: {})", pid);
+                eprintln!("   Use 'voicevox-daemon --stop' to stop it.");
+                exit_daemon::ALREADY_RUNNING
+            }
+            DaemonError::SocketPermissionDenied { path } => {
+                eprintln!("❌ Permission denied: Socket file is owned by another user");
+                eprintln!("   Socket path: {}", path.display());
+                eprintln!("   Please remove the file manually and try again.");
+                exit_daemon::PERMISSION_DENIED
+            }
+            DaemonError::NoModelsAvailable => {
+                eprintln!("❌ {}", e);
+                exit_daemon::NO_MODELS
+            }
+            _ => {
+                eprintln!("❌ {}", e);
+                exit_daemon::FAILURE
+            }
+        };
+        std::process::exit(exit_code);
     }
 
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));

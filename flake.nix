@@ -378,7 +378,10 @@
                 exit 1
               fi
               echo "Writing memory: $2"
-              ${runSerenaCommand} memory write "$2" "$3"
+              # Shift twice to get all remaining args as content
+              MEMORY_NAME="$2"
+              shift 2
+              ${runSerenaCommand} memory write "$MEMORY_NAME" "$*"
               ;;
             read)
               if [ -z "$2" ]; then

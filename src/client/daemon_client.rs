@@ -282,8 +282,10 @@ impl DaemonClient {
         };
 
         let request_data = bincode::serialize(&request)?;
-        let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
-        framed_writer.send(request_data.into()).await?;
+        {
+            let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
+            framed_writer.send(request_data.into()).await?;
+        }
 
         let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
         if let Some(Ok(response_data)) = framed_reader.next().await {
@@ -302,8 +304,10 @@ impl DaemonClient {
         let request = OwnedRequest::ListSpeakers;
 
         let request_data = bincode::serialize(&request)?;
-        let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
-        framed_writer.send(request_data.into()).await?;
+        {
+            let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
+            framed_writer.send(request_data.into()).await?;
+        }
 
         let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
         if let Some(Ok(response_data)) = framed_reader.next().await {

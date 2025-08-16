@@ -100,20 +100,17 @@ async fn handle_already_running(socket_path: &std::path::Path) -> DaemonResult<(
         }
     }
 
-    // Try to find the existing daemon process
     match voicevox_cli::daemon::find_daemon_processes() {
         Ok(pids) => {
             if let Some(&pid) = pids.first() {
                 Err(DaemonError::AlreadyRunning { pid })
             } else {
-                // No processes found despite ALREADY_RUNNING exit code
                 Err(DaemonError::NotResponding {
                     attempts: startup::ALREADY_RUNNING_RETRIES,
                 })
             }
         }
         Err(e) => {
-            // Log the error but still report as NotResponding since we can't determine the PID
             eprintln!("Warning: Failed to find daemon processes: {}", e);
             Err(DaemonError::NotResponding {
                 attempts: startup::ALREADY_RUNNING_RETRIES,

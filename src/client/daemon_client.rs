@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::path::PathBuf;
-use std::process::Command as ProcessCommand;
 use std::time::Duration;
 use tokio::net::UnixStream;
+use tokio::process::Command;
 use tokio::time::timeout;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
@@ -172,9 +172,10 @@ async fn start_daemon_automatically() -> Result<()> {
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary();
 
-    let output = ProcessCommand::new(&daemon_path)
+    let output = Command::new(&daemon_path)
         .args(["--start", "--detach"])
-        .output();
+        .output()
+        .await;
 
     match output {
         Ok(output) => {

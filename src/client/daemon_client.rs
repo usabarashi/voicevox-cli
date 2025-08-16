@@ -297,7 +297,10 @@ impl DaemonClient {
         }
     }
 
-    async fn send_request_and_receive_response(&mut self, request: OwnedRequest) -> Result<OwnedResponse> {
+    async fn send_request_and_receive_response(
+        &mut self,
+        request: OwnedRequest,
+    ) -> Result<OwnedResponse> {
         let request_data = bincode::serialize(&request)?;
         {
             let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
@@ -335,7 +338,7 @@ impl DaemonClient {
 
     pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
         let request = OwnedRequest::ListSpeakers;
-        
+
         let response = self.send_request_and_receive_response(request).await?;
         match response {
             OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),

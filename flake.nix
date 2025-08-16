@@ -375,7 +375,7 @@
           # Handle memory commands
           case "''${1:-}" in
             write)
-              if [ $# -lt 3 ]; then
+              if [ "$#" -lt 3 ]; then
                 echo "Error: write command requires at least 2 arguments" >&2
                 echo "Usage: serena-memory write <memory-name> <content>" >&2
                 exit 1
@@ -387,7 +387,7 @@
               ${runSerenaCommand} memory write "$MEMORY_NAME" "$*"
               ;;
             read)
-              if [ $# -lt 2 ]; then
+              if [ "$#" -lt 2 ]; then
                 echo "Error: read command requires 1 argument" >&2
                 echo "Usage: serena-memory read <memory-name>" >&2
                 exit 1
@@ -398,7 +398,7 @@
               ${runSerenaCommand} memory list
               ;;
             delete)
-              if [ $# -lt 2 ]; then
+              if [ "$#" -lt 2 ]; then
                 echo "Error: delete command requires 1 argument" >&2
                 echo "Usage: serena-memory delete <memory-name>" >&2
                 exit 1

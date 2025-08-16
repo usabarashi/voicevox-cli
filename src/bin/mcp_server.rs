@@ -148,38 +148,37 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    tokio::spawn(async {
-        if let Err(e) = ensure_daemon_running().await {
-            match e {
-                DaemonError::AlreadyRunning { .. } => {
-                    // This is actually OK - daemon is running
-                }
-                DaemonError::SocketPermissionDenied { path } => {
-                    eprintln!("Warning: Permission denied when starting daemon.");
-                    eprintln!(
-                        "Socket file may be owned by another user: {}",
-                        path.display()
-                    );
-                    eprintln!("Audio synthesis may not be available.");
-                }
-                DaemonError::NotResponding { attempts } => {
-                    eprintln!(
-                        "Warning: Daemon started but is not responding after {} attempts.",
-                        attempts
-                    );
-                    eprintln!("Audio synthesis may not be available.");
-                }
-                DaemonError::StartupFailed { message } => {
-                    eprintln!("Warning: Failed to start daemon: {}", message);
-                    eprintln!("Audio synthesis may not be available.");
-                }
-                _ => {
-                    eprintln!("Warning: {}", e);
-                    eprintln!("Audio synthesis may not be available.");
-                }
+    // Ensure daemon is running before starting MCP server
+    if let Err(e) = ensure_daemon_running().await {
+        match e {
+            DaemonError::AlreadyRunning { .. } => {
+                // This is actually OK - daemon is running
+            }
+            DaemonError::SocketPermissionDenied { path } => {
+                eprintln!("Warning: Permission denied when starting daemon.");
+                eprintln!(
+                    "Socket file may be owned by another user: {}",
+                    path.display()
+                );
+                eprintln!("Audio synthesis may not be available.");
+            }
+            DaemonError::NotResponding { attempts } => {
+                eprintln!(
+                    "Warning: Daemon started but is not responding after {} attempts.",
+                    attempts
+                );
+                eprintln!("Audio synthesis may not be available.");
+            }
+            DaemonError::StartupFailed { message } => {
+                eprintln!("Warning: Failed to start daemon: {}", message);
+                eprintln!("Audio synthesis may not be available.");
+            }
+            _ => {
+                eprintln!("Warning: {}", e);
+                eprintln!("Audio synthesis may not be available.");
             }
         }
-    });
+    }
 
     voicevox_cli::mcp::run_mcp_server().await?;
 

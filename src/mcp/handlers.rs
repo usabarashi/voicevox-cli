@@ -6,7 +6,6 @@ use serde_json::Value;
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
 use crate::mcp::types::{ToolCallResult, ToolContent};
 use crate::synthesis::StreamingSynthesizer;
-use crate::voice::Speaker;
 
 #[derive(Debug, Deserialize)]
 struct SynthesizeParams {
@@ -149,42 +148,52 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
 
     let speakers = client.list_speakers().await?;
 
-    let filtered_speakers: Vec<Speaker> = speakers
-        .into_iter()
-        .filter(|speaker| match &params.speaker_name {
-            Some(name_filter) => speaker
+    let mut filtered_results = Vec::new();
+
+    for speaker in speakers {
+        if let Some(name_filter) = &params.speaker_name {
+            if !speaker
                 .name
                 .to_lowercase()
-                .contains(&name_filter.to_lowercase()),
-            None => true,
-        })
-        .filter(|speaker| match &params.style_name {
-            Some(style_filter) => speaker.styles.iter().any(|style| {
-                style
-                    .name
-                    .to_lowercase()
-                    .contains(&style_filter.to_lowercase())
-            }),
-            None => true,
-        })
-        .collect();
+                .contains(&name_filter.to_lowercase())
+            {
+                continue;
+            }
+        }
+
+        let filtered_styles = if let Some(style_filter) = &params.style_name {
+            speaker
+                .styles
+                .into_iter()
+                .filter(|style| {
+                    style
+                        .name
+                        .to_lowercase()
+                        .contains(&style_filter.to_lowercase())
+                })
+                .collect::<Vec<_>>()
+        } else {
+            speaker.styles.to_vec()
+        };
+
+        if !filtered_styles.is_empty() {
+            filtered_results.push((speaker.name, filtered_styles));
+        }
+    }
 
     let mut result_text = String::new();
-    if filtered_speakers.is_empty() {
+    if filtered_results.is_empty() {
         result_text.push_str("No speakers found matching the criteria.");
     } else {
-        for speaker in &filtered_speakers {
-            result_text.push_str(&format!("Speaker: {}\n", speaker.name));
+        for (speaker_name, styles) in &filtered_results {
+            result_text.push_str(&format!("Speaker: {}\n", speaker_name));
             result_text.push_str("Styles:\n");
-            for style in &speaker.styles {
+            for style in styles {
                 result_text.push_str(&format!("  - {} (ID: {})\n", style.name, style.id));
             }
             result_text.push('\n');
         }
-        result_text.push_str(&format!(
-            "Total speakers found: {}",
-            filtered_speakers.len()
-        ));
+        result_text.push_str(&format!("Total speakers found: {}", filtered_results.len()));
     }
     Ok(ToolCallResult {
         content: vec![ToolContent {

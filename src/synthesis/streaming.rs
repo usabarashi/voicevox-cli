@@ -112,14 +112,12 @@ impl TextSplitter {
 
     fn find_break_position(&self, text: &str) -> Option<usize> {
         let chars: Vec<char> = text.chars().collect();
-        let target_pos = self.max_length * 3 / 4;
-
-        for i in (0..target_pos).rev() {
+        let search_end = chars.len().min(self.max_length);
+        for i in (0..search_end).rev() {
             if chars[i] == ' ' || chars[i] == '、' || chars[i] == ',' {
                 return Some(text.char_indices().nth(i + 1)?.0);
             }
         }
-
         None
     }
 }

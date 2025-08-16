@@ -199,7 +199,8 @@ async fn start_daemon_automatically() -> Result<()> {
                     max_retries
                 ))
             } else {
-                Err(anyhow!("Daemon failed to start"))
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(anyhow!("Daemon failed to start: {}", stderr.trim()))
             }
         }
         Err(e) => Err(anyhow!("Failed to execute daemon: {e}")),

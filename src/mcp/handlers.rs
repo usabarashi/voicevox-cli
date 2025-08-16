@@ -78,7 +78,7 @@ async fn handle_streaming_synthesis(params: SynthesizeParams) -> Result<ToolCall
         .context("Failed to create streaming synthesizer")?;
 
     synthesizer
-        .synthesize_streaming(&params.text, params.style_id, &sink)
+        .synthesize_streaming(&params.text, params.style_id, params.rate, &sink)
         .await
         .context("Streaming synthesis failed")?;
 

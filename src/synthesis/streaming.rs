@@ -23,6 +23,7 @@ impl StreamingSynthesizer {
         &mut self,
         text: &str,
         style_id: u32,
+        rate: f32,
         sink: &Sink,
     ) -> Result<()> {
         let segments = self.text_splitter.split(text);
@@ -32,7 +33,10 @@ impl StreamingSynthesizer {
                 continue;
             }
 
-            let options = crate::ipc::OwnedSynthesizeOptions::default();
+            let options = crate::ipc::OwnedSynthesizeOptions {
+                rate,
+                ..Default::default()
+            };
             let wav_data = self
                 .daemon_client
                 .synthesize(segment, style_id, options)

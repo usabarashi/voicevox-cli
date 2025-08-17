@@ -1,11 +1,9 @@
 name: CI
 
-# Comprehensive CI for Apple Silicon macOS
-# This project is designed specifically for Apple Silicon macOS
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 env:
@@ -34,32 +32,32 @@ jobs:
 
       - name: Check Nix flake
         run: |
-          echo "📦 Checking Nix flake..."
+          echo "Checking Nix flake..."
           nix flake check --show-trace
 
       - name: Verify Rust toolchain
         run: |
-          echo "🛠️ Verifying Rust toolchain..."
+          echo "Verifying Rust toolchain..."
           nix develop --command rustc --version
           nix develop --command cargo --version
 
       - name: Check code formatting
         run: |
-          echo "📝 Checking code formatting..."
+          echo "Checking code formatting..."
           nix develop --command cargo fmt --check
 
       - name: Run Clippy analysis
         run: |
-          echo "🧹 Running clippy analysis..."
+          echo "Running clippy analysis..."
           nix develop --command cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Check scripts
         run: |
-          echo "📜 Checking scripts..."
+          echo "Checking scripts..."
           echo "Checking for required scripts..."
-          test -f scripts/voicevox-setup-models.sh || (echo "❌ Missing voicevox-setup-models.sh" && exit 1)
-          test -f scripts/voicevox-auto-setup.sh || (echo "❌ Missing voicevox-auto-setup.sh" && exit 1)
-          
+          test -f scripts/voicevox-setup-models.sh || (echo "Missing voicevox-setup-models.sh" && exit 1)
+          test -f scripts/voicevox-auto-setup.sh || (echo "Missing voicevox-auto-setup.sh" && exit 1)
+
           echo "Validating all scripts..."
           for script in scripts/*.sh; do
             if [[ -f "$script" ]]; then
@@ -71,11 +69,11 @@ jobs:
               fi
             fi
           done
-          echo "✅ All scripts validated successfully"
+          echo "All scripts validated successfully"
 
       - name: Run security audit
         run: |
-          echo "🔒 Running security audit..."
+          echo "Running security audit..."
           if ! nix develop --command cargo audit --version >/dev/null 2>&1; then
             echo "Installing cargo-audit..."
             nix develop --command cargo install cargo-audit
@@ -84,23 +82,23 @@ jobs:
 
       - name: Build with Nix
         run: |
-          echo "🔨 Building project with Nix..."
+          echo "Building project with Nix..."
           nix build --show-trace
 
       - name: Verify build artifacts
         run: |
-          echo "📊 Verifying build artifacts..."
+          echo "Verifying build artifacts..."
           if [[ -d result/bin ]]; then
             ls -la result/bin/
-            echo "✅ Build artifacts verified"
+            echo "Build artifacts verified"
           else
-            echo "❌ Build artifacts not found"
+            echo "Build artifacts not found"
             exit 1
           fi
 
       - name: Verify build artifacts detailed
         run: |
-          echo "🔧 Verifying build artifacts..."
+          echo "Verifying build artifacts..."
           ls -la result/bin/
           file result/bin/voicevox-say
           file result/bin/voicevox-daemon
@@ -109,14 +107,14 @@ jobs:
 
       - name: Test functionality
         run: |
-          echo "🧪 Testing functionality..."
+          echo "Testing functionality..."
           result/bin/voicevox-say --help || echo "Help command test"
           result/bin/voicevox-daemon --help || echo "Help command test"
           result/bin/voicevox-say --version || echo "Version command not available"
 
       - name: Package verification
         run: |
-          echo "📦 Package verification..."
+          echo "Package verification..."
           echo "Binary sizes:"
           ls -lah result/bin/
           echo "Static linking verification:"

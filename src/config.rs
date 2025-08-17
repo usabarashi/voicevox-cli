@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub text_splitter: TextSplitterConfig,
@@ -15,14 +15,6 @@ pub struct TextSplitterConfig {
     pub delimiters: Vec<String>,
     #[serde(default = "default_max_length")]
     pub max_length: usize,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            text_splitter: TextSplitterConfig::default(),
-        }
-    }
 }
 
 impl Default for TextSplitterConfig {

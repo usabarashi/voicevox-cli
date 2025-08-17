@@ -306,8 +306,8 @@
           chmod +x $out/bin/voicevox-auto-setup
         '';
 
-        # Serena index creation wrapper
-        serenaIndexWrapper = pkgs.writeShellScriptBin "serena-index" ''
+        # Common Serena environment setup script
+        serenaEnvSetup = ''
           # Get the directory where this script is invoked from
           PROJECT_DIR="$(pwd)"
 
@@ -323,6 +323,11 @@
           mkdir -p "$HOME/.serena/logs"
           mkdir -p "$XDG_DATA_HOME/uv"
           mkdir -p "$XDG_CACHE_HOME"
+        '';
+
+        # Serena index creation wrapper
+        serenaIndexWrapper = pkgs.writeShellScriptBin "serena-index" ''
+          ${serenaEnvSetup}
 
           echo "Creating Serena index for project..."
           echo "HOME: $HOME"
@@ -337,21 +342,7 @@
 
         # Serena MCP server wrapper with project-local paths
         serenaMcpWrapper = pkgs.writeShellScriptBin "serena-mcp-wrapper" ''
-          # Get the directory where this script is invoked from
-          PROJECT_DIR="$(pwd)"
-
-          # Create fake home directory structure in project
-          export HOME="$PROJECT_DIR/.project-home"
-          export XDG_DATA_HOME="$HOME/.local/share"
-          export XDG_CACHE_HOME="$HOME/.cache"
-          export UV_CACHE_DIR="$HOME/.cache/uv"
-          export UV_TOOL_DIR="$HOME/.local/uv/tools"
-          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
-
-          # Create necessary directories
-          mkdir -p "$HOME/.serena/logs"
-          mkdir -p "$XDG_DATA_HOME/uv"
-          mkdir -p "$XDG_CACHE_HOME"
+          ${serenaEnvSetup}
 
           echo "Starting Serena MCP server with project-local paths..."
           echo "HOME: $HOME"
@@ -367,63 +358,53 @@
               --project "$PROJECT_DIR"
         '';
 
+        # Helper function to run uvx with Serena
+        runSerenaCommand = ''
+          exec ${pkgs.uv}/bin/uvx \
+              --cache-dir "$UV_CACHE_DIR" \
+              --from git+https://github.com/oraios/serena \
+              serena "$@"
+        '';
+
         # Serena memory management wrapper
         serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
-          # Get the directory where this script is invoked from
-          PROJECT_DIR="$(pwd)"
-
-          # Create fake home directory structure in project
-          export HOME="$PROJECT_DIR/.project-home"
-          export XDG_DATA_HOME="$HOME/.local/share"
-          export XDG_CACHE_HOME="$HOME/.cache"
-          export UV_CACHE_DIR="$HOME/.cache/uv"
-          export UV_TOOL_DIR="$HOME/.local/uv/tools"
-          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
-
-          # Create necessary directories
-          mkdir -p "$HOME/.serena/logs"
-          mkdir -p "$XDG_DATA_HOME/uv"
-          mkdir -p "$XDG_CACHE_HOME"
+          set -euo pipefail
+          
+          ${serenaEnvSetup}
 
           # Handle memory commands
-          case "$1" in
+          case "''${1:-}" in
             write)
-              if [ -z "$2" ] || [ -z "$3" ]; then
-                echo "Usage: serena-memory write <memory-name> <content>"
+              if [ "$#" -lt 3 ]; then
+                echo "Error: write command requires at least 2 arguments" >&2
+                echo "Usage: serena-memory write <memory-name> <content>" >&2
                 exit 1
               fi
-              echo "Writing memory: $2"
-              exec ${pkgs.uv}/bin/uvx \
-                  --cache-dir "$UV_CACHE_DIR" \
-                  --from git+https://github.com/oraios/serena \
-                  serena memory write "$2" "$3"
+              MEMORY_NAME="$2"
+              echo "Writing memory: $MEMORY_NAME"
+              # Shift twice to get all remaining args as content
+              shift 2
+              ${runSerenaCommand} memory write "$MEMORY_NAME" "$*"
               ;;
             read)
-              if [ -z "$2" ]; then
-                echo "Usage: serena-memory read <memory-name>"
+              if [ "$#" -lt 2 ]; then
+                echo "Error: read command requires 1 argument" >&2
+                echo "Usage: serena-memory read <memory-name>" >&2
                 exit 1
               fi
-              exec ${pkgs.uv}/bin/uvx \
-                  --cache-dir "$UV_CACHE_DIR" \
-                  --from git+https://github.com/oraios/serena \
-                  serena memory read "$2"
+              ${runSerenaCommand} memory read "$2"
               ;;
             list)
-              exec ${pkgs.uv}/bin/uvx \
-                  --cache-dir "$UV_CACHE_DIR" \
-                  --from git+https://github.com/oraios/serena \
-                  serena memory list
+              ${runSerenaCommand} memory list
               ;;
             delete)
-              if [ -z "$2" ]; then
-                echo "Usage: serena-memory delete <memory-name>"
+              if [ "$#" -lt 2 ]; then
+                echo "Error: delete command requires 1 argument" >&2
+                echo "Usage: serena-memory delete <memory-name>" >&2
                 exit 1
               fi
               echo "Deleting memory: $2"
-              exec ${pkgs.uv}/bin/uvx \
-                  --cache-dir "$UV_CACHE_DIR" \
-                  --from git+https://github.com/oraios/serena \
-                  serena memory delete "$2"
+              ${runSerenaCommand} memory delete "$2"
               ;;
             *)
               echo "Serena Memory Management"

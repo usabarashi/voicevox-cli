@@ -3,6 +3,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod client;
+pub mod config;
 pub mod core;
 pub mod daemon;
 pub mod ipc;

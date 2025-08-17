@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 use std::path::PathBuf;
 
 use tokio::net::UnixStream;
-use voicevox_cli::daemon::check_and_prevent_duplicate;
+use voicevox_cli::daemon::{check_and_prevent_duplicate, exit_codes as exit_daemon, DaemonError};
 use voicevox_cli::paths::get_socket_path;
 
 #[tokio::main]
@@ -146,8 +146,28 @@ async fn main() -> Result<()> {
     }
 
     if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
-        eprintln!("{e}");
-        std::process::exit(1);
+        let exit_code = match e {
+            DaemonError::AlreadyRunning { pid } => {
+                eprintln!("❌ VOICEVOX daemon is already running (PID: {})", pid);
+                eprintln!("   Use 'voicevox-daemon --stop' to stop it.");
+                exit_daemon::ALREADY_RUNNING
+            }
+            DaemonError::SocketPermissionDenied { path } => {
+                eprintln!("❌ Permission denied: Socket file is owned by another user");
+                eprintln!("   Socket path: {}", path.display());
+                eprintln!("   Please remove the file manually and try again.");
+                exit_daemon::PERMISSION_DENIED
+            }
+            DaemonError::NoModelsAvailable => {
+                eprintln!("❌ {}", e);
+                exit_daemon::NO_MODELS
+            }
+            _ => {
+                eprintln!("❌ {}", e);
+                exit_daemon::FAILURE
+            }
+        };
+        std::process::exit(exit_code);
     }
 
     println!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION"));
@@ -161,50 +181,56 @@ async fn main() -> Result<()> {
 async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
     println!("🛑 Stopping VOICEVOX daemon...");
 
-    match UnixStream::connect(socket_path).await {
-        Ok(_) => match voicevox_cli::daemon::process::find_daemon_processes() {
-            Ok(pids) => {
-                if pids.is_empty() {
-                    println!("❌ No daemon process found");
-                    return Ok(());
-                }
+    if UnixStream::connect(socket_path).await.is_err() {
+        println!("❌ Daemon is not running");
+        println!("   Socket: {}", socket_path.display());
+        return Ok(());
+    }
 
-                for pid_num in pids {
-                    let kill_result = std::process::Command::new("kill")
-                        .arg("-TERM")
-                        .arg(pid_num.to_string())
-                        .status();
-
-                    match kill_result {
-                        Ok(status) if status.success() => {
-                            println!("✅ Daemon stopped (PID: {pid_num})");
-
-                            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-
-                            match UnixStream::connect(socket_path).await {
-                                Err(_) => println!("✅ Socket cleanup confirmed"),
-                                Ok(_) => println!("⚠️  Daemon may still be running"),
-                            }
-                        }
-                        _ => {
-                            println!("❌ Failed to stop daemon (PID: {pid_num})");
-                            println!("   Try: kill -9 {pid_num}");
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                println!("❌ Failed to find daemon process: {e}");
-                println!("   Try manual: pkill -f -u $(id -u) voicevox-daemon");
-            }
-        },
-        Err(_) => {
-            println!("❌ Daemon is not running");
-            println!("   Socket: {}", socket_path.display());
+    let pids = match voicevox_cli::daemon::process::find_daemon_processes() {
+        Ok(pids) => pids,
+        Err(e) => {
+            println!("❌ Failed to find daemon process: {e}");
+            println!("   Try manual: pkill -f -u $(id -u) voicevox-daemon");
+            return Ok(());
         }
+    };
+
+    if pids.is_empty() {
+        println!("❌ No daemon process found");
+        return Ok(());
+    }
+
+    for pid_num in pids {
+        stop_daemon_process(pid_num, socket_path).await;
     }
 
     Ok(())
+}
+
+async fn stop_daemon_process(pid: u32, socket_path: &PathBuf) {
+    let kill_result = std::process::Command::new("kill")
+        .arg("-TERM")
+        .arg(pid.to_string())
+        .status();
+
+    match kill_result {
+        Ok(status) if status.success() => {
+            println!("✅ Daemon stopped (PID: {pid})");
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+            if UnixStream::connect(socket_path).await.is_err() {
+                println!("✅ Socket cleanup confirmed");
+            } else {
+                println!("⚠️  Daemon may still be running");
+            }
+        }
+        _ => {
+            println!("❌ Failed to stop daemon (PID: {pid})");
+            println!("   Try: kill -9 {pid}");
+        }
+    }
 }
 
 async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {

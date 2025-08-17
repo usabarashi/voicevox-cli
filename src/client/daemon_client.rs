@@ -12,7 +12,7 @@ use crate::paths::get_socket_path;
 use crate::voice::Speaker;
 use std::borrow::Cow;
 
-fn find_daemon_binary() -> PathBuf {
+pub fn find_daemon_binary() -> PathBuf {
     if let Ok(current_exe) = std::env::current_exe() {
         let mut daemon_path = current_exe.clone();
         daemon_path.set_file_name("voicevox-daemon");

@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use tokio::process::Command;
 use tokio::time::timeout;
+use voicevox_cli::client::daemon_client::find_daemon_binary;
 use voicevox_cli::daemon::{exit_codes as exit_daemon, startup, DaemonError, DaemonResult};
 use voicevox_cli::paths::get_socket_path;
 
@@ -46,11 +47,7 @@ async fn try_connect_existing(socket_path: &std::path::Path) -> DaemonResult<boo
 }
 
 async fn start_daemon_process(socket_path: &std::path::Path) -> DaemonResult<()> {
-    let current_exe = std::env::current_exe()?;
-    let daemon_path = current_exe
-        .parent()
-        .ok_or(DaemonError::DaemonBinaryNotFound)?
-        .join("voicevox-daemon");
+    let daemon_path = find_daemon_binary();
 
     let output = Command::new(&daemon_path)
         .args(["--start", "--detach"])

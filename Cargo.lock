@@ -1370,16 +1370,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jsonrpc-lite"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00f1066a393f8bd9aefd2ed69a0a2bc39d1b6d2fdf55d00acb27f4242b403839"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2191,15 +2181,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_bytes"
-version = "0.11.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8437fd221bde2d4ca316d61b90e337e9e702b3820b87d63caa9ba6c02bd06d96"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde_derive"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2291,9 +2272,9 @@ dependencies = [
 
 [[package]]
 name = "slab"
-version = "0.4.11"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
+checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
 
 [[package]]
 name = "smallvec"
@@ -2903,7 +2884,6 @@ dependencies = [
  "compact_str",
  "dirs",
  "futures-util",
- "jsonrpc-lite",
  "lazy_static",
  "libc",
  "memmap2",
@@ -2912,11 +2892,9 @@ dependencies = [
  "rayon",
  "rodio",
  "serde",
- "serde_bytes",
  "serde_json",
  "smallvec",
  "tempfile",
- "thiserror",
  "tokio",
  "tokio-util",
  "toml 0.8.23",

@@ -148,11 +148,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Ensure daemon is running before starting MCP server
     if let Err(e) = ensure_daemon_running().await {
         match e {
-            DaemonError::AlreadyRunning { .. } => {
-                // This is actually OK - daemon is running
+            DaemonError::AlreadyRunning { pid } => {
+                eprintln!(
+                    "Warning: Daemon is running (PID: {}) but may not be responsive.",
+                    pid
+                );
             }
             DaemonError::SocketPermissionDenied { path } => {
                 eprintln!("Warning: Permission denied when starting daemon.");

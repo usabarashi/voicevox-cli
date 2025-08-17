@@ -293,7 +293,14 @@ pub async fn build_style_to_model_map_async(
         let current_speakers = match core.get_speakers() {
             Ok(speakers) => speakers,
             Err(_) => {
-                if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+                let path_str = match path.to_str() {
+                    Some(s) => s,
+                    None => {
+                        eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                        continue;
+                    }
+                };
+                if let Err(e) = core.unload_voice_model_by_path(path_str) {
                     eprintln!("  ✗ Failed to unload model {model_id} after error: {e}");
                 }
                 continue;
@@ -310,7 +317,14 @@ pub async fn build_style_to_model_map_async(
             }
         }
 
-        if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+        let path_str = match path.to_str() {
+            Some(s) => s,
+            None => {
+                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                continue;
+            }
+        };
+        if let Err(e) = core.unload_voice_model_by_path(path_str) {
             eprintln!("  ✗ Failed to unload model {model_id} after mapping: {e}");
         }
     }
@@ -337,7 +351,14 @@ pub async fn build_style_to_model_map_async(
     }
 
     for path in &model_files {
-        if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+        let path_str = match path.to_str() {
+            Some(s) => s,
+            None => {
+                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                continue;
+            }
+        };
+        if let Err(e) = core.unload_voice_model_by_path(path_str) {
             eprintln!("  ✗ Failed to unload model after speaker collection: {e}");
         }
     }

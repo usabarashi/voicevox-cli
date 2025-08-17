@@ -38,29 +38,22 @@ async fn try_daemon_with_retry(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    let has_models = voicevox_cli::paths::find_models_dir().is_ok();
-    let daemon_running = tokio::net::UnixStream::connect(socket_path).await.is_ok();
-
-    if !has_models {
+    if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
-            let message = if daemon_running {
-                "⚠️ Daemon is running but models not found. Setting up models..."
-            } else {
-                "🎭 Voice models not found. Setting up VOICEVOX..."
-            };
-            println!("{}", message);
+            println!("🎭 Voice models not found. Setting up VOICEVOX...");
         }
         ensure_models_available().await?;
     }
 
-    if !daemon_running {
-        if !quiet {
-            println!("🔄 Starting VOICEVOX daemon...");
+    match DaemonClient::new_with_auto_start().await {
+        Ok(_client) => daemon_mode(text, style_id, options, output_file, quiet, socket_path).await,
+        Err(e) => {
+            if !quiet {
+                eprintln!("Failed to connect to daemon: {}", e);
+            }
+            Err(e)
         }
-        let _ = DaemonClient::new_with_auto_start().await?;
     }
-
-    daemon_mode(text, style_id, options, output_file, quiet, socket_path).await
 }
 
 async fn standalone_mode(

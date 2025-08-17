@@ -12,12 +12,12 @@ use crate::paths::get_socket_path;
 use crate::voice::Speaker;
 use std::borrow::Cow;
 
-fn find_daemon_binary() -> PathBuf {
+pub fn find_daemon_binary() -> Result<PathBuf, crate::daemon::DaemonError> {
     if let Ok(current_exe) = std::env::current_exe() {
         let mut daemon_path = current_exe.clone();
         daemon_path.set_file_name("voicevox-daemon");
         if daemon_path.exists() {
-            return daemon_path;
+            return Ok(daemon_path);
         }
     }
 
@@ -29,13 +29,8 @@ fn find_daemon_binary() -> PathBuf {
 
     fallbacks
         .into_iter()
-        .find(|p| {
-            p.exists()
-                || p.file_name()
-                    .map(|f| f == "voicevox-daemon")
-                    .unwrap_or(false)
-        })
-        .unwrap_or_else(|| PathBuf::from("voicevox-daemon"))
+        .find(|p| p.exists())
+        .ok_or(crate::daemon::DaemonError::DaemonBinaryNotFound)
 }
 
 pub async fn daemon_mode(
@@ -170,7 +165,7 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
 
 async fn start_daemon_automatically() -> Result<()> {
     let socket_path = get_socket_path();
-    let daemon_path = find_daemon_binary();
+    let daemon_path = find_daemon_binary()?;
 
     let output = Command::new(&daemon_path)
         .args(["--start", "--detach"])

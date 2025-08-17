@@ -33,7 +33,3 @@ result-*
 
 # Build artifacts
 .cargo/
-
-# MCP server (temporary)
-.project-home/
-.serena/

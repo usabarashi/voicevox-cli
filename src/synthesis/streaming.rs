@@ -3,6 +3,7 @@ use rodio::{Decoder, Sink};
 use std::io::Cursor;
 
 use crate::client::DaemonClient;
+use crate::config::Config;
 
 pub struct StreamingSynthesizer {
     daemon_client: DaemonClient,
@@ -11,9 +12,9 @@ pub struct StreamingSynthesizer {
 
 impl StreamingSynthesizer {
     pub async fn new() -> Result<Self> {
-        let daemon_client = DaemonClient::new().await?;
-        let text_splitter = TextSplitter::default();
-
+        let daemon_client = DaemonClient::connect_with_retry().await?;
+        let config = Config::load().unwrap_or_default();
+        let text_splitter = TextSplitter::from_config(&config.text_splitter);
         Ok(Self {
             daemon_client,
             text_splitter,
@@ -24,6 +25,7 @@ impl StreamingSynthesizer {
         &mut self,
         text: &str,
         style_id: u32,
+        rate: f32,
         sink: &Sink,
     ) -> Result<()> {
         let segments = self.text_splitter.split(text);
@@ -33,9 +35,13 @@ impl StreamingSynthesizer {
                 continue;
             }
 
+            let options = crate::ipc::OwnedSynthesizeOptions {
+                rate,
+                ..Default::default()
+            };
             let wav_data = self
                 .daemon_client
-                .synthesize(segment, style_id)
+                .synthesize(segment, style_id, options)
                 .await
                 .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
 
@@ -70,6 +76,20 @@ impl Default for TextSplitter {
 }
 
 impl TextSplitter {
+    pub fn from_config(config: &crate::config::TextSplitterConfig) -> Self {
+        // Convert string delimiters to chars
+        let delimiters: Vec<char> = config
+            .delimiters
+            .iter()
+            .filter_map(|s| s.chars().next())
+            .collect();
+
+        Self {
+            delimiters,
+            max_length: config.max_length,
+        }
+    }
+
     pub fn split(&self, text: &str) -> Vec<String> {
         let mut segments = Vec::new();
         let mut current_segment = String::new();
@@ -79,27 +99,11 @@ impl TextSplitter {
             current_segment.push(ch);
 
             if self.delimiters.contains(&ch) {
-                while let Some(&next_ch) = chars.peek() {
-                    if self.delimiters.contains(&next_ch) {
-                        if let Some(next_ch) = chars.next() {
-                            current_segment.push(next_ch);
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
+                self.consume_consecutive_delimiters(&mut chars, &mut current_segment);
                 segments.push(current_segment.clone());
                 current_segment.clear();
             } else if current_segment.chars().count() >= self.max_length {
-                if let Some(break_pos) = self.find_break_position(&current_segment) {
-                    let (first, rest) = current_segment.split_at(break_pos);
-                    segments.push(first.to_string());
-                    current_segment = rest.to_string();
-                } else {
-                    segments.push(current_segment.clone());
-                    current_segment.clear();
-                }
+                self.handle_long_segment(&mut segments, &mut current_segment);
             }
         }
 
@@ -110,16 +114,40 @@ impl TextSplitter {
         segments
     }
 
+    fn consume_consecutive_delimiters(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        current_segment: &mut String,
+    ) {
+        while let Some(&next_ch) = chars.peek() {
+            if !self.delimiters.contains(&next_ch) {
+                break;
+            }
+            if let Some(next_ch) = chars.next() {
+                current_segment.push(next_ch);
+            }
+        }
+    }
+
+    fn handle_long_segment(&self, segments: &mut Vec<String>, current_segment: &mut String) {
+        if let Some(break_pos) = self.find_break_position(current_segment) {
+            let (first, rest) = current_segment.split_at(break_pos);
+            segments.push(first.to_string());
+            *current_segment = rest.to_string();
+        } else {
+            segments.push(current_segment.clone());
+            current_segment.clear();
+        }
+    }
+
     fn find_break_position(&self, text: &str) -> Option<usize> {
         let chars: Vec<char> = text.chars().collect();
-        let target_pos = self.max_length * 3 / 4;
-
-        for i in (0..target_pos).rev() {
+        let search_end = chars.len().min(self.max_length);
+        for i in (0..search_end).rev() {
             if chars[i] == ' ' || chars[i] == '、' || chars[i] == ',' {
                 return Some(text.char_indices().nth(i + 1)?.0);
             }
         }
-
         None
     }
 }

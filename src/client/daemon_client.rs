@@ -1,12 +1,11 @@
 use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
-use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::Command as ProcessCommand;
 use std::time::Duration;
 use tokio::net::UnixStream;
+use tokio::process::Command;
 use tokio::time::timeout;
-use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
+use tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
@@ -169,78 +168,43 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     Err(anyhow!("Failed to get speakers from daemon"))
 }
 
-pub async fn start_daemon_with_confirmation() -> Result<()> {
-    let socket_path = get_socket_path();
-
-    if UnixStream::connect(&socket_path).await.is_ok() {
-        return Ok(());
-    }
-
-    print!(
-        "VOICEVOX daemon is not running.
-Would you like to start the daemon automatically? [Y/n]: "
-    );
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-
-    if input.is_empty() || input == "y" || input == "yes" {
-        start_daemon_automatically().await
-    } else {
-        Err(anyhow!(
-            "Daemon startup declined by user. Use 'voicevox-daemon --start' to start manually."
-        ))
-    }
-}
-
-pub async fn start_daemon_if_needed() -> Result<()> {
-    let socket_path = get_socket_path();
-
-    if UnixStream::connect(&socket_path).await.is_ok() {
-        return Ok(());
-    }
-
-    start_daemon_automatically().await
-}
 async fn start_daemon_automatically() -> Result<()> {
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary();
 
-    println!("🔄 Starting VOICEVOX daemon automatically...");
-
-    let output = ProcessCommand::new(&daemon_path)
+    let output = Command::new(&daemon_path)
         .args(["--start", "--detach"])
-        .output();
+        .output()
+        .await;
 
     match output {
         Ok(output) => {
             if output.status.success() {
-                tokio::time::sleep(Duration::from_millis(2000)).await;
+                // Poll for daemon readiness with exponential backoff
+                let max_retries = 10;
+                let mut retry_delay = Duration::from_millis(100);
 
-                match UnixStream::connect(&socket_path).await {
-                    Ok(_) => {
-                        println!("✅ VOICEVOX daemon started successfully");
-                        Ok(())
-                    }
-                    Err(_) => {
-                        eprintln!("❌ Daemon started but not responding on socket");
-                        Err(anyhow!("Daemon not responding after startup"))
+                for attempt in 0..max_retries {
+                    match UnixStream::connect(&socket_path).await {
+                        Ok(_) => return Ok(()),
+                        Err(_) if attempt < max_retries - 1 => {
+                            tokio::time::sleep(retry_delay).await;
+                            retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
+                        }
+                        Err(_) => {}
                     }
                 }
+
+                Err(anyhow!(
+                    "Daemon not responding after {} attempts",
+                    max_retries
+                ))
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                if !stderr.is_empty() {
-                    eprintln!("Daemon startup error: {stderr}");
-                }
-                Err(anyhow!("Daemon failed to start"))
+                Err(anyhow!("Daemon failed to start: {}", stderr.trim()))
             }
         }
-        Err(e) => {
-            eprintln!("❌ Failed to execute daemon: {e}");
-            Err(anyhow!("Failed to execute daemon: {e}"))
-        }
+        Err(e) => Err(anyhow!("Failed to execute daemon: {e}")),
     }
 }
 
@@ -261,47 +225,123 @@ impl DaemonClient {
         Ok(Self { stream })
     }
 
-    pub async fn synthesize(&mut self, text: &str, style_id: u32) -> Result<Vec<u8>> {
+    pub async fn connect_with_retry() -> Result<Self> {
+        use crate::daemon::startup;
+
+        let mut last_error = None;
+        let mut retry_delay = startup::initial_retry_delay();
+
+        for attempt in 0..startup::MAX_CONNECT_ATTEMPTS {
+            match Self::new().await {
+                Ok(client) => return Ok(client),
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < startup::MAX_CONNECT_ATTEMPTS - 1 {
+                        tokio::time::sleep(retry_delay).await;
+                        retry_delay = (retry_delay * 2).min(startup::max_retry_delay());
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            anyhow!(
+                "Failed to connect to daemon after {} attempts",
+                startup::MAX_CONNECT_ATTEMPTS
+            )
+        }))
+    }
+
+    /// Creates a new DaemonClient with automatic daemon startup if not running.
+    ///
+    /// This method attempts to connect to an existing daemon first. If the connection
+    /// fails, it checks for available models and automatically starts the daemon
+    /// without user interaction.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(DaemonClient)` - Successfully connected to daemon (existing or newly started)
+    /// * `Err` - No models available or daemon startup failed
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// * No VOICEVOX models are found in the models directory
+    /// * The daemon fails to start
+    /// * The daemon starts but doesn't respond to connections
+    ///
+    /// # Note
+    ///
+    /// This is a non-interactive method suitable for use in automated environments
+    /// like MCP servers or streaming synthesizers. For interactive CLI use, consider
+    /// using `new()` with appropriate user prompts.
+    pub async fn new_with_auto_start() -> Result<Self> {
+        let socket_path = get_socket_path();
+        match UnixStream::connect(&socket_path).await {
+            Ok(stream) => Ok(Self { stream }),
+            Err(_) => {
+                crate::voice::has_available_models()
+                    .then_some(())
+                    .ok_or_else(|| anyhow!(
+                        "No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory."
+                    ))?;
+                start_daemon_automatically().await?;
+                let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+                    anyhow!(
+                        "Daemon started but failed to connect at {}: {e}",
+                        socket_path.display()
+                    )
+                })?;
+                Ok(Self { stream })
+            }
+        }
+    }
+
+    async fn send_request_and_receive_response(
+        &mut self,
+        request: OwnedRequest,
+    ) -> Result<OwnedResponse> {
+        let request_data = bincode::serialize(&request)?;
+        let mut framed = Framed::new(&mut self.stream, LengthDelimitedCodec::new());
+        framed.send(request_data.into()).await?;
+        if let Some(response_frame) = framed.next().await {
+            let response_data = response_frame?;
+            let response: OwnedResponse = bincode::deserialize(&response_data)?;
+            Ok(response)
+        } else {
+            Err(anyhow!("No response from daemon"))
+        }
+    }
+
+    pub async fn synthesize(
+        &mut self,
+        text: &str,
+        style_id: u32,
+        options: OwnedSynthesizeOptions,
+    ) -> Result<Vec<u8>> {
         let request = OwnedRequest::Synthesize {
             text: Cow::Owned(text.to_string()),
             style_id,
-            options: OwnedSynthesizeOptions::default(),
+            options,
         };
 
-        let request_data = bincode::serialize(&request)?;
-        let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
-        framed_writer.send(request_data.into()).await?;
-
-        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
-        if let Some(Ok(response_data)) = framed_reader.next().await {
-            let response: OwnedResponse = bincode::deserialize(&response_data)?;
-            match response {
-                OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
-                OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {message}")),
-                _ => Err(anyhow!("Unexpected response type")),
-            }
-        } else {
-            Err(anyhow!("No response from daemon"))
+        let response = self.send_request_and_receive_response(request).await?;
+        match response {
+            OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
+            OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {message}")),
+            _ => Err(anyhow!("Unexpected response type")),
         }
     }
 
     pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
         let request = OwnedRequest::ListSpeakers;
 
-        let request_data = bincode::serialize(&request)?;
-        let mut framed_writer = FramedWrite::new(&mut self.stream, LengthDelimitedCodec::new());
-        framed_writer.send(request_data.into()).await?;
-
-        let mut framed_reader = FramedRead::new(&mut self.stream, LengthDelimitedCodec::new());
-        if let Some(Ok(response_data)) = framed_reader.next().await {
-            let response: OwnedResponse = bincode::deserialize(&response_data)?;
-            match response {
-                OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
-                OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
-                _ => Err(anyhow!("Unexpected response type")),
-            }
-        } else {
-            Err(anyhow!("No response from daemon"))
+        let response = self.send_request_and_receive_response(request).await?;
+        match response {
+            OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
+            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers.into_owned()),
+            OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
+            _ => Err(anyhow!("Unexpected response type")),
         }
     }
 }

@@ -112,6 +112,33 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     Ok(result)
 }
 
+/// Checks if any VOICEVOX models are available in the models directory.
+///
+/// This function scans the models directory for `.vvm` files and returns
+/// `true` if at least one model is found, `false` otherwise.
+///
+/// # Returns
+///
+/// * `true` - At least one voice model is available
+/// * `false` - No models found or error occurred during scanning
+///
+/// # Example
+///
+/// ```no_run
+/// use voicevox_cli::voice::has_available_models;
+///
+/// if has_available_models() {
+///     println!("Models are available");
+/// } else {
+///     println!("Please download models first");
+/// }
+/// ```
+pub fn has_available_models() -> bool {
+    scan_available_models()
+        .map(|models| !models.is_empty())
+        .unwrap_or(false)
+}
+
 fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Ok(Vec::new());
@@ -266,7 +293,14 @@ pub async fn build_style_to_model_map_async(
         let current_speakers = match core.get_speakers() {
             Ok(speakers) => speakers,
             Err(_) => {
-                if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+                let path_str = match path.to_str() {
+                    Some(s) => s,
+                    None => {
+                        eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                        continue;
+                    }
+                };
+                if let Err(e) = core.unload_voice_model_by_path(path_str) {
                     eprintln!("  ✗ Failed to unload model {model_id} after error: {e}");
                 }
                 continue;
@@ -283,7 +317,14 @@ pub async fn build_style_to_model_map_async(
             }
         }
 
-        if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+        let path_str = match path.to_str() {
+            Some(s) => s,
+            None => {
+                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                continue;
+            }
+        };
+        if let Err(e) = core.unload_voice_model_by_path(path_str) {
             eprintln!("  ✗ Failed to unload model {model_id} after mapping: {e}");
         }
     }
@@ -310,7 +351,14 @@ pub async fn build_style_to_model_map_async(
     }
 
     for path in &model_files {
-        if let Err(e) = core.unload_voice_model_by_path(path.to_str().unwrap_or("")) {
+        let path_str = match path.to_str() {
+            Some(s) => s,
+            None => {
+                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                continue;
+            }
+        };
+        if let Err(e) = core.unload_voice_model_by_path(path_str) {
             eprintln!("  ✗ Failed to unload model after speaker collection: {e}");
         }
     }

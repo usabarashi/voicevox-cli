@@ -21,6 +21,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -28,11 +32,15 @@
       self,
       nixpkgs,
       flake-utils,
+      fenix,
     }:
     flake-utils.lib.eachSystem [ "aarch64-darwin" ] (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+
+        # Read rust-toolchain.toml to ensure consistency
+        rustToolchain = fenix.packages.${system}.stable;
 
         # VOICEVOX Core libraries for static linking
         voicevoxCore = pkgs.fetchurl {
@@ -149,7 +157,7 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage {
+        voicevox-cli = pkgs.rustPlatform.buildRustPackage rec {
           pname = "voicevox-cli";
           version = "0.1.0";
 
@@ -179,45 +187,47 @@
           };
 
           doCheck = false;
-          
+
+          # Force offline mode to ensure reproducible builds
+          CARGO_NET_OFFLINE = true;
+
           # Pre-configure phase to setup build environment
           preConfigure = ''
             # Create ORT cache directory structure that build.rs expects
             export HOME=$PWD/build-home
             mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib
-            
+
             # Copy ONNX Runtime libraries to expected location
             if [ -d "${voicevoxResources}/voicevox_core/lib" ]; then
               cp -r ${voicevoxResources}/voicevox_core/lib/* \
                 $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib/
             fi
-            
+
             # Also create include directory
             mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include
             if [ -d "${voicevoxResources}/voicevox_core/include" ]; then
               cp -r ${voicevoxResources}/voicevox_core/include/* \
                 $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include/
             fi
-            
+
             # Create VERSION_NUMBER file that voicevox-ort-sys expects
             echo "1.17.3" > $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/VERSION_NUMBER
           '';
 
           nativeBuildInputs = with pkgs; [
-            # Rust tools
-            rustfmt
-            clippy
-            
+            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
+            rustToolchain.defaultToolchain
+
             # Build tools
             pkg-config
             cmake
             gnumake
-            
+
             # Autotools (for dependencies)
             autoconf
             automake
             libtool
-            
+
             # Version control (required by some build scripts)
             git
             cacert
@@ -232,11 +242,11 @@
           preBuild = ''
             # Run full CI checks before build
             ${pkgs.bash}/bin/bash ${./scripts/ci.sh} --build-phase || exit 1
-            
+
             # Git SSL configuration
             export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            
+
             # OpenJTalk configuration
             # Used by build.rs to embed dictionary path at compile time
             export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
@@ -272,7 +282,7 @@
             # Install binaries
             cp ${voicevoxResources}/bin/voicevox-download $out/bin/
             install -m755 ${./scripts/voicevox-setup-models.sh} $out/bin/voicevox-setup-models
-            
+
             # Install OpenJTalk dictionary to standard location
             mkdir -p $out/share/voicevox
             if [ -d "${voicevoxResources}/openjtalk_dict" ]; then
@@ -294,6 +304,122 @@
             --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
             --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
           chmod +x $out/bin/voicevox-auto-setup
+        '';
+
+        # Common Serena environment setup script
+        serenaEnvSetup = ''
+          # Get the directory where this script is invoked from
+          PROJECT_DIR="$(pwd)"
+
+          # Create fake home directory structure in project
+          export HOME="$PROJECT_DIR/.project-home"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export UV_CACHE_DIR="$HOME/.cache/uv"
+          export UV_TOOL_DIR="$HOME/.local/uv/tools"
+          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
+
+          # Create necessary directories
+          mkdir -p "$HOME/.serena/logs"
+          mkdir -p "$XDG_DATA_HOME/uv"
+          mkdir -p "$XDG_CACHE_HOME"
+        '';
+
+        # Serena index creation wrapper
+        serenaIndexWrapper = pkgs.writeShellScriptBin "serena-index" ''
+          ${serenaEnvSetup}
+
+          echo "Creating Serena index for project..."
+          echo "HOME: $HOME"
+          echo "Project: $PROJECT_DIR"
+
+          # Run serena index command with all paths pointing to project directory
+          exec ${pkgs.uv}/bin/uvx \
+              --cache-dir "$UV_CACHE_DIR" \
+              --from git+https://github.com/oraios/serena \
+              serena project index
+        '';
+
+        # Serena MCP server wrapper with project-local paths
+        serenaMcpWrapper = pkgs.writeShellScriptBin "serena-mcp-wrapper" ''
+          ${serenaEnvSetup}
+
+          echo "Starting Serena MCP server with project-local paths..."
+          echo "HOME: $HOME"
+          echo "Project: $PROJECT_DIR"
+
+          # Run serena with all paths pointing to project directory
+          exec ${pkgs.uv}/bin/uvx \
+              --cache-dir "$UV_CACHE_DIR" \
+              --from git+https://github.com/oraios/serena \
+              serena start-mcp-server \
+              --context ide-assistant \
+              --enable-web-dashboard false \
+              --project "$PROJECT_DIR"
+        '';
+
+        # Helper function to run uvx with Serena
+        runSerenaCommand = ''
+          exec ${pkgs.uv}/bin/uvx \
+              --cache-dir "$UV_CACHE_DIR" \
+              --from git+https://github.com/oraios/serena \
+              serena "$@"
+        '';
+
+        # Serena memory management wrapper
+        serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
+          set -euo pipefail
+          
+          ${serenaEnvSetup}
+
+          # Handle memory commands
+          case "''${1:-}" in
+            write)
+              if [ "$#" -lt 3 ]; then
+                echo "Error: write command requires at least 2 arguments" >&2
+                echo "Usage: serena-memory write <memory-name> <content>" >&2
+                exit 1
+              fi
+              MEMORY_NAME="$2"
+              echo "Writing memory: $MEMORY_NAME"
+              # Shift twice to get all remaining args as content
+              shift 2
+              ${runSerenaCommand} memory write "$MEMORY_NAME" "$*"
+              ;;
+            read)
+              if [ "$#" -lt 2 ]; then
+                echo "Error: read command requires 1 argument" >&2
+                echo "Usage: serena-memory read <memory-name>" >&2
+                exit 1
+              fi
+              ${runSerenaCommand} memory read "$2"
+              ;;
+            list)
+              ${runSerenaCommand} memory list
+              ;;
+            delete)
+              if [ "$#" -lt 2 ]; then
+                echo "Error: delete command requires 1 argument" >&2
+                echo "Usage: serena-memory delete <memory-name>" >&2
+                exit 1
+              fi
+              echo "Deleting memory: $2"
+              ${runSerenaCommand} memory delete "$2"
+              ;;
+            *)
+              echo "Serena Memory Management"
+              echo ""
+              echo "Usage:"
+              echo "  serena-memory write <name> <content>  - Save a memory"
+              echo "  serena-memory read <name>             - Read a memory"
+              echo "  serena-memory list                    - List all memories"
+              echo "  serena-memory delete <name>           - Delete a memory"
+              echo ""
+              echo "Example:"
+              echo "  serena-memory write architecture 'This project uses daemon-client model'"
+              exit 1
+              ;;
+          esac
         '';
 
       in
@@ -318,31 +444,47 @@
             type = "app";
             program = "${voicevox-cli}/bin/voicevox-daemon";
           };
+          voicevox-mcp-server = {
+            type = "app";
+            program = "${voicevox-cli}/bin/voicevox-mcp-server";
+          };
 
           # CI Task Runner - All checks in one command
           ci = {
             type = "app";
-            program = toString (pkgs.writeShellScript "ci-runner" ''
-              exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
-            '');
+            program = toString (
+              pkgs.writeShellScript "ci-runner" ''
+                # Pass the project directory to the CI script
+                export PROJECT_DIR="${toString ./.}"
+                exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
+              ''
+            );
           };
         };
 
         devShells.default = pkgs.mkShell {
+          CARGO_HOME = "./.project-home/.cargo";
+
           buildInputs = with pkgs; [
-            # Rust toolchain
-            cargo
-            rustc
-            rustfmt
-            clippy
-            rust-analyzer
-            
+            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
+            rustToolchain.defaultToolchain
+            cargo-audit
+
             # Build tools
             pkg-config
             cmake
+
+            # MCP
+            uv
+            serenaIndexWrapper
+            serenaMcpWrapper
+            serenaMemoryWrapper
           ];
 
           shellHook = ''
+            # Create project-home directory for CARGO_HOME
+            mkdir -p .project-home
+            
             echo "VOICEVOX CLI Development Environment (Apple Silicon)"
             echo "Available commands:"
             echo "  cargo build --bin voicevox-say     - Build client"
@@ -350,6 +492,9 @@
             echo "  cargo run --bin voicevox-say       - Run client"
             echo "  nix build                          - Build with Nix"
             echo "  nix run                            - Run voicevox-say directly"
+            echo "  serena-index                       - Create Serena index for the project"
+            echo "  serena-mcp-wrapper                 - Start Serena MCP server"
+            echo "  serena-memory                      - Manage project memories"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
           '';

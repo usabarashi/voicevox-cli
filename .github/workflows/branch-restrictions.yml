@@ -10,6 +10,7 @@ env:
 
 jobs:
   check_base_branch:
+    name: Validate Source Branch
     runs-on: ubuntu-latest
     steps:
       - name: Check source branch

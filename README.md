@@ -1,5 +1,9 @@
 # VOICEVOX CLI
 
+[![Dependency Status](https://img.shields.io/badge/deps-automated-green)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/dependabot.yml)
+[![CI Status](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml)
+[![Last Update](https://img.shields.io/badge/updated-monthly-blue)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/workflows/update-flake.yml)
+
 Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 
 ## Features
@@ -99,7 +103,7 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start  # Custom socket
 
 Voice characters (26+) are automatically detected from downloaded models:
 - **ずんだもん** - Cheerful and energetic character
-- **四国めたん** - Sweet and gentle character  
+- **四国めたん** - Sweet and gentle character
 - **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
 
 ### Voice Discovery

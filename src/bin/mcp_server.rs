@@ -47,7 +47,7 @@ async fn try_connect_existing(socket_path: &std::path::Path) -> DaemonResult<boo
 }
 
 async fn start_daemon_process(socket_path: &std::path::Path) -> DaemonResult<()> {
-    let daemon_path = find_daemon_binary();
+    let daemon_path = find_daemon_binary()?;
 
     let output = Command::new(&daemon_path)
         .args(["--start", "--detach"])

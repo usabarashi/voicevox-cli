@@ -1,11 +1,9 @@
 name: CI
 
-# Comprehensive CI for Apple Silicon macOS
-# This project is designed specifically for Apple Silicon macOS
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 env:
@@ -32,24 +30,94 @@ jobs:
           name: voicevox-cli
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
+      - name: Check Nix flake
+        run: |
+          echo "Checking Nix flake..."
+          nix flake check --show-trace
+
+      - name: Verify Rust toolchain
+        run: |
+          echo "Verifying Rust toolchain..."
+          nix develop --command rustc --version
+          nix develop --command cargo --version
+
+      - name: Check code formatting
+        run: |
+          echo "Checking code formatting..."
+          nix develop --command cargo fmt --check
+
+      - name: Run Clippy analysis
+        run: |
+          echo "Running clippy analysis..."
+          nix develop --command cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Check scripts
+        run: |
+          echo "Checking scripts..."
+          echo "Checking for required scripts..."
+          test -f scripts/voicevox-setup-models.sh || (echo "Missing voicevox-setup-models.sh" && exit 1)
+          test -f scripts/voicevox-auto-setup.sh || (echo "Missing voicevox-auto-setup.sh" && exit 1)
+
+          echo "Validating all scripts..."
+          for script in scripts/*.sh; do
+            if [[ -f "$script" ]]; then
+              echo "  - Validating: $(basename "$script")"
+              if grep -q '@@.*@@' "$script"; then
+                sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
+              else
+                bash -n "$script"
+              fi
+            fi
+          done
+          echo "All scripts validated successfully"
+
+      - name: Run security audit
+        run: |
+          echo "Running security audit..."
+          if ! nix develop --command cargo audit --version >/dev/null 2>&1; then
+            echo "Installing cargo-audit..."
+            nix develop --command cargo install cargo-audit
+          fi
+          nix develop --command cargo audit
+
       - name: Build with Nix
         run: |
-          echo "Building VOICEVOX CLI with Nix (static linking)..."
+          echo "Building project with Nix..."
           nix build --show-trace
 
-      - name: Verify Nix build artifacts
+      - name: Verify build artifacts
         run: |
+          echo "Verifying build artifacts..."
+          if [[ -d result/bin ]]; then
+            ls -la result/bin/
+            echo "Build artifacts verified"
+          else
+            echo "Build artifacts not found"
+            exit 1
+          fi
+
+      - name: Verify build artifacts detailed
+        run: |
+          echo "Verifying build artifacts..."
           ls -la result/bin/
           file result/bin/voicevox-say
           file result/bin/voicevox-daemon
           test -x result/bin/voicevox-setup-models
-          echo "✅ All binaries built successfully"
+          echo "All binaries built successfully"
 
-      - name: Test Nix build functionality
+      - name: Test functionality
         run: |
-          # Basic help commands (compilation verification)
+          echo "Testing functionality..."
           result/bin/voicevox-say --help || echo "Help command test"
           result/bin/voicevox-daemon --help || echo "Help command test"
-
-          # Version information
           result/bin/voicevox-say --version || echo "Version command not available"
+
+      - name: Package verification
+        run: |
+          echo "Package verification..."
+          echo "Binary sizes:"
+          ls -lah result/bin/
+          echo "Static linking verification:"
+          otool -L result/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
+          echo "Total package size:"
+          du -sh result/

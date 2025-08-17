@@ -144,19 +144,22 @@ pub fn has_available_models() -> bool {
 
 /// Quickly checks if any .vvm file exists in the given directory (recursively).
 /// Returns true as soon as the first .vvm file is found.
-fn has_any_vvm_file(dir: &PathBuf) -> bool {
+fn has_any_vvm_file(dir: &Path) -> bool {
     if !dir.exists() {
         return false;
     }
 
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            if path.is_file() && path.extension().map(|ext| ext == "vvm").unwrap_or(false) {
-                return true;
-            }
-            if path.is_dir() && has_any_vvm_file(&path) {
-                return true;
+            if let Ok(file_type) = entry.file_type() {
+                let path = entry.path();
+                if file_type.is_dir() {
+                    if has_any_vvm_file(&path) {
+                        return true;
+                    }
+                } else if file_type.is_file() && path.extension().is_some_and(|ext| ext == "vvm") {
+                    return true;
+                }
             }
         }
     }

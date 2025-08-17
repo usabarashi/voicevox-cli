@@ -1,5 +1,9 @@
 # VOICEVOX CLI
 
+[![Dependency Status](https://img.shields.io/badge/deps-automated-green)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/dependabot.yml)
+[![CI Status](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml)
+[![Last Update](https://img.shields.io/badge/updated-monthly-blue)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/workflows/update-flake.yml)
+
 Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 
 ## Features
@@ -169,6 +173,13 @@ This project includes multiple components with different licenses. See [LICENSE]
 **Important**: You'll need to accept license terms for all voice characters during first-run setup.
 
 Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
+
+## Dependency Management
+
+- **Automated Updates**: Monthly dependency checks via Dependabot and Nix flake workflows
+- **Review Process**: All updates reviewed through CODEOWNERS enforcement
+- **Rollback Protection**: Automatic rollback on test failures
+- **Monitoring**: Status badges show current automation health
 
 ## Related Links
 

@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "serena": {
+            "command": "nix",
+            "args": [
+                "develop",
+                "-c",
+                "serena-mcp-wrapper"
+            ]
+        }
+    }
+}

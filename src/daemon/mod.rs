@@ -13,9 +13,6 @@ pub enum DaemonError {
     #[error("Daemon is already running (PID: {pid})")]
     AlreadyRunning { pid: u32 },
 
-    #[error("Permission denied: {message}")]
-    PermissionDenied { message: String },
-
     #[error("Socket file exists but is owned by another user: {path}")]
     SocketPermissionDenied { path: PathBuf },
 
@@ -27,9 +24,6 @@ pub enum DaemonError {
 
     #[error("Failed to connect to daemon: {0}")]
     ConnectionFailed(#[from] io::Error),
-
-    #[error("Failed to execute daemon binary: {0}")]
-    ExecutionFailed(String),
 
     #[error("No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory.")]
     NoModelsAvailable,

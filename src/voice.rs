@@ -134,9 +134,36 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
 /// }
 /// ```
 pub fn has_available_models() -> bool {
-    scan_available_models()
-        .map(|models| !models.is_empty())
+    use crate::paths::find_models_dir_client;
+
+    find_models_dir_client()
+        .ok()
+        .map(|dir| has_any_vvm_file(&dir))
         .unwrap_or(false)
+}
+
+/// Quickly checks if any .vvm file exists in the given directory (recursively).
+/// Returns true as soon as the first .vvm file is found.
+fn has_any_vvm_file(dir: &Path) -> bool {
+    if !dir.exists() {
+        return false;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(Result::ok) {
+            if let Ok(file_type) = entry.file_type() {
+                let path = entry.path();
+                if file_type.is_dir() {
+                    if has_any_vvm_file(&path) {
+                        return true;
+                    }
+                } else if file_type.is_file() && path.extension().is_some_and(|ext| ext == "vvm") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {

@@ -103,7 +103,7 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start  # Custom socket
 
 Voice characters (26+) are automatically detected from downloaded models:
 - **ずんだもん** - Cheerful and energetic character
-- **四国めたん** - Sweet and gentle character  
+- **四国めたん** - Sweet and gentle character
 - **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
 
 ### Voice Discovery
@@ -173,13 +173,6 @@ This project includes multiple components with different licenses. See [LICENSE]
 **Important**: You'll need to accept license terms for all voice characters during first-run setup.
 
 Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
-
-## Dependency Management
-
-- **Automated Updates**: Monthly dependency checks via Dependabot and Nix flake workflows
-- **Review Process**: All updates reviewed through CODEOWNERS enforcement
-- **Rollback Protection**: Automatic rollback on test failures
-- **Monitoring**: Status badges show current automation health
 
 ## Related Links
 

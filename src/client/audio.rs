@@ -1,15 +1,15 @@
 use anyhow::{anyhow, Result};
-use rodio::{Decoder, OutputStream, Sink};
+use rodio::{Decoder, Sink};
 use std::fs;
 use std::io::Cursor;
 
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
-    if let Ok((_stream, stream_handle)) = OutputStream::try_default() {
-        let sink = Sink::try_new(&stream_handle)?;
+    if let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() {
         let wav_data_owned = wav_data.to_vec();
         let cursor = Cursor::new(wav_data_owned);
 
         if let Ok(source) = Decoder::new(cursor) {
+            let sink = Sink::connect_new(stream.mixer());
             sink.append(source);
             sink.play();
             sink.sleep_until_end();

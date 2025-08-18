@@ -194,7 +194,7 @@ dependencies = [
  "crc32fast",
  "futures-lite",
  "pin-project",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -1310,7 +1310,7 @@ version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "145ee6f495871a0cde6d49ddfa0d103d07430c449d95b6d92fbfb032d622f0b7"
 dependencies = [
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -1324,7 +1324,7 @@ dependencies = [
  "combine",
  "jni-sys",
  "log",
- "thiserror 1.0.69",
+ "thiserror",
  "walkdir",
  "windows-sys 0.45.0",
 ]
@@ -1543,7 +1543,7 @@ dependencies = [
  "log",
  "ndk-sys",
  "num_enum",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -1771,7 +1771,7 @@ source = "git+https://github.com/VOICEVOX/open_jtalk-rs.git?rev=7c87b4227bb005b4
 dependencies = [
  "camino",
  "open_jtalk-sys",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -2012,7 +2012,7 @@ checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -2088,10 +2088,6 @@ dependencies = [
  "dasp_sample",
  "num-rational",
  "symphonia",
-<<<<<<< HEAD
-=======
- "thiserror 1.0.69",
->>>>>>> fc83edd (deps(deps): bump thiserror from 1.0.69 to 2.0.15)
 ]
 
 [[package]]
@@ -2660,16 +2656,7 @@ version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
-version = "2.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80d76d3f064b981389ecb4b6b7f45a0bf9fdac1d5b9204c7bd6714fecc302850"
-dependencies = [
- "thiserror-impl 2.0.15",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -2677,17 +2664,6 @@ name = "thiserror-impl"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.104",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "2.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44d29feb33e986b6ea906bd9c3559a856983f92371b3eaa5e83782a351623de0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3012,7 +2988,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "tempfile",
- "thiserror 2.0.15",
+ "thiserror",
  "tokio",
  "tokio-util",
  "toml 0.9.5",
@@ -3029,7 +3005,7 @@ dependencies = [
  "js-sys",
  "ndarray",
  "once_cell",
- "thiserror 1.0.69",
+ "thiserror",
  "tracing",
  "voicevox-ort-sys",
  "web-sys",
@@ -3085,7 +3061,7 @@ dependencies = [
  "smallvec",
  "strum",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror",
  "tracing",
  "uuid",
  "voicevox-ort",

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use rodio::{OutputStream, Sink};
+use rodio::Sink;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -76,9 +76,10 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
 }
 
 async fn handle_streaming_synthesis(params: SynthesizeParams) -> Result<ToolCallResult> {
-    let (_stream, stream_handle) =
-        OutputStream::try_default().context("Failed to create audio output stream")?;
-    let sink = Sink::try_new(&stream_handle).context("Failed to create audio sink")?;
+    let stream = rodio::OutputStreamBuilder::open_default_stream()
+        .context("Failed to create audio output stream")?;
+
+    let sink = Sink::connect_new(stream.mixer());
 
     let mut synthesizer = StreamingSynthesizer::new()
         .await
@@ -90,7 +91,7 @@ async fn handle_streaming_synthesis(params: SynthesizeParams) -> Result<ToolCall
         .context("Streaming synthesis failed")?;
 
     sink.sleep_until_end();
-    drop(_stream);
+    drop(stream);
 
     Ok(ToolCallResult {
         content: vec![ToolContent {

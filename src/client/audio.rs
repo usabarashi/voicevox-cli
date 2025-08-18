@@ -4,20 +4,27 @@ use std::fs;
 use std::io::Cursor;
 
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
-    if let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() {
-        let wav_data_owned = wav_data.to_vec();
-        let cursor = Cursor::new(wav_data_owned);
+    match rodio::OutputStreamBuilder::open_default_stream() {
+        Ok(stream) => {
+            let wav_data_owned = wav_data.to_vec();
+            let cursor = Cursor::new(wav_data_owned);
 
-        if let Ok(source) = Decoder::new(cursor) {
-            let sink = Sink::connect_new(stream.mixer());
-            sink.append(source);
-            sink.play();
-            sink.sleep_until_end();
-            return Ok(());
+            match Decoder::new(cursor) {
+                Ok(source) => {
+                    let sink = Sink::connect_new(stream.mixer());
+                    sink.append(source);
+                    sink.play();
+                    sink.sleep_until_end();
+                    Ok(())
+                }
+                Err(_) => {
+                    drop(stream);
+                    play_audio_via_system(wav_data)
+                }
+            }
         }
+        Err(_) => play_audio_via_system(wav_data),
     }
-
-    play_audio_via_system(wav_data)
 }
 
 fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {

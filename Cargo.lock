@@ -2088,6 +2088,10 @@ dependencies = [
  "dasp_sample",
  "num-rational",
  "symphonia",
+<<<<<<< HEAD
+=======
+ "thiserror 1.0.69",
+>>>>>>> fc83edd (deps(deps): bump thiserror from 1.0.69 to 2.0.15)
 ]
 
 [[package]]

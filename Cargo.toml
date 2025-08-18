@@ -51,7 +51,7 @@ tokio = { version = "1.47", features = ["full", "tracing"] }
 tokio-util = { version = "0.7", features = ["codec", "io-util"] }
 futures-util = { version = "0.3", features = ["sink", "io"] }
 
-voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", tag = "0.16.1", features = ["link-onnxruntime"], default-features = false }
+voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", rev = "711d8b4b464ea9b1161db093e4a1feed763b9611", features = ["link-onnxruntime"], default-features = false }
 
 libc = "0.2"
 

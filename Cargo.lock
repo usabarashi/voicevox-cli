@@ -3049,7 +3049,7 @@ dependencies = [
 [[package]]
 name = "voicevox_core"
 version = "0.0.0"
-source = "git+https://github.com/VOICEVOX/voicevox_core.git?tag=0.16.1#711d8b4b464ea9b1161db093e4a1feed763b9611"
+source = "git+https://github.com/VOICEVOX/voicevox_core.git?rev=711d8b4b464ea9b1161db093e4a1feed763b9611#711d8b4b464ea9b1161db093e4a1feed763b9611"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -3095,7 +3095,7 @@ dependencies = [
 [[package]]
 name = "voicevox_core_macros"
 version = "0.0.0"
-source = "git+https://github.com/VOICEVOX/voicevox_core.git?tag=0.16.1#711d8b4b464ea9b1161db093e4a1feed763b9611"
+source = "git+https://github.com/VOICEVOX/voicevox_core.git?rev=711d8b4b464ea9b1161db093e4a1feed763b9611#711d8b4b464ea9b1161db093e4a1feed763b9611"
 dependencies = [
  "derive-syn-parse",
  "fs-err",

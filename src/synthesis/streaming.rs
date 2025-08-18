@@ -35,10 +35,7 @@ impl StreamingSynthesizer {
                 continue;
             }
 
-            let options = crate::ipc::OwnedSynthesizeOptions {
-                rate,
-                ..Default::default()
-            };
+            let options = crate::ipc::OwnedSynthesizeOptions { rate };
             let wav_data = self
                 .daemon_client
                 .synthesize(segment, style_id, options)

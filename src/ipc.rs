@@ -1,63 +1,57 @@
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::voice::Speaker;
 
 /// Request messages sent from client to daemon
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum DaemonRequest<'a> {
+pub enum DaemonRequest {
     Ping,
     Synthesize {
-        text: Cow<'a, str>,
+        text: String,
         style_id: u32,
-        options: SynthesizeOptions<'a>,
+        options: SynthesizeOptions,
     },
     ListSpeakers,
 }
 
 /// Synthesis options for voice synthesis requests
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SynthesizeOptions<'a> {
+pub struct SynthesizeOptions {
     pub rate: f32,
-    #[serde(skip)]
-    pub _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl Default for SynthesizeOptions<'_> {
+impl Default for SynthesizeOptions {
     fn default() -> Self {
-        Self {
-            rate: 1.0,
-            _phantom: std::marker::PhantomData,
-        }
+        Self { rate: 1.0 }
     }
 }
 
 /// Response messages from daemon to client
 #[derive(Debug, Serialize, Deserialize)]
-pub enum DaemonResponse<'a> {
+pub enum DaemonResponse {
     Pong,
     SynthesizeResult {
-        wav_data: Cow<'a, [u8]>,
+        wav_data: Vec<u8>,
     },
     SpeakersList {
-        speakers: Cow<'a, [Speaker]>,
+        speakers: Vec<Speaker>,
     },
     /// Enhanced speakers list with model ID mapping
     SpeakersListWithModels {
-        speakers: Cow<'a, [Speaker]>,
+        speakers: Vec<Speaker>,
         style_to_model: HashMap<u32, u32>,
     },
     Error {
-        message: Cow<'a, str>,
+        message: String,
     },
 }
 
 /// Request type for owned data
-pub type OwnedRequest = DaemonRequest<'static>;
+pub type OwnedRequest = DaemonRequest;
 
 /// Response type for owned data
-pub type OwnedResponse = DaemonResponse<'static>;
+pub type OwnedResponse = DaemonResponse;
 
 /// Synthesis options for owned data
-pub type OwnedSynthesizeOptions = SynthesizeOptions<'static>;
+pub type OwnedSynthesizeOptions = SynthesizeOptions;

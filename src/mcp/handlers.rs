@@ -121,10 +121,7 @@ async fn handle_daemon_synthesis(params: SynthesizeParams) -> Result<ToolCallRes
         }
     };
 
-    let options = crate::ipc::OwnedSynthesizeOptions {
-        rate: params.rate,
-        ..Default::default()
-    };
+    let options = crate::ipc::OwnedSynthesizeOptions { rate: params.rate };
 
     let wav_data = client
         .synthesize(&params.text, params.style_id, options)

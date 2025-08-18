@@ -10,7 +10,6 @@ use tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec};
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
 use crate::voice::Speaker;
-use std::borrow::Cow;
 
 pub fn find_daemon_binary() -> Result<PathBuf, crate::daemon::DaemonError> {
     if let Ok(current_exe) = std::env::current_exe() {
@@ -47,13 +46,13 @@ pub async fn daemon_mode(
         .map_err(|e| anyhow!("Failed to connect to daemon: {e}"))?;
 
     let request = OwnedRequest::Synthesize {
-        text: Cow::Owned(text.to_string()),
+        text: text.to_string(),
         style_id,
         options,
     };
 
-    let request_data =
-        bincode::serialize(&request).map_err(|e| anyhow!("Failed to serialize request: {e}"))?;
+    let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())
+        .map_err(|e| anyhow!("Failed to serialize request: {e}"))?;
 
     {
         let (_reader, writer) = stream.split();
@@ -75,8 +74,10 @@ pub async fn daemon_mode(
             .map_err(|e| anyhow!("Failed to receive response: {e}"))?
     };
 
-    let response: OwnedResponse = bincode::deserialize(&response_frame)
-        .map_err(|e| anyhow!("Failed to deserialize response: {e}"))?;
+    let response: OwnedResponse =
+        bincode::serde::decode_from_slice(&response_frame, bincode::config::standard())
+            .map_err(|e| anyhow!("Failed to deserialize response: {e}"))?
+            .0;
 
     match response {
         OwnedResponse::SynthesizeResult { wav_data } => {
@@ -105,17 +106,18 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
 
     let request = DaemonRequest::ListSpeakers;
-    let request_data = bincode::serialize(&request)?;
+    let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())?;
     framed_writer.send(request_data.into()).await?;
 
     if let Some(response_frame) = framed_reader.next().await {
         let response_frame = response_frame?;
-        let response: OwnedResponse = bincode::deserialize(&response_frame)?;
+        let response: OwnedResponse =
+            bincode::serde::decode_from_slice(&response_frame, bincode::config::standard())?.0;
 
         match response {
             OwnedResponse::SpeakersList { speakers } => {
                 println!("All available speakers and styles from daemon:");
-                for speaker in speakers.as_ref() {
+                for speaker in &speakers {
                     println!("  {}", speaker.name);
                     for style in &speaker.styles {
                         println!("    {} (Style ID: {})", style.name, style.id);
@@ -132,7 +134,7 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
                 style_to_model,
             } => {
                 println!("All available speakers and styles from daemon:");
-                for speaker in speakers.as_ref() {
+                for speaker in &speakers {
                     println!("  {}", speaker.name);
                     for style in &speaker.styles {
                         let model_id = style_to_model
@@ -296,12 +298,13 @@ impl DaemonClient {
         &mut self,
         request: OwnedRequest,
     ) -> Result<OwnedResponse> {
-        let request_data = bincode::serialize(&request)?;
+        let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())?;
         let mut framed = Framed::new(&mut self.stream, LengthDelimitedCodec::new());
         framed.send(request_data.into()).await?;
         if let Some(response_frame) = framed.next().await {
             let response_data = response_frame?;
-            let response: OwnedResponse = bincode::deserialize(&response_data)?;
+            let response: OwnedResponse =
+                bincode::serde::decode_from_slice(&response_data, bincode::config::standard())?.0;
             Ok(response)
         } else {
             Err(anyhow!("No response from daemon"))
@@ -315,14 +318,14 @@ impl DaemonClient {
         options: OwnedSynthesizeOptions,
     ) -> Result<Vec<u8>> {
         let request = OwnedRequest::Synthesize {
-            text: Cow::Owned(text.to_string()),
+            text: text.to_string(),
             style_id,
             options,
         };
 
         let response = self.send_request_and_receive_response(request).await?;
         match response {
-            OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
+            OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data),
             OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {message}")),
             _ => Err(anyhow!("Unexpected response type")),
         }
@@ -333,8 +336,8 @@ impl DaemonClient {
 
         let response = self.send_request_and_receive_response(request).await?;
         match response {
-            OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
-            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers.into_owned()),
+            OwnedResponse::SpeakersList { speakers } => Ok(speakers),
+            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
             OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
             _ => Err(anyhow!("Unexpected response type")),
         }

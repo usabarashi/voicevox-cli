@@ -331,10 +331,7 @@ async fn main() -> Result<()> {
         return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
     }
 
-    let options = OwnedSynthesizeOptions {
-        rate,
-        ..Default::default()
-    };
+    let options = OwnedSynthesizeOptions { rate };
 
     if !force_standalone {
         let socket_path = matches

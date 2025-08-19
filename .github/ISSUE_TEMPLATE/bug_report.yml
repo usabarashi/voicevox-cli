@@ -57,8 +57,10 @@ body:
       options:
         - voicevox-say (CLI client)
         - voicevox-daemon (background service)
-        - Voice model management
-        - Audio output
+        - voicevox-mcp-server (MCP server for AI assistants)
+        - VVM model management
+        - Audio playback
+        - Unix socket communication
         - Build system (Nix/Cargo)
         - Documentation
         - Other
@@ -72,7 +74,7 @@ body:
       description: Please provide your environment details
       value: |
         - OS: [e.g. macOS 14.5]
-        - Architecture: [e.g. Apple Silicon M1, Intel x86_64]
+        - Architecture: [e.g. Apple Silicon M1]
         - Installation method: [e.g. Nix build, Cargo build]
         - Voice models installed: [e.g. Zundamon, Metan, ...]
         - VOICEVOX CLI version: [e.g. 0.1.0]

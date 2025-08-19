@@ -18,6 +18,28 @@
     - See official repositories for complete license details
   '';
 
+  nixConfig = {
+    substituters = [
+      "https://cache.nixos.org/"
+      "https://voicevox-cli.cachix.org"
+      "https://nix-community.cachix.org"
+    ];
+
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "voicevox-cli.cachix.org-1:mgBVkErTVM4g1h08Bz86D73qhB4Jew/+JQ4iCjaPzj0="
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+
+    max-jobs = "auto";
+    cores = 0;
+    max-silent-time = 1800;
+    timeout = 3600;
+    connect-timeout = 5;
+    download-attempts = 3;
+    auto-optimise-store = true;
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -369,7 +391,7 @@
         # Serena memory management wrapper
         serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
           set -euo pipefail
-          
+
           ${serenaEnvSetup}
 
           # Handle memory commands
@@ -484,7 +506,7 @@
           shellHook = ''
             # Create project-home directory for CARGO_HOME
             mkdir -p .project-home
-            
+
             echo "VOICEVOX CLI Development Environment (Apple Silicon)"
             echo "Available commands:"
             echo "  cargo build --bin voicevox-say     - Build client"

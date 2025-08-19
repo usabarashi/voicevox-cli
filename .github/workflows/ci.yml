@@ -6,6 +6,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -19,21 +23,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Install Nix
+      - name: Install Nix with cache
         uses: cachix/install-nix-action@fc6e360bedc9ee72d75e701397f0bb30dce77568 # v31.5.2
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Cachix
         uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
         with:
           name: voicevox-cli
+          extraPullNames: nix-community
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Pre-fetch dependencies
+        run: |
+          echo "Pre-fetching dependencies for cache..."
+          nix flake metadata --accept-flake-config --json > /dev/null 2>&1 || true
+          nix flake show --accept-flake-config --json > /dev/null 2>&1 || true
 
       - name: Check Nix flake
         run: |
           echo "Checking Nix flake..."
-          nix flake check --show-trace
+          nix flake check --accept-flake-config --show-trace
 
       - name: Verify Rust toolchain
         run: |
@@ -102,6 +114,7 @@ jobs:
           ls -la result/bin/
           file result/bin/voicevox-say
           file result/bin/voicevox-daemon
+          file result/bin/voicevox-mcp-server
           test -x result/bin/voicevox-setup-models
           echo "All binaries built successfully"
 
@@ -110,6 +123,7 @@ jobs:
           echo "Testing functionality..."
           result/bin/voicevox-say --help || echo "Help command test"
           result/bin/voicevox-daemon --help || echo "Help command test"
+          result/bin/voicevox-mcp-server --help || echo "Help command test"
           result/bin/voicevox-say --version || echo "Version command not available"
 
       - name: Package verification
@@ -121,3 +135,9 @@ jobs:
           otool -L result/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
           echo "Total package size:"
           du -sh result/
+
+      - name: Warm up cache (main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "Warming up cache for future builds..."
+          nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org" || true

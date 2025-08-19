@@ -15,7 +15,7 @@ if [[ "$BUILD_PHASE" == "false" ]]; then
   # Static Analysis
   echo ""
   echo "📦 Checking Nix flake..."
-  nix flake check --show-trace
+  nix flake check --accept-flake-config --show-trace
 fi
 
 echo ""

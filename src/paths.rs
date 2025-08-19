@@ -1,17 +1,28 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
-const VOICEVOX_DATA_SUBDIR: &str = ".local/share/voicevox";
+const APP_NAME: &str = "voicevox";
 const MODELS_SUBDIR: &str = "models";
-const VVM_SUBDIR: &str = "vvms";
 const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
 
-/// Get the default VOICEVOX data directory path
+// XDG Base Directory fallback paths
+const LOCAL_SHARE: &str = ".local/share";
+const LOCAL_STATE: &str = ".local/state";
+
+/// Get the default VOICEVOX data directory path following XDG Base Directory specification
+///
+/// Priority:
+/// 1. $XDG_DATA_HOME/voicevox (default: ~/.local/share/voicevox)
+/// 2. ~/.local/share/voicevox (fallback)
 pub fn get_default_voicevox_dir() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(VOICEVOX_DATA_SUBDIR))
-        .unwrap_or_else(|| PathBuf::from("."))
+    dirs::data_local_dir()
+        .map(|d| d.join(APP_NAME))
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .map(|h| h.join(LOCAL_SHARE).join(APP_NAME))
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
 }
 
 /// Get the default models directory path
@@ -19,110 +30,101 @@ pub fn get_default_models_dir() -> PathBuf {
     get_default_voicevox_dir().join(MODELS_SUBDIR)
 }
 
+/// Get socket path following XDG Base Directory specification
+///
+/// Priority:
+/// 1. $VOICEVOX_SOCKET_PATH (explicit override)
+/// 2. $XDG_RUNTIME_DIR/voicevox-daemon.sock (runtime files)
+/// 3. $XDG_STATE_HOME/voicevox-daemon.sock (persistent state)
+/// 4. ~/.local/state/voicevox-daemon.sock (fallback)
+/// 5. /tmp/voicevox-daemon.sock (last resort)
 pub fn get_socket_path() -> PathBuf {
-    let env_socket_paths = [
-        ("VOICEVOX_SOCKET_PATH", ""),
-        ("XDG_RUNTIME_DIR", SOCKET_FILENAME),
-        ("XDG_STATE_HOME", SOCKET_FILENAME),
-        ("HOME", &format!(".local/state/{SOCKET_FILENAME}")),
-    ];
+    // Check explicit override first
+    if let Ok(path) = std::env::var("VOICEVOX_SOCKET_PATH") {
+        return PathBuf::from(path);
+    }
 
-    for (env_var, suffix) in &env_socket_paths {
-        if let Ok(value) = std::env::var(env_var) {
-            let path = PathBuf::from(&value);
-            return if suffix.is_empty() {
-                path
-            } else {
-                path.join(suffix)
-            };
+    // XDG_RUNTIME_DIR is preferred for runtime files
+    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        return PathBuf::from(runtime_dir).join(SOCKET_FILENAME);
+    }
+
+    // XDG_STATE_HOME for persistent state
+    if let Some(state_dir) = dirs::state_dir() {
+        return state_dir.join(SOCKET_FILENAME);
+    }
+
+    // Fallback to ~/.local/state if available
+    if let Some(home) = dirs::home_dir() {
+        let local_state = home.join(LOCAL_STATE);
+        if local_state.exists() || std::fs::create_dir_all(&local_state).is_ok() {
+            return local_state.join(SOCKET_FILENAME);
         }
     }
 
-    dirs::state_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(SOCKET_FILENAME)
+    // Last resort: /tmp
+    PathBuf::from("/tmp").join(SOCKET_FILENAME)
 }
 
+/// Find models directory following XDG Base Directory specification
+///
+/// Priority:
+/// 1. $VOICEVOX_MODELS_DIR (explicit override)
+/// 2. $XDG_DATA_HOME/voicevox/models (user data)
+/// 3. ~/.local/share/voicevox/models (fallback)
 pub fn find_models_dir() -> Result<PathBuf> {
-    let env_model_paths = [
-        "VOICEVOX_MODELS_DIR",
-        "VOICEVOX_MODEL_DIR",
-        "VOICEVOX_MODELS_PATH",
-        "VOICEVOX_MODEL_PATH",
-        "VOICEVOX_MODELS",
-    ];
-
-    for env_var in &env_model_paths {
-        if let Ok(path) = std::env::var(env_var) {
-            let models_dir = PathBuf::from(path);
-            if models_dir.exists() && models_dir.is_dir() {
-                return Ok(models_dir);
-            }
+    if let Ok(path) = std::env::var("VOICEVOX_MODELS_DIR") {
+        let models_dir = PathBuf::from(path);
+        if models_dir.exists() && models_dir.is_dir() {
+            return Ok(models_dir);
         }
     }
 
-    let search_dirs = [
-        dirs::data_local_dir()
-            .map(|d| d.join("voicevox"))
-            .unwrap_or_default(),
-        dirs::home_dir()
-            .map(|h| h.join(VOICEVOX_DATA_SUBDIR))
-            .unwrap_or_default(),
-    ];
-
-    for dir in &search_dirs {
-        let candidate = dir.join(MODELS_SUBDIR);
-        if candidate.exists() && candidate.is_dir() {
-            let vvms_dir = candidate.join(VVM_SUBDIR);
-            if vvms_dir.exists() && vvms_dir.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&vvms_dir) {
-                    let has_vvm = entries.filter_map(Result::ok).any(|entry| {
-                        entry
-                            .path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            .map(|ext| ext == "vvm")
-                            .unwrap_or(false)
-                    });
-                    if has_vvm {
-                        return Ok(vvms_dir);
-                    }
-                }
-            }
-            return Ok(candidate);
+    // XDG-compliant user data directory
+    if let Some(data_dir) = dirs::data_local_dir() {
+        let user_models_path = data_dir.join(APP_NAME).join(MODELS_SUBDIR);
+        if user_models_path.exists() && user_models_path.is_dir() {
+            return Ok(user_models_path);
         }
     }
 
-    for dir in &search_dirs {
-        if dir.exists() && dir.is_dir() {
-            return Ok(dir.clone());
+    // Fallback to ~/.local/share/voicevox
+    if let Some(home) = dirs::home_dir() {
+        let fallback_path = home.join(LOCAL_SHARE).join(APP_NAME).join(MODELS_SUBDIR);
+        if fallback_path.exists() && fallback_path.is_dir() {
+            return Ok(fallback_path);
         }
     }
 
     Err(anyhow!(
-        "Models directory not found. Please set VOICEVOX_MODELS_DIR or place models in ~/{}/{}",
-        VOICEVOX_DATA_SUBDIR,
+        "Models directory not found. Please set $VOICEVOX_MODELS_DIR or place models in $XDG_DATA_HOME/{}/{} (default: ~/.local/share/{}/{})",
+        APP_NAME,
+        MODELS_SUBDIR,
+        APP_NAME,
         MODELS_SUBDIR
     ))
 }
 
+/// Find models directory for client operations (with XDG compliance)
 pub fn find_models_dir_client() -> Result<PathBuf> {
     match find_models_dir() {
         Ok(dir) => Ok(dir),
         Err(_) => {
+            // XDG-compliant default path
             let default_path = dirs::data_local_dir()
-                .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-                .join("voicevox")
+                .map(|d| d.join(APP_NAME))
+                .unwrap_or_else(|| {
+                    dirs::home_dir()
+                        .map(|h| h.join(LOCAL_SHARE).join(APP_NAME))
+                        .unwrap_or_else(|| PathBuf::from("."))
+                })
                 .join(MODELS_SUBDIR);
 
+            // Check parent directory as alternative
             let alternative_path = default_path
                 .parent()
                 .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| {
-                    dirs::data_local_dir()
-                        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-                        .join("voicevox")
-                });
+                .unwrap_or_else(get_default_voicevox_dir);
 
             if alternative_path.exists() && alternative_path.is_dir() {
                 Ok(alternative_path)
@@ -133,14 +135,14 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
     }
 }
 
+/// Find OpenJTalk dictionary following XDG Base Directory specification
+///
+/// Priority:
+/// 1. $VOICEVOX_OPENJTALK_DICT (explicit override)
+/// 2. $XDG_DATA_HOME/voicevox/openjtalk_dict (user data)
+/// 3. ~/.local/share/voicevox/openjtalk_dict (fallback)
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
-    if let Some(embedded_path) = option_env!("VOICEVOX_OPENJTALK_DICT_EMBEDDED") {
-        let dict_path = PathBuf::from(embedded_path);
-        if dict_path.exists() && dict_path.is_dir() {
-            return Ok(dict_path);
-        }
-    }
-
+    // Check explicit override first
     if let Ok(path) = std::env::var("VOICEVOX_OPENJTALK_DICT") {
         let dict_path = PathBuf::from(path);
         if dict_path.exists() && dict_path.is_dir() {
@@ -148,25 +150,27 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         }
     }
 
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            let installed_path = exe_dir
-                .join("../share/voicevox")
-                .join(OPENJTALK_DICT_SUBDIR);
-            if installed_path.exists() && installed_path.is_dir() {
-                return Ok(installed_path);
-            }
-        }
-    }
+    // XDG-compliant user data directory
     if let Some(data_dir) = dirs::data_local_dir() {
-        let user_dict_path = data_dir.join("voicevox").join(OPENJTALK_DICT_SUBDIR);
+        let user_dict_path = data_dir.join(APP_NAME).join(OPENJTALK_DICT_SUBDIR);
         if user_dict_path.exists() && user_dict_path.is_dir() {
             return Ok(user_dict_path);
         }
     }
 
+    // Fallback to ~/.local/share/voicevox
+    if let Some(home) = dirs::home_dir() {
+        let fallback_path = home
+            .join(LOCAL_SHARE)
+            .join(APP_NAME)
+            .join(OPENJTALK_DICT_SUBDIR);
+        if fallback_path.exists() && fallback_path.is_dir() {
+            return Ok(fallback_path);
+        }
+    }
+
     Err(anyhow!(
-        "OpenJTalk dictionary not found. Please set VOICEVOX_OPENJTALK_DICT environment variable \
-         or ensure the dictionary is installed at <binary>/../share/voicevox/openjtalk_dict"
+        "OpenJTalk dictionary not found. It will be downloaded automatically on first use. \
+         Run 'voicevox-say' to trigger the setup process."
     ))
 }

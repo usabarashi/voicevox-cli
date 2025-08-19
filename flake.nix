@@ -39,111 +39,25 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Read rust-toolchain.toml to ensure consistency
-        rustToolchain = fenix.packages.${system}.stable;
-
-        # VOICEVOX Core libraries for static linking
-        voicevoxCore = pkgs.fetchurl {
-          url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/voicevox_core-osx-arm64-0.16.0.zip";
-          sha256 = "sha256-vCAvITP9j5tNa/5yWkcmdthAy0gPya9IpZ8NGm/LDhQ=";
+        # Read rust-toolchain.toml for version consistency
+        # Parse the TOML file to get the channel version
+        rustChannelVersion = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml)).toolchain.channel;
+        
+        rustToolchain = fenix.packages.${system}.toolchainOf {
+          channel = rustChannelVersion;
+          sha256 = "sha256-+9FmLhAOezBZCOziO0Qct1NOrfpjNsXxc/8I0c7BdKE=";
         };
 
+        # ONNX Runtime - will be bundled in the same package
         onnxRuntime = pkgs.fetchurl {
           url = "https://github.com/VOICEVOX/onnxruntime-builder/releases/download/voicevox_onnxruntime-1.17.3/voicevox_onnxruntime-osx-arm64-1.17.3.tgz";
           sha256 = "sha256-ltfqGSigoVSFSS03YhOH31D0CnkuKmgX1N9z7NGFcfI=";
         };
 
-        openJTalkDict = pkgs.fetchurl {
-          url = "https://sourceforge.net/projects/open-jtalk/files/Dictionary/open_jtalk_dic-1.11/open_jtalk_dic_utf_8-1.11.tar.gz/download";
-          sha256 = "0j85n563jpilms9ahp527iaf7sk1pymmfvx3gjys46n43cjwvs9k";
-        };
-
-        # Voice models downloader
+        # Voice models downloader (still needed for runtime)
         voicevoxDownloader = pkgs.fetchurl {
-          url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/download-osx-arm64";
-          sha256 = "sha256-OL5Hpyd0Mc+77PzUhtIIFmHjRQqLVaiITuHICg1QBJU=";
-        };
-
-        voicevoxOpenJTalk = pkgs.fetchFromGitHub {
-          owner = "VOICEVOX";
-          repo = "open_jtalk";
-          rev = "1.11";
-          sha256 = "sha256-SBLdQ8D62QgktI8eI6eSNzdYt5PmGo6ZUCKxd01Z8UE=";
-        };
-
-        openJTalkStaticLibs = pkgs.stdenv.mkDerivation {
-          name = "openjtalk-static-libs-dummy";
-
-          dontUnpack = true;
-
-          installPhase = ''
-            echo "Creating dummy OpenJTalk installation..."
-            mkdir -p $out/{lib,include,lib/pkgconfig}
-
-            touch $out/lib/libopen_jtalk.a
-            touch $out/lib/libmecab.a
-
-            mkdir -p $out/include/openjtalk
-            touch $out/include/openjtalk/openjtalk.h
-
-            # Generate pkg-config file from template
-            substitute ${./open_jtalk.pc} $out/lib/pkgconfig/open_jtalk.pc \
-              --replace "@out@" "$out"
-          '';
-        };
-
-        # Static libraries setup for build-time linking
-        voicevoxResources = pkgs.stdenv.mkDerivation {
-          name = "voicevox-static-libs";
-
-          nativeBuildInputs = with pkgs; [
-            unzip
-            gnutar
-          ];
-
-          buildCommand = ''
-            mkdir -p $out/{voicevox_core,bin,openjtalk_dict}
-            cd $TMPDIR
-            ${pkgs.unzip}/bin/unzip ${voicevoxCore}
-            VOICEVOX_DIR=$(find . -maxdepth 1 -name "voicevox_core*" -type d | head -1)
-            if [ -d "$VOICEVOX_DIR/lib" ]; then
-              cp -r "$VOICEVOX_DIR"/lib $out/voicevox_core/
-            fi
-
-            cd $TMPDIR
-            ${pkgs.gnutar}/bin/tar -xzf ${onnxRuntime}
-            ONNX_DIR=$(find . -maxdepth 1 -name "voicevox_onnxruntime*" -type d | head -1)
-            mkdir -p $out/voicevox_core/lib
-            if [ -d "$ONNX_DIR/lib" ]; then
-              cp -r "$ONNX_DIR"/lib/* $out/voicevox_core/lib/
-            fi
-
-            cd $TMPDIR
-            ${pkgs.gnutar}/bin/tar -xzf ${openJTalkDict}
-            DICT_DIR=$(find . -maxdepth 1 -name "open_jtalk_dic*" -type d | head -1)
-            if [ -d "$DICT_DIR" ]; then
-              cp -r "$DICT_DIR"/* $out/openjtalk_dict/
-              echo "OpenJTalk dictionary extracted to $out/openjtalk_dict/"
-              ls -la $out/openjtalk_dict/
-            else
-              echo "Warning: OpenJTalk dictionary directory not found"
-            fi
-
-            cp ${voicevoxDownloader} $out/bin/voicevox-download
-            chmod +x $out/bin/voicevox-download
-
-            if [ -d "$out/voicevox_core/lib" ]; then
-              cd $out/voicevox_core/lib
-              for dylib in *.dylib; do
-                if [ -f "$dylib" ]; then
-                  ${pkgs.darwin.cctools}/bin/install_name_tool -id "@rpath/$dylib" "$dylib" || true
-                fi
-              done
-              if [ -f "libvoicevox_onnxruntime.dylib" ]; then
-                ln -sf libvoicevox_onnxruntime.dylib libonnxruntime.dylib
-              fi
-            fi
-          '';
+          url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.1/download-osx-arm64";
+          sha256 = "sha256-SrsBlDNmSXdlRcblUWKQ4TmjRqcbmgbCQAwyoizqoLw=";
         };
 
         packageMeta = with pkgs.lib; {
@@ -169,11 +83,8 @@
                 baseName = baseNameOf path;
               in
               !(
-                # Exclude temporary directories
                 (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
-                ||
-                  # Exclude other temporary files
-                  (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+                || (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
               );
           };
 
@@ -188,30 +99,33 @@
 
           doCheck = false;
 
-          # Force offline mode to ensure reproducible builds
-          CARGO_NET_OFFLINE = true;
+          # Allow network access for voicevox-ort to download ONNX Runtime
+          # This is needed since we're building from source
+          CARGO_NET_OFFLINE = false;
 
           # Pre-configure phase to setup build environment
           preConfigure = ''
-            # Create ORT cache directory structure that build.rs expects
             export HOME=$PWD/build-home
-            mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib
-
-            # Copy ONNX Runtime libraries to expected location
-            if [ -d "${voicevoxResources}/voicevox_core/lib" ]; then
-              cp -r ${voicevoxResources}/voicevox_core/lib/* \
-                $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/lib/
+            mkdir -p $HOME
+            
+            # Extract ONNX Runtime for build linking
+            mkdir -p $HOME/onnxruntime
+            cd $HOME/onnxruntime
+            ${pkgs.gnutar}/bin/tar -xzf ${onnxRuntime}
+            
+            # Find and move the extracted directory contents
+            ONNX_DIR=$(find . -maxdepth 1 -name "voicevox_onnxruntime*" -type d | head -1)
+            if [ -n "$ONNX_DIR" ]; then
+              mv "$ONNX_DIR"/* .
+              rmdir "$ONNX_DIR"
             fi
-
-            # Also create include directory
-            mkdir -p $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include
-            if [ -d "${voicevoxResources}/voicevox_core/include" ]; then
-              cp -r ${voicevoxResources}/voicevox_core/include/* \
-                $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/include/
+            
+            # Create symlink for build
+            if [ -f "lib/libvoicevox_onnxruntime.dylib" ] && [ ! -f "lib/libonnxruntime.dylib" ]; then
+              ln -s libvoicevox_onnxruntime.dylib lib/libonnxruntime.dylib
             fi
-
-            # Create VERSION_NUMBER file that voicevox-ort-sys expects
-            echo "1.17.3" > $HOME/Library/Caches/voicevox_ort/dfbin/aarch64-apple-darwin/97B40A49637FA94D9D1090C2B1382CDDDD6747382472F763D3422D1710AAEA36/onnxruntime-osx-arm64-1.17.3/VERSION_NUMBER
+            
+            cd - > /dev/null
           '';
 
           nativeBuildInputs = with pkgs; [
@@ -233,10 +147,7 @@
             cacert
           ];
 
-          buildInputs = [
-            voicevoxResources
-            openJTalkStaticLibs
-          ];
+          buildInputs = [ ];
 
           # Build-time environment variables
           preBuild = ''
@@ -248,50 +159,50 @@
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
 
             # OpenJTalk configuration
-            # Used by build.rs to embed dictionary path at compile time
-            export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
+            # Create dummy dictionary for build time
+            mkdir -p $PWD/dummy_dict
+            export OPENJTALK_DICT_PATH="$PWD/dummy_dict"
 
             # ONNX Runtime configuration
+            # Link against ONNX Runtime for build
             export ORT_STRATEGY="system"
-            export ORT_USE_SYSTEM_LIB="1"
-            export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
+            export ORT_LIB_LOCATION="$HOME/onnxruntime/lib"
+            
+            # Set library paths for linking
+            export LIBRARY_PATH="$ORT_LIB_LOCATION:$LIBRARY_PATH"
+            export DYLD_LIBRARY_PATH="$ORT_LIB_LOCATION:$DYLD_LIBRARY_PATH"
 
             # CMake configuration
-            export CMAKE_DISABLE_FIND_PACKAGE_Git="TRUE"
-            export FETCHCONTENT_FULLY_DISCONNECTED="ON"
-            export FETCHCONTENT_QUIET="ON"
-            export CMAKE_OFFLINE="ON"
-            export CMAKE_BUILD_PARALLEL_LEVEL="8"
-            export GIT_SSL_NO_VERIFY="false"
-
-            # VOICEVOX Core configuration
-            export VOICEVOX_CORE_LIB_DIR="${voicevoxResources}/voicevox_core/lib"
-            export VOICEVOX_CORE_INCLUDE_DIR="${voicevoxResources}/voicevox_core/include"
-
-            # Build paths
-            export PKG_CONFIG_PATH="${openJTalkStaticLibs}/lib/pkgconfig:${voicevoxResources}/voicevox_core/lib/pkgconfig:$PKG_CONFIG_PATH"
-            export LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$LIBRARY_PATH"
-            export LD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$LD_LIBRARY_PATH"
-            export DYLD_LIBRARY_PATH="${openJTalkStaticLibs}/lib:${voicevoxResources}/voicevox_core/lib:$DYLD_LIBRARY_PATH"
-
-            # Rust flags
-            export RUSTFLAGS="-C link-arg=-Wl,-rpath,${openJTalkStaticLibs}/lib -C link-arg=-Wl,-rpath,${voicevoxResources}/voicevox_core/lib $RUSTFLAGS"
+            export CMAKE_BUILD_PARALLEL_LEVEL="4"
           '';
 
           postInstall = ''
-            # Install binaries
-            cp ${voicevoxResources}/bin/voicevox-download $out/bin/
+            # Install downloader for runtime model downloads
+            cp ${voicevoxDownloader} $out/bin/voicevox-download
+            chmod +x $out/bin/voicevox-download
             install -m755 ${./scripts/voicevox-setup-models.sh} $out/bin/voicevox-setup-models
-
-            # Install OpenJTalk dictionary to standard location
-            mkdir -p $out/share/voicevox
-            if [ -d "${voicevoxResources}/openjtalk_dict" ]; then
-              cp -r ${voicevoxResources}/openjtalk_dict $out/share/voicevox/openjtalk_dict
-              echo "✓ OpenJTalk dictionary installed to $out/share/voicevox/openjtalk_dict"
-            else
-              echo "✗ ERROR: OpenJTalk dictionary not found in build resources!"
-              exit 1
-            fi
+            
+            # Bundle ONNX Runtime libraries in the same package
+            mkdir -p $out/lib
+            cp $HOME/onnxruntime/lib/*.dylib $out/lib/
+            
+            # Fix rpath to use bundled libraries
+            for bin in voicevox-say voicevox-daemon voicevox-mcp-server; do
+              if [ -f "$out/bin/$bin" ]; then
+                # Add @loader_path/../lib to rpath
+                ${pkgs.cctools}/bin/install_name_tool -add_rpath @loader_path/../lib $out/bin/$bin || true
+                
+                # Update library references to use @rpath
+                ${pkgs.cctools}/bin/install_name_tool -change @rpath/libonnxruntime.1.17.3.dylib @rpath/libonnxruntime.dylib $out/bin/$bin || true
+                ${pkgs.cctools}/bin/install_name_tool -change @rpath/libvoicevox_onnxruntime.1.17.3.dylib @rpath/libvoicevox_onnxruntime.dylib $out/bin/$bin || true
+              fi
+            done
+            
+            # Create version-agnostic symlinks
+            cd $out/lib
+            ln -sf libvoicevox_onnxruntime.1.17.3.dylib libvoicevox_onnxruntime.dylib || true
+            ln -sf libvoicevox_onnxruntime.dylib libonnxruntime.dylib || true
+            ln -sf libvoicevox_onnxruntime.1.17.3.dylib libonnxruntime.1.17.3.dylib || true
           '';
 
           meta = packageMeta;
@@ -302,7 +213,7 @@
           substitute ${./scripts/voicevox-auto-setup.sh} $out/bin/voicevox-auto-setup \
             --replace "@@BASH_PATH@@" "${pkgs.bash}/bin/bash" \
             --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
-            --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
+            --replace "@@DOWNLOADER_PATH@@" "${voicevoxDownloader}"
           chmod +x $out/bin/voicevox-auto-setup
         '';
 
@@ -369,7 +280,7 @@
         # Serena memory management wrapper
         serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
           set -euo pipefail
-          
+
           ${serenaEnvSetup}
 
           # Handle memory commands
@@ -423,30 +334,66 @@
         '';
 
       in
-      {
-        packages = {
+      rec {
+        packages = rec {
           default = voicevox-cli;
-          voicevox-cli = voicevox-cli;
+          inherit voicevox-cli;
           voicevox-say = voicevox-cli;
-          voicevoxResources = voicevoxResources;
+
+          # Release archive package that creates tar.gz from voicevox-cli package
+          release = pkgs.stdenv.mkDerivation {
+            pname = "voicevox-cli-release-archive";
+            version = "0.1.0";
+
+            buildInputs = [ voicevox-cli ];
+            nativeBuildInputs = with pkgs; [
+              coreutils
+              gnutar
+              gzip
+            ];
+
+            phases = [ "installPhase" ];
+
+            installPhase = ''
+              mkdir -p $out
+              
+              # Create temporary directory with proper structure
+              mkdir -p $out/tmp/voicevox-cli
+              cp -r ${voicevox-cli}/bin $out/tmp/voicevox-cli/
+              cp -r ${voicevox-cli}/lib $out/tmp/voicevox-cli/ || echo "No lib directory"
+              
+              # Create archive with both bin and lib
+              cd $out
+              ${pkgs.gnutar}/bin/tar -czf voicevox-cli-release-aarch64-darwin.tar.gz -C tmp voicevox-cli
+              
+              # Clean up temp directory
+              rm -rf $out/tmp
+              
+              # Create SHA256 checksum
+              ${pkgs.coreutils}/bin/sha256sum voicevox-cli-release-aarch64-darwin.tar.gz > voicevox-cli-release-aarch64-darwin.tar.gz.sha256
+              
+              echo "Release archive created: $out/voicevox-cli-release-aarch64-darwin.tar.gz"
+              echo "Archive contains bin/ and lib/ directories"
+            '';
+          };
         };
 
         apps = {
           default = {
             type = "app";
-            program = "${voicevox-cli}/bin/voicevox-say";
+            program = "${packages.voicevox-cli}/bin/voicevox-say";
           };
           voicevox-say = {
             type = "app";
-            program = "${voicevox-cli}/bin/voicevox-say";
+            program = "${packages.voicevox-cli}/bin/voicevox-say";
           };
           voicevox-daemon = {
             type = "app";
-            program = "${voicevox-cli}/bin/voicevox-daemon";
+            program = "${packages.voicevox-cli}/bin/voicevox-daemon";
           };
           voicevox-mcp-server = {
             type = "app";
-            program = "${voicevox-cli}/bin/voicevox-mcp-server";
+            program = "${packages.voicevox-cli}/bin/voicevox-mcp-server";
           };
 
           # CI Task Runner - All checks in one command
@@ -484,7 +431,7 @@
           shellHook = ''
             # Create project-home directory for CARGO_HOME
             mkdir -p .project-home
-            
+
             echo "VOICEVOX CLI Development Environment (Apple Silicon)"
             echo "Available commands:"
             echo "  cargo build --bin voicevox-say     - Build client"
@@ -518,10 +465,15 @@
       #   ];
       # }
 
-      overlays.default = final: prev: {
-        voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
-        voicevox-say = final.voicevox-cli;
-      };
+      overlays.default =
+        final: prev:
+        let
+          pkg = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
+        in
+        {
+          voicevox-cli = pkg;
+          voicevox-say = pkg;
+        };
 
       overlays.voicevox-cli = self.overlays.default;
 

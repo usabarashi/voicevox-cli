@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use voicevox_cli::client::{
-    daemon_mode, ensure_models_available, get_input_text, list_speakers_daemon,
+    daemon_mode, ensure_resources_available, get_input_text, list_speakers_daemon,
     play_audio_from_memory, DaemonClient,
 };
 use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
@@ -40,9 +40,9 @@ async fn try_daemon_with_retry(
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
-            println!("🎭 Voice models not found. Setting up VOICEVOX...");
+            println!("🎭 VOICEVOX resources not found. Setting up...");
         }
-        ensure_models_available().await?;
+        ensure_resources_available().await?;
     }
 
     match DaemonClient::new_with_auto_start().await {
@@ -62,12 +62,7 @@ async fn standalone_mode(
     output_file: Option<&String>,
     quiet: bool,
 ) -> Result<()> {
-    if voicevox_cli::paths::find_models_dir().is_err() {
-        if !quiet {
-            println!("🎭 Voice models not found. Setting up VOICEVOX...");
-        }
-        ensure_models_available().await?;
-    }
+    ensure_resources_available().await?;
 
     let core = VoicevoxCore::new()?;
     let model_id = voicevox_cli::voice::get_model_for_voice_id(style_id)

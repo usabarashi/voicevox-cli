@@ -1,14 +1,38 @@
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
-use crate::paths::{find_models_dir, get_default_voicevox_dir};
+use crate::paths::{find_models_dir, find_openjtalk_dict, get_default_voicevox_dir};
+
+/// Get the appropriate download target directory considering environment variables
+fn get_download_target_dir() -> PathBuf {
+    // Check if user has set custom directories
+    let custom_models = std::env::var("VOICEVOX_MODELS_DIR").ok();
+    let custom_dict = std::env::var("VOICEVOX_OPENJTALK_DICT").ok();
+
+    if custom_models.is_some() || custom_dict.is_some() {
+        // User has custom paths - download to default location and let them manage it
+        eprintln!("⚠️  Warning: Custom paths detected via environment variables.");
+        eprintln!(
+            "   Downloads will go to default location: {}",
+            get_default_voicevox_dir().display()
+        );
+        eprintln!("   You may need to move files to your custom locations:");
+        if let Some(models) = custom_models {
+            eprintln!("   - Models: {}", models);
+        }
+        if let Some(dict) = custom_dict {
+            eprintln!("   - Dictionary: {}", dict);
+        }
+    }
+
+    // Always download to XDG-compliant default location
+    get_default_voicevox_dir()
+}
 
 /// Launches VOICEVOX downloader for voice models with direct user interaction
 pub async fn launch_downloader_for_user() -> Result<()> {
-    let target_dir = std::env::var("HOME")
-        .ok()
-        .map(|_| get_default_voicevox_dir())
-        .unwrap_or_else(|| PathBuf::from("./voicevox"));
+    // Determine target directory based on environment variables
+    let target_dir = get_download_target_dir();
 
     std::fs::create_dir_all(&target_dir)?;
 
@@ -33,7 +57,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Launching VOICEVOX downloader...");
-    println!("   This will download: 26+ voice models only");
+    println!("   This will download: OpenJTalk dictionary and voice models");
     println!("   Please follow the on-screen instructions to accept license terms.");
     println!("   Press Enter when ready to continue...");
 
@@ -42,6 +66,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
 
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
+        .arg("dict")
         .arg("models")
         .arg("--output")
         .arg(&target_dir)
@@ -81,6 +106,52 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     } else {
         Err(anyhow!("Download process failed or was cancelled"))
     }
+}
+
+/// Downloads only the OpenJTalk dictionary if not present
+pub async fn download_openjtalk_dict_if_needed() -> Result<()> {
+    if find_openjtalk_dict().is_ok() {
+        return Ok(());
+    }
+
+    println!("📚 OpenJTalk dictionary not found. Downloading...");
+
+    let target_dir = get_default_voicevox_dir();
+    std::fs::create_dir_all(&target_dir)?;
+
+    let downloader_path = find_downloader_executable()?;
+
+    let status = std::process::Command::new(&downloader_path)
+        .arg("--only")
+        .arg("dict")
+        .arg("--output")
+        .arg(&target_dir)
+        .status()?;
+
+    if status.success() {
+        println!("✅ OpenJTalk dictionary successfully downloaded");
+        Ok(())
+    } else {
+        Err(anyhow!("Failed to download OpenJTalk dictionary"))
+    }
+}
+
+fn find_downloader_executable() -> Result<PathBuf> {
+    if let Ok(current_exe) = std::env::current_exe() {
+        let mut downloader = current_exe.clone();
+        downloader.set_file_name("voicevox-download");
+        if downloader.exists() {
+            return Ok(downloader);
+        }
+
+        if let Some(pkg_root) = current_exe.parent().and_then(|p| p.parent()) {
+            let pkg_downloader = pkg_root.join("bin/voicevox-download");
+            if pkg_downloader.exists() {
+                return Ok(pkg_downloader);
+            }
+        }
+    }
+    Err(anyhow!("voicevox-download not found"))
 }
 
 pub fn count_vvm_files_recursive(dir: &std::path::PathBuf) -> usize {
@@ -159,33 +230,50 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
     }
 }
 
-/// Ensures VOICEVOX voice models are available, prompting for download if needed.
+/// Ensures VOICEVOX resources (models and dictionary) are available, prompting for download if needed.
 ///
-/// This function checks if voice models are already installed. If not, it prompts
-/// the user interactively to download them. The user must accept the VOICEVOX
-/// license terms for each voice character.
+/// This function checks if voice models and OpenJTalk dictionary are already installed.
+/// If not, it prompts the user interactively to download them. The user must accept the
+/// VOICEVOX license terms for each voice character.
 ///
 /// # Returns
 ///
-/// * `Ok(())` - Models are available or successfully downloaded
+/// * `Ok(())` - Resources are available or successfully downloaded
 /// * `Err` - User declined download or download failed
 ///
 /// # Note
 ///
 /// This function requires user interaction and should not be used in
 /// non-interactive environments (e.g., MCP server, automated scripts).
-pub async fn ensure_models_available() -> Result<()> {
-    if find_models_dir().is_ok() {
+pub async fn ensure_resources_available() -> Result<()> {
+    let models_ok = find_models_dir().is_ok();
+    let dict_ok = find_openjtalk_dict().is_ok();
+
+    if models_ok && dict_ok {
         return Ok(());
     }
 
     println!("🎭 VOICEVOX CLI - First Run Setup");
-    println!("Voice models are required for text-to-speech synthesis.");
-    println!("This includes 26+ voice models (~200MB).");
-    println!("Note: Core libraries and dictionary are already included in this build.");
+
+    if !models_ok && !dict_ok {
+        println!(
+            "Voice models and OpenJTalk dictionary are required for text-to-speech synthesis."
+        );
+        println!("This includes:");
+        println!("  - 26+ voice models (~200MB)");
+        println!("  - OpenJTalk dictionary (~10MB)");
+    } else if !models_ok {
+        println!("Voice models are required for text-to-speech synthesis.");
+        println!("This includes 26+ voice models (~200MB).");
+    } else {
+        println!("OpenJTalk dictionary is required for text-to-speech synthesis.");
+        println!("This includes dictionary files (~10MB).");
+    }
+
+    println!("Note: ONNX Runtime is already bundled in this build.");
     println!();
 
-    print!("Would you like to download voice models now? [Y/n]: ");
+    print!("Would you like to download required resources now? [Y/n]: ");
     std::io::Write::flush(&mut std::io::stdout())?;
 
     let mut input = String::new();
@@ -193,29 +281,41 @@ pub async fn ensure_models_available() -> Result<()> {
     let response = input.trim().to_lowercase();
 
     if response.is_empty() || response == "y" || response == "yes" {
-        println!("🔄 Starting voice models download...");
-        println!(
-            "Note: This will require accepting VOICEVOX license terms for 26+ voice characters."
-        );
-        println!();
+        println!("🔄 Starting resources download...");
 
-        match launch_downloader_for_user().await {
-            Ok(_) => {
-                println!("✅ Voice models setup completed!");
-                Ok(())
+        if !dict_ok {
+            println!("📚 Downloading OpenJTalk dictionary...");
+            download_openjtalk_dict_if_needed().await?;
+        }
+
+        if !models_ok {
+            println!("🎭 Downloading voice models...");
+            println!(
+                "Note: This will require accepting VOICEVOX license terms for 26+ voice characters."
+            );
+            println!();
+
+            match launch_downloader_for_user().await {
+                Ok(_) => {
+                    println!("✅ All resources setup completed!");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("❌ Voice models download failed: {e}");
+                    eprintln!(
+                        "You can manually run: voicevox-download --only models --output {}",
+                        get_default_voicevox_dir().display()
+                    );
+                    Err(e)
+                }
             }
-            Err(e) => {
-                eprintln!("❌ Voice models download failed: {e}");
-                eprintln!(
-                    "You can manually run: voicevox-download --only models --output {}",
-                    get_default_voicevox_dir().display()
-                );
-                Err(e)
-            }
+        } else {
+            println!("✅ All resources setup completed!");
+            Ok(())
         }
     } else {
-        println!("Skipping voice models download. You can run 'voicevox-setup-models' later.");
-        Err(anyhow!("Voice models are required for operation"))
+        println!("Skipping resources download. You can run 'voicevox-setup-models' later.");
+        Err(anyhow!("Required resources are not available"))
     }
 }
 
@@ -440,4 +540,35 @@ fn format_size(bytes: u64) -> String {
     }
 
     format!("{size:.1} {}", UNITS[unit_index])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_count_vvm_files() {
+        // Create a temporary directory for testing
+        let temp_dir = std::env::temp_dir().join("voicevox_test");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create test files
+        std::fs::write(temp_dir.join("1.vvm"), b"test").unwrap();
+        std::fs::write(temp_dir.join("2.vvm"), b"test").unwrap();
+        std::fs::write(temp_dir.join("not_vvm.txt"), b"test").unwrap();
+
+        let count = count_vvm_files_recursive(&temp_dir);
+        assert_eq!(count, 2);
+
+        // Cleanup
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(512), "512.0 B");
+        assert_eq!(format_size(1024), "1.0 KB");
+        assert_eq!(format_size(1024 * 1024), "1.0 MB");
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
+    }
 }

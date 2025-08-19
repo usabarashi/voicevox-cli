@@ -63,7 +63,7 @@ jobs:
           ARCHIVE_NAME="voicevox-cli-${VERSION}-aarch64-darwin.tar.gz"
 
           # Build with Nix
-          nix build --show-trace
+          nix build --accept-flake-config --show-trace
 
           # Create tarball from build result
           tar -czf "${ARCHIVE_NAME}" -C result/bin .

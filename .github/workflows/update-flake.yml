@@ -42,12 +42,12 @@ jobs:
         id: update
         run: |
           echo "Updating Nix flake inputs..."
-          
+
           # Save current state for rollback
           cp flake.lock flake.lock.backup
 
           # Capture update output with proper error handling
-          if ! UPDATE_OUTPUT=$(nix flake update 2>&1); then
+          if ! UPDATE_OUTPUT=$(nix flake update --accept-flake-config 2>&1); then
             echo "::error::Failed to update flake inputs"
             echo "$UPDATE_OUTPUT"
             # Rollback on failure
@@ -82,7 +82,8 @@ jobs:
         if: steps.update.outputs.has_updates == 'true'
         run: |
           echo "Running flake check to verify updates..."
-          if ! nix flake check --show-trace; then
+          # --accept-flake-config: CI環境で設定を自動承認
+          if ! nix flake check --accept-flake-config --show-trace; then
             echo "::error::Flake check failed with new dependencies"
             # Rollback changes
             git checkout -- flake.lock
@@ -118,7 +119,7 @@ jobs:
             dependencies
             nix
             automated
-      
+
       - name: Report workflow status
         if: always()
         run: |
@@ -128,4 +129,3 @@ jobs:
           else
             echo "No updates available - workflow skipped"
           fi
-

@@ -50,18 +50,18 @@ jobs:
       - name: Verify Rust toolchain
         run: |
           echo "Verifying Rust toolchain..."
-          nix develop --command rustc --version
-          nix develop --command cargo --version
+          nix develop --accept-flake-config --command rustc --version
+          nix develop --accept-flake-config --command cargo --version
 
       - name: Check code formatting
         run: |
           echo "Checking code formatting..."
-          nix develop --command cargo fmt --check
+          nix develop --accept-flake-config --command cargo fmt --check
 
       - name: Run Clippy analysis
         run: |
           echo "Running clippy analysis..."
-          nix develop --command cargo clippy --all-targets --all-features -- -D warnings
+          nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Check scripts
         run: |
@@ -86,16 +86,16 @@ jobs:
       - name: Run security audit
         run: |
           echo "Running security audit..."
-          if ! nix develop --command cargo audit --version >/dev/null 2>&1; then
+          if ! nix develop --accept-flake-config --command cargo audit --version >/dev/null 2>&1; then
             echo "Installing cargo-audit..."
-            nix develop --command cargo install cargo-audit
+            nix develop --accept-flake-config --command cargo install cargo-audit
           fi
-          nix develop --command cargo audit
+          nix develop --accept-flake-config --command cargo audit
 
       - name: Build with Nix
         run: |
           echo "Building project with Nix..."
-          nix build --show-trace
+          nix build --accept-flake-config --show-trace
 
       - name: Verify build artifacts
         run: |

@@ -26,8 +26,8 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
   cargo --version
 else
   # Outside build, use nix develop
-  nix develop --command rustc --version
-  nix develop --command cargo --version
+  nix develop --accept-flake-config --command rustc --version
+  nix develop --accept-flake-config --command cargo --version
 fi
 
 echo ""
@@ -42,7 +42,7 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
     exit 1
   fi
 else
-  nix develop --command cargo fmt --check
+  nix develop --accept-flake-config --command cargo fmt --check
 fi
 
 echo ""
@@ -50,7 +50,7 @@ echo "🧹 Running clippy analysis..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
   cargo clippy --all-targets --all-features -- -D warnings || (echo "❌ Clippy warnings detected. Fix them before building." && exit 1)
 else
-  nix develop --command cargo clippy --all-targets --all-features -- -D warnings
+  nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
 fi
 
 echo ""
@@ -102,18 +102,18 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
   # Skip during build phase - cargo-audit might not be available
   echo "Skipping security audit during build phase"
 else
-  if ! nix develop --command cargo audit --version >/dev/null 2>&1; then
+  if ! nix develop --accept-flake-config --command cargo audit --version >/dev/null 2>&1; then
     echo "Installing cargo-audit..."
-    nix develop --command cargo install cargo-audit
+    nix develop --accept-flake-config --command cargo install cargo-audit
   fi
-  nix develop --command cargo audit
+  nix develop --accept-flake-config --command cargo audit
 fi
 
 # Build verification - skip during build phase to avoid circular dependency
 if [[ "$BUILD_PHASE" == "false" ]]; then
   echo ""
   echo "🔨 Building project with Nix..."
-  nix build --show-trace
+  nix build --accept-flake-config --show-trace
 fi
 
 # Build artifact verification - only run after successful build

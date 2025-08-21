@@ -25,7 +25,7 @@ else
     DATA_DIR="./voicevox"
 fi
 
-echo -e "${BLUE}🎭 VOICEVOX CLI Setup${NC}"
+echo -e "${BLUE}VOICEVOX CLI Setup${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "Data directory: $DATA_DIR"
@@ -37,21 +37,21 @@ MISSING_RESOURCES=()
 
 # Check ONNX Runtime
 if [ -n "${ORT_DYLIB_PATH:-}" ] && [ -f "$ORT_DYLIB_PATH" ]; then
-    echo -e "${GREEN}✓${NC} ONNX Runtime: Found at $ORT_DYLIB_PATH"
+    echo -e "${GREEN}[OK]${NC} ONNX Runtime: Found at $ORT_DYLIB_PATH"
 elif [ -f "$DATA_DIR/lib/libonnxruntime.dylib" ] || [ -f "$DATA_DIR/lib/libonnxruntime.so" ]; then
-    echo -e "${GREEN}✓${NC} ONNX Runtime: Already installed"
+    echo -e "${GREEN}[OK]${NC} ONNX Runtime: Already installed"
 else
-    echo -e "${YELLOW}○${NC} ONNX Runtime: Not installed"
+    echo -e "${YELLOW}[ ]${NC} ONNX Runtime: Not installed"
     MISSING_RESOURCES+=("onnxruntime")
 fi
 
 # Check OpenJTalk dictionary
 if [ -n "${VOICEVOX_OPENJTALK_DICT:-}" ] && [ -d "$VOICEVOX_OPENJTALK_DICT" ]; then
-    echo -e "${GREEN}✓${NC} OpenJTalk Dictionary: Found at $VOICEVOX_OPENJTALK_DICT"
+    echo -e "${GREEN}[OK]${NC} OpenJTalk Dictionary: Found at $VOICEVOX_OPENJTALK_DICT"
 elif [ -d "$DATA_DIR/openjtalk_dict" ]; then
-    echo -e "${GREEN}✓${NC} OpenJTalk Dictionary: Already installed"
+    echo -e "${GREEN}[OK]${NC} OpenJTalk Dictionary: Already installed"
 else
-    echo -e "${YELLOW}○${NC} OpenJTalk Dictionary: Not installed"
+    echo -e "${YELLOW}[ ]${NC} OpenJTalk Dictionary: Not installed"
     MISSING_RESOURCES+=("dict")
 fi
 
@@ -64,9 +64,9 @@ elif [ -d "$DATA_DIR/models" ]; then
 fi
 
 if [ "$MODEL_COUNT" -gt 0 ]; then
-    echo -e "${GREEN}✓${NC} Voice Models: $MODEL_COUNT models installed"
+    echo -e "${GREEN}[OK]${NC} Voice Models: $MODEL_COUNT models installed"
 else
-    echo -e "${YELLOW}○${NC} Voice Models: Not installed"
+    echo -e "${YELLOW}[ ]${NC} Voice Models: Not installed"
     MISSING_RESOURCES+=("models")
 fi
 
@@ -74,7 +74,7 @@ echo ""
 
 # Check if everything is already installed
 if [ ${#MISSING_RESOURCES[@]} -eq 0 ]; then
-    echo -e "${GREEN}✅ All resources are already installed!${NC}"
+    echo -e "${GREEN}All resources are already installed!${NC}"
     echo ""
     echo "Installation directory: $DATA_DIR"
     echo ""
@@ -147,7 +147,7 @@ echo ""
 
 if $DOWNLOADER "${ONLY_ARGS[@]}" --output "$DATA_DIR"; then
     echo ""
-    echo -e "${GREEN}✅ All resources downloaded successfully!${NC}"
+    echo -e "${GREEN}All resources downloaded successfully!${NC}"
     echo ""
     
     # Set up environment variable hints
@@ -183,7 +183,7 @@ if $DOWNLOADER "${ONLY_ARGS[@]}" --output "$DATA_DIR"; then
     echo -e "${GREEN}Setup complete!${NC}"
 else
     echo ""
-    echo -e "${RED}❌ Resource download failed${NC}"
+    echo -e "${RED}Resource download failed${NC}"
     echo ""
     echo "You can try running the download manually:"
     echo "  $DOWNLOADER ${ONLY_ARGS[*]} --output $DATA_DIR"

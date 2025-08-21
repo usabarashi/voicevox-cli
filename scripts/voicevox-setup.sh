@@ -134,22 +134,18 @@ else
     exit 1
 fi
 
-# Build the --only argument
-ONLY_ARG=""
+# Build the --only arguments array
+ONLY_ARGS=()
 for resource in "${MISSING_RESOURCES[@]}"; do
-    if [ -z "$ONLY_ARG" ]; then
-        ONLY_ARG="$resource"
-    else
-        ONLY_ARG="$ONLY_ARG,$resource"
-    fi
+    ONLY_ARGS+=(--only "$resource")
 done
 
 # Download resources
 echo -e "${BLUE}Downloading resources...${NC}"
-echo "Running: $DOWNLOADER --only $ONLY_ARG --output $DATA_DIR"
+echo "Running: $DOWNLOADER ${ONLY_ARGS[*]} --output $DATA_DIR"
 echo ""
 
-if $DOWNLOADER --only "$ONLY_ARG" --output "$DATA_DIR"; then
+if $DOWNLOADER "${ONLY_ARGS[@]}" --output "$DATA_DIR"; then
     echo ""
     echo -e "${GREEN}✅ All resources downloaded successfully!${NC}"
     echo ""
@@ -190,7 +186,7 @@ else
     echo -e "${RED}❌ Resource download failed${NC}"
     echo ""
     echo "You can try running the download manually:"
-    echo "  $DOWNLOADER --only $ONLY_ARG --output $DATA_DIR"
+    echo "  $DOWNLOADER ${ONLY_ARGS[*]} --output $DATA_DIR"
     echo ""
     echo "Or download individual components:"
     echo "  $DOWNLOADER --only onnxruntime --output $DATA_DIR"

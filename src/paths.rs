@@ -188,15 +188,22 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
             // Security validation for ORT_DYLIB_PATH
             if let Some(filename) = lib_path.file_name() {
                 let filename_str = filename.to_string_lossy();
-                let expected_names = if cfg!(target_os = "macos") {
-                    &["libonnxruntime.dylib"][..]
+                let is_valid = if cfg!(target_os = "macos") {
+                    filename_str == "libonnxruntime.dylib"
+                        || filename_str.starts_with("libvoicevox_onnxruntime.")
+                            && filename_str.ends_with(".dylib")
                 } else if cfg!(target_os = "linux") {
-                    &["libonnxruntime.so"][..]
+                    filename_str == "libonnxruntime.so"
+                        || filename_str.starts_with("libvoicevox_onnxruntime.")
+                            && filename_str.ends_with(".so")
                 } else {
-                    &["onnxruntime.dll", "libonnxruntime.dll"][..]
+                    filename_str == "onnxruntime.dll"
+                        || filename_str == "libonnxruntime.dll"
+                        || (filename_str.starts_with("libvoicevox_onnxruntime.")
+                            && filename_str.ends_with(".dll"))
                 };
 
-                if expected_names.iter().any(|&name| filename_str == name) {
+                if is_valid {
                     // Resolve symlinks and verify the resolved path exists
                     match std::fs::canonicalize(&lib_path) {
                         Ok(canonical_path) => {
@@ -209,23 +216,21 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                         }
                     }
                 } else {
+                    let expected_patterns = if cfg!(target_os = "macos") {
+                        "libonnxruntime.dylib or libvoicevox_onnxruntime.*.dylib"
+                    } else if cfg!(target_os = "linux") {
+                        "libonnxruntime.so or libvoicevox_onnxruntime.*.so"
+                    } else {
+                        "onnxruntime.dll, libonnxruntime.dll, or libvoicevox_onnxruntime.*.dll"
+                    };
                     eprintln!(
                         "Warning: ORT_DYLIB_PATH points to unexpected filename: {}. Expected: {}",
-                        filename_str,
-                        expected_names.join(" or ")
+                        filename_str, expected_patterns
                     );
                 }
             }
         }
     }
-
-    let lib_name = if cfg!(target_os = "macos") {
-        "libonnxruntime.dylib"
-    } else if cfg!(target_os = "linux") {
-        "libonnxruntime.so"
-    } else {
-        "onnxruntime.dll"
-    };
 
     let search_dirs = [
         std::env::var("XDG_DATA_HOME")
@@ -236,26 +241,69 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
     ];
 
     for dir in search_dirs.iter().flatten() {
-        let lib_path = dir.join(ONNXRUNTIME_SUBDIR).join(lib_name);
-        if lib_path.exists() {
-            return Ok(lib_path);
+        let lib_dir = dir.join(ONNXRUNTIME_SUBDIR);
+        if lib_dir.exists() {
+            // Try to find ONNX Runtime library with different naming patterns
+            if let Ok(entries) = std::fs::read_dir(&lib_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(filename) = path.file_name() {
+                        let filename_str = filename.to_string_lossy();
+                        let matches = if cfg!(target_os = "macos") {
+                            filename_str == "libonnxruntime.dylib"
+                                || (filename_str.starts_with("libvoicevox_onnxruntime.")
+                                    && filename_str.ends_with(".dylib"))
+                        } else if cfg!(target_os = "linux") {
+                            filename_str == "libonnxruntime.so"
+                                || (filename_str.starts_with("libvoicevox_onnxruntime.")
+                                    && filename_str.ends_with(".so"))
+                        } else {
+                            filename_str == "onnxruntime.dll"
+                                || filename_str == "libonnxruntime.dll"
+                                || (filename_str.starts_with("libvoicevox_onnxruntime.")
+                                    && filename_str.ends_with(".dll"))
+                        };
+
+                        if matches && path.is_file() {
+                            return Ok(path);
+                        }
+                    }
+                }
+            }
         }
     }
 
     let system_paths = ["/usr/local/share/voicevox/lib", "/opt/voicevox/lib"];
 
-    let lib_name = if cfg!(target_os = "macos") {
-        "libonnxruntime.dylib"
-    } else if cfg!(target_os = "linux") {
-        "libonnxruntime.so"
-    } else {
-        "onnxruntime.dll"
-    };
-
     for path in &system_paths {
-        let lib_path = Path::new(path).join(lib_name);
-        if lib_path.exists() {
-            return Ok(lib_path);
+        let lib_dir = Path::new(path);
+        if lib_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(lib_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(filename) = path.file_name() {
+                        let filename_str = filename.to_string_lossy();
+                        let matches = if cfg!(target_os = "macos") {
+                            filename_str == "libonnxruntime.dylib"
+                                || (filename_str.starts_with("libvoicevox_onnxruntime.")
+                                    && filename_str.ends_with(".dylib"))
+                        } else if cfg!(target_os = "linux") {
+                            filename_str == "libonnxruntime.so"
+                                || (filename_str.starts_with("libvoicevox_onnxruntime.")
+                                    && filename_str.ends_with(".so"))
+                        } else {
+                            filename_str == "onnxruntime.dll"
+                                || filename_str == "libonnxruntime.dll"
+                                || (filename_str.starts_with("libvoicevox_onnxruntime.")
+                                    && filename_str.ends_with(".dll"))
+                        };
+
+                        if matches && path.is_file() {
+                            return Ok(path);
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -45,7 +45,6 @@ pub async fn ensure_resources_available() -> Result<()> {
         let target_dir = get_default_voicevox_dir();
         std::fs::create_dir_all(&target_dir)?;
         let downloader_path = find_downloader_binary()?;
-        let only_arg = missing_resources.join(",");
         println!("📦 Downloading to: {}", target_dir.display());
 
         let max_retries = 3;
@@ -60,12 +59,11 @@ pub async fn ensure_resources_available() -> Result<()> {
                 cleanup_incomplete_downloads(&target_dir);
             }
 
-            let status = std::process::Command::new(&downloader_path)
-                .arg("--only")
-                .arg(&only_arg)
-                .arg("--output")
-                .arg(&target_dir)
-                .status();
+            let mut cmd = std::process::Command::new(&downloader_path);
+            for resource in &missing_resources {
+                cmd.arg("--only").arg(resource);
+            }
+            let status = cmd.arg("--output").arg(&target_dir).status();
 
             match status {
                 Ok(exit_status) if exit_status.success() => {
@@ -103,9 +101,14 @@ pub async fn ensure_resources_available() -> Result<()> {
         } else {
             eprintln!("❌ Resource download failed after {} attempts", max_retries);
         }
+        let manual_cmd = missing_resources
+            .iter()
+            .map(|r| format!("--only {}", r))
+            .collect::<Vec<_>>()
+            .join(" ");
         eprintln!(
-            "You can manually run: voicevox-download --only {} --output {}",
-            only_arg,
+            "You can manually run: voicevox-download {} --output {}",
+            manual_cmd,
             target_dir.display()
         );
         Err(anyhow!(

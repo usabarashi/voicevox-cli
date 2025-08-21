@@ -53,7 +53,10 @@ pub async fn ensure_resources_available() -> Result<()> {
 
         for attempt in 1..=max_retries {
             if attempt > 1 {
-                println!("🔄 Retrying download... (Attempt {}/{})", attempt, max_retries);
+                println!(
+                    "🔄 Retrying download... (Attempt {}/{})",
+                    attempt, max_retries
+                );
                 cleanup_incomplete_downloads(&target_dir);
             }
 
@@ -75,7 +78,8 @@ pub async fn ensure_resources_available() -> Result<()> {
                     return Ok(());
                 }
                 Ok(exit_status) => {
-                    let error_msg = format!("Download failed with exit code: {:?}", exit_status.code());
+                    let error_msg =
+                        format!("Download failed with exit code: {:?}", exit_status.code());
                     last_error = Some(error_msg);
                 }
                 Err(e) => {
@@ -92,7 +96,10 @@ pub async fn ensure_resources_available() -> Result<()> {
 
         cleanup_incomplete_downloads(&target_dir);
         if let Some(error) = last_error {
-            eprintln!("❌ Resource download failed after {} attempts: {}", max_retries, error);
+            eprintln!(
+                "❌ Resource download failed after {} attempts: {}",
+                max_retries, error
+            );
         } else {
             eprintln!("❌ Resource download failed after {} attempts", max_retries);
         }
@@ -101,7 +108,10 @@ pub async fn ensure_resources_available() -> Result<()> {
             only_arg,
             target_dir.display()
         );
-        Err(anyhow!("Failed to download required resources after {} attempts", max_retries))
+        Err(anyhow!(
+            "Failed to download required resources after {} attempts",
+            max_retries
+        ))
     } else {
         println!("Setup cancelled. You can run 'voicevox-setup' later to download resources.");
         Err(anyhow!("Required resources are not available"))
@@ -120,7 +130,11 @@ fn cleanup_incomplete_downloads(target_dir: &std::path::Path) {
                     let ext_str = extension.to_string_lossy().to_lowercase();
                     if ext_str == "tmp" || ext_str == "download" || ext_str == "partial" {
                         if let Err(e) = std::fs::remove_file(&path) {
-                            eprintln!("Warning: Failed to clean up temporary file {}: {}", path.display(), e);
+                            eprintln!(
+                                "Warning: Failed to clean up temporary file {}: {}",
+                                path.display(),
+                                e
+                            );
                         } else {
                             println!("🧹 Cleaned up temporary file: {}", path.display());
                         }
@@ -136,16 +150,24 @@ fn cleanup_incomplete_downloads(target_dir: &std::path::Path) {
                             // Only remove files that look like they should be larger
                             if let Some(filename) = path.file_name() {
                                 let filename_str = filename.to_string_lossy().to_lowercase();
-                                if filename_str.contains("onnx") ||
-                                   filename_str.contains("dict") ||
-                                   filename_str.contains("model") ||
-                                   filename_str.ends_with(".dylib") ||
-                                   filename_str.ends_with(".so") ||
-                                   filename_str.ends_with(".dll") {
+                                if filename_str.contains("onnx")
+                                    || filename_str.contains("dict")
+                                    || filename_str.contains("model")
+                                    || filename_str.ends_with(".dylib")
+                                    || filename_str.ends_with(".so")
+                                    || filename_str.ends_with(".dll")
+                                {
                                     if let Err(e) = std::fs::remove_file(&path) {
-                                        eprintln!("Warning: Failed to clean up incomplete file {}: {}", path.display(), e);
+                                        eprintln!(
+                                            "Warning: Failed to clean up incomplete file {}: {}",
+                                            path.display(),
+                                            e
+                                        );
                                     } else {
-                                        println!("🧹 Cleaned up incomplete file: {}", path.display());
+                                        println!(
+                                            "🧹 Cleaned up incomplete file: {}",
+                                            path.display()
+                                        );
                                     }
                                 }
                             }

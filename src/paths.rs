@@ -167,12 +167,10 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         dirs::home_dir().map(|h| h.join(".local/share").join(APP_NAME)),
     ];
 
-    for dir_option in &search_dirs {
-        if let Some(dir) = dir_option {
-            let dict_path = dir.join(OPENJTALK_DICT_SUBDIR);
-            if dict_path.exists() && dict_path.is_dir() {
-                return Ok(dict_path);
-            }
+    for dir in search_dirs.iter().flatten() {
+        let dict_path = dir.join(OPENJTALK_DICT_SUBDIR);
+        if dict_path.exists() && dict_path.is_dir() {
+            return Ok(dict_path);
         }
     }
 
@@ -197,7 +195,7 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                 } else {
                     &["onnxruntime.dll", "libonnxruntime.dll"][..]
                 };
-                
+
                 if expected_names.iter().any(|&name| filename_str == name) {
                     // Resolve symlinks and verify the resolved path exists
                     match std::fs::canonicalize(&lib_path) {
@@ -237,12 +235,10 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
         dirs::home_dir().map(|h| h.join(".local/share").join(APP_NAME)),
     ];
 
-    for dir_option in &search_dirs {
-        if let Some(dir) = dir_option {
-            let lib_path = dir.join(ONNXRUNTIME_SUBDIR).join(lib_name);
-            if lib_path.exists() {
-                return Ok(lib_path);
-            }
+    for dir in search_dirs.iter().flatten() {
+        let lib_path = dir.join(ONNXRUNTIME_SUBDIR).join(lib_name);
+        if lib_path.exists() {
+            return Ok(lib_path);
         }
     }
 

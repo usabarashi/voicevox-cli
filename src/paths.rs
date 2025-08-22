@@ -174,7 +174,7 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         if dict_path.exists() && dict_path.is_dir() {
             return Ok(dict_path);
         }
-        
+
         // Check the new location used by voicevox-download
         let dict_dir = dir.join(DICT_SUBDIR);
         if dict_dir.exists() && dict_dir.is_dir() {

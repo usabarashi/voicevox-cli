@@ -36,21 +36,43 @@ echo ""
 MISSING_RESOURCES=()
 
 # Check ONNX Runtime
+ONNX_FOUND=false
 if [ -n "${ORT_DYLIB_PATH:-}" ] && [ -f "$ORT_DYLIB_PATH" ]; then
     echo -e "${GREEN}[OK]${NC} ONNX Runtime: Found at $ORT_DYLIB_PATH"
+    ONNX_FOUND=true
 elif [ -f "$DATA_DIR/lib/libonnxruntime.dylib" ] || [ -f "$DATA_DIR/lib/libonnxruntime.so" ]; then
     echo -e "${GREEN}[OK]${NC} ONNX Runtime: Already installed"
-else
+    ONNX_FOUND=true
+elif [ -d "$DATA_DIR/onnxruntime/lib" ]; then
+    # Check for VOICEVOX ONNX Runtime files
+    if find "$DATA_DIR/onnxruntime/lib" -name "libvoicevox_onnxruntime.*.dylib" -o -name "libvoicevox_onnxruntime.*.so" -o -name "libonnxruntime.*" 2>/dev/null | grep -q .; then
+        echo -e "${GREEN}[OK]${NC} ONNX Runtime: Already installed"
+        ONNX_FOUND=true
+    fi
+fi
+
+if [ "$ONNX_FOUND" = false ]; then
     echo -e "${YELLOW}[ ]${NC} ONNX Runtime: Not installed"
     MISSING_RESOURCES+=("onnxruntime")
 fi
 
 # Check OpenJTalk dictionary
+DICT_FOUND=false
 if [ -n "${VOICEVOX_OPENJTALK_DICT:-}" ] && [ -d "$VOICEVOX_OPENJTALK_DICT" ]; then
     echo -e "${GREEN}[OK]${NC} OpenJTalk Dictionary: Found at $VOICEVOX_OPENJTALK_DICT"
+    DICT_FOUND=true
 elif [ -d "$DATA_DIR/openjtalk_dict" ]; then
     echo -e "${GREEN}[OK]${NC} OpenJTalk Dictionary: Already installed"
-else
+    DICT_FOUND=true
+elif [ -d "$DATA_DIR/dict" ]; then
+    # Check for VOICEVOX dictionary files
+    if find "$DATA_DIR/dict" -name "open_jtalk_dic_*" -type d 2>/dev/null | grep -q .; then
+        echo -e "${GREEN}[OK]${NC} OpenJTalk Dictionary: Already installed"
+        DICT_FOUND=true
+    fi
+fi
+
+if [ "$DICT_FOUND" = false ]; then
     echo -e "${YELLOW}[ ]${NC} OpenJTalk Dictionary: Not installed"
     MISSING_RESOURCES+=("dict")
 fi
@@ -149,6 +171,36 @@ if $DOWNLOADER "${ONLY_ARGS[@]}" --output "$DATA_DIR"; then
     echo ""
     echo -e "${GREEN}All resources downloaded successfully!${NC}"
     echo ""
+    
+    # Create symlink for ONNX Runtime compatibility if needed
+    if [[ " ${MISSING_RESOURCES[@]} " =~ " onnxruntime " ]]; then
+        if [ -d "$DATA_DIR/onnxruntime/lib" ]; then
+            echo -e "${BLUE}Creating compatibility symlinks...${NC}"
+            # Find the actual VOICEVOX ONNX Runtime library
+            for lib in "$DATA_DIR/onnxruntime/lib"/libvoicevox_onnxruntime.*.dylib; do
+                if [ -f "$lib" ]; then
+                    filename=$(basename "$lib")
+                    # Extract version number (e.g., 1.17.3 from libvoicevox_onnxruntime.1.17.3.dylib)
+                    version=${filename#libvoicevox_onnxruntime.}
+                    version=${version%.dylib}
+                    # Create symlink for compatibility
+                    ln -sf "$filename" "$DATA_DIR/onnxruntime/lib/libonnxruntime.$version.dylib"
+                    echo "  Created: libonnxruntime.$version.dylib -> $filename"
+                fi
+            done
+            # Similar for Linux .so files
+            for lib in "$DATA_DIR/onnxruntime/lib"/libvoicevox_onnxruntime.*.so; do
+                if [ -f "$lib" ]; then
+                    filename=$(basename "$lib")
+                    version=${filename#libvoicevox_onnxruntime.}
+                    version=${version%.so}
+                    ln -sf "$filename" "$DATA_DIR/onnxruntime/lib/libonnxruntime.$version.so"
+                    echo "  Created: libonnxruntime.$version.so -> $filename"
+                fi
+            done
+            echo ""
+        fi
+    fi
     
     # Set up environment variable hints
     echo "Installation complete!"

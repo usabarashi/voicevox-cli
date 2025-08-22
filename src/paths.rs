@@ -5,7 +5,8 @@ const APP_NAME: &str = "voicevox";
 const MODELS_SUBDIR: &str = "models";
 const VVM_SUBDIR: &str = "vvms";
 const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
-const ONNXRUNTIME_SUBDIR: &str = "lib";
+const ONNXRUNTIME_SUBDIR: &str = "onnxruntime/lib";
+const DICT_SUBDIR: &str = "dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
 
 /// Get the default VOICEVOX data directory path using XDG Base Directory specification
@@ -168,9 +169,29 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
     ];
 
     for dir in search_dirs.iter().flatten() {
+        // Check the old location first for backward compatibility
         let dict_path = dir.join(OPENJTALK_DICT_SUBDIR);
         if dict_path.exists() && dict_path.is_dir() {
             return Ok(dict_path);
+        }
+        
+        // Check the new location used by voicevox-download
+        let dict_dir = dir.join(DICT_SUBDIR);
+        if dict_dir.exists() && dict_dir.is_dir() {
+            // Look for open_jtalk_dic_* directories
+            if let Ok(entries) = std::fs::read_dir(&dict_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Some(name) = path.file_name() {
+                            let name_str = name.to_string_lossy();
+                            if name_str.starts_with("open_jtalk_dic_") {
+                                return Ok(path);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

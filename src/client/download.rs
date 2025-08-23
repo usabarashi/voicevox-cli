@@ -1,7 +1,210 @@
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::paths::{find_models_dir, get_default_voicevox_dir};
+use crate::paths::{
+    find_models_dir, find_onnxruntime, find_openjtalk_dict, get_default_voicevox_dir,
+};
+
+/// Check and ensure all required resources are available
+pub async fn ensure_resources_available() -> Result<()> {
+    let mut missing_resources = Vec::new();
+
+    if find_onnxruntime().is_err() {
+        missing_resources.push("onnxruntime");
+    }
+    if find_openjtalk_dict().is_err() {
+        missing_resources.push("dict");
+    }
+    if find_models_dir().is_err() {
+        missing_resources.push("models");
+    }
+    if missing_resources.is_empty() {
+        return Ok(());
+    }
+
+    println!("🎭 VOICEVOX CLI - Initial Setup Required");
+    println!("The following resources need to be downloaded:");
+    if missing_resources.contains(&"onnxruntime") {
+        println!("  • ONNX Runtime - Neural network inference engine");
+    }
+    if missing_resources.contains(&"dict") {
+        println!("  • OpenJTalk Dictionary - Japanese text processing");
+    }
+    if missing_resources.contains(&"models") {
+        println!("  • Voice Models - Character voices");
+    }
+    println!();
+
+    print!("Would you like to download these resources now? [Y/n]: ");
+    tokio::io::AsyncWriteExt::flush(&mut tokio::io::stdout()).await?;
+    let mut input = String::new();
+    {
+        let mut stdin = BufReader::new(tokio::io::stdin());
+        stdin.read_line(&mut input).await?;
+    }
+    let response = input.trim().to_lowercase();
+    if response.is_empty() || response == "y" || response == "yes" {
+        println!("🔄 Starting resource download...");
+        let target_dir = get_default_voicevox_dir();
+        tokio::fs::create_dir_all(&target_dir).await?;
+        let downloader_path = find_downloader_binary()?;
+        println!("📦 Downloading to: {}", target_dir.display());
+
+        let max_retries = 3;
+        let mut last_error = None;
+
+        for attempt in 1..=max_retries {
+            if attempt > 1 {
+                println!(
+                    "🔄 Retrying download... (Attempt {}/{})",
+                    attempt, max_retries
+                );
+                cleanup_incomplete_downloads(&target_dir);
+            }
+
+            let mut cmd = tokio::process::Command::new(&downloader_path);
+            for resource in &missing_resources {
+                cmd.arg("--only").arg(resource);
+            }
+            let status = cmd.arg("--output").arg(&target_dir).status().await;
+
+            match status {
+                Ok(exit_status) if exit_status.success() => {
+                    println!("✅ All resources downloaded successfully!");
+                    if missing_resources.contains(&"onnxruntime") {
+                        if let Ok(ort_path) = find_onnxruntime() {
+                            std::env::set_var("ORT_DYLIB_PATH", ort_path);
+                        }
+                    }
+                    return Ok(());
+                }
+                Ok(exit_status) => {
+                    let error_msg =
+                        format!("Download failed with exit code: {:?}", exit_status.code());
+                    last_error = Some(error_msg);
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to execute downloader: {}", e);
+                    last_error = Some(error_msg);
+                }
+            }
+
+            if attempt < max_retries {
+                println!("⏳ Download failed, waiting 2 seconds before retry...");
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+
+        cleanup_incomplete_downloads(&target_dir);
+        if let Some(error) = last_error {
+            eprintln!(
+                "❌ Resource download failed after {} attempts: {}",
+                max_retries, error
+            );
+        } else {
+            eprintln!("❌ Resource download failed after {} attempts", max_retries);
+        }
+        let manual_cmd = missing_resources
+            .iter()
+            .map(|r| format!("--only {}", r))
+            .collect::<Vec<_>>()
+            .join(" ");
+        eprintln!(
+            "You can manually run: voicevox-download {} --output {}",
+            manual_cmd,
+            target_dir.display()
+        );
+        Err(anyhow!(
+            "Failed to download required resources after {} attempts",
+            max_retries
+        ))
+    } else {
+        println!("Setup cancelled. You can run 'voicevox-setup' later to download resources.");
+        Err(anyhow!("Required resources are not available"))
+    }
+}
+
+/// Clean up incomplete downloads (temporary files, partial downloads)
+fn cleanup_incomplete_downloads(target_dir: &std::path::Path) {
+    if let Ok(entries) = std::fs::read_dir(target_dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                let path = entry.path();
+
+                // Remove temporary files (e.g., .tmp, .download, .partial)
+                if let Some(extension) = path.extension() {
+                    let ext_str = extension.to_string_lossy().to_lowercase();
+                    if ext_str == "tmp" || ext_str == "download" || ext_str == "partial" {
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            eprintln!(
+                                "Warning: Failed to clean up temporary file {}: {}",
+                                path.display(),
+                                e
+                            );
+                        } else {
+                            println!("🧹 Cleaned up temporary file: {}", path.display());
+                        }
+                        continue;
+                    }
+                }
+
+                // Remove very small files that might be incomplete downloads
+                if file_type.is_file() {
+                    if let Ok(metadata) = std::fs::metadata(&path) {
+                        // Files smaller than 1KB are likely incomplete
+                        if metadata.len() < 1024 {
+                            // Only remove files that look like they should be larger
+                            if let Some(filename) = path.file_name() {
+                                let filename_str = filename.to_string_lossy().to_lowercase();
+                                if filename_str.contains("onnx")
+                                    || filename_str.contains("dict")
+                                    || filename_str.contains("model")
+                                    || filename_str.ends_with(".dylib")
+                                    || filename_str.ends_with(".so")
+                                    || filename_str.ends_with(".dll")
+                                {
+                                    if let Err(e) = std::fs::remove_file(&path) {
+                                        eprintln!(
+                                            "Warning: Failed to clean up incomplete file {}: {}",
+                                            path.display(),
+                                            e
+                                        );
+                                    } else {
+                                        println!(
+                                            "🧹 Cleaned up incomplete file: {}",
+                                            path.display()
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Find the voicevox-download binary
+fn find_downloader_binary() -> Result<PathBuf> {
+    if let Ok(current_exe) = std::env::current_exe() {
+        let mut downloader = current_exe.clone();
+        downloader.set_file_name("voicevox-download");
+        if downloader.exists() {
+            return Ok(downloader);
+        }
+
+        if let Some(pkg_root) = current_exe.parent().and_then(|p| p.parent()) {
+            let pkg_downloader = pkg_root.join("bin/voicevox-download");
+            if pkg_downloader.exists() {
+                return Ok(pkg_downloader);
+            }
+        }
+    }
+
+    Err(anyhow!("voicevox-download not found"))
+}
 
 /// Launches VOICEVOX downloader for voice models with direct user interaction
 pub async fn launch_downloader_for_user() -> Result<()> {
@@ -10,7 +213,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = if let Ok(current_exe) = std::env::current_exe() {
         let mut downloader = current_exe.clone();
@@ -38,14 +241,18 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     println!("   Press Enter when ready to continue...");
 
     let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    {
+        let mut stdin = BufReader::new(tokio::io::stdin());
+        stdin.read_line(&mut input).await?;
+    }
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .status()?;
+        .status()
+        .await?;
 
     if status.success() {
         let _vvm_files = std::fs::read_dir(&target_dir)
@@ -161,13 +368,12 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
 
 /// Ensures VOICEVOX voice models are available, prompting for download if needed.
 ///
-/// This function checks if voice models are already installed. If not, it prompts
-/// the user interactively to download them. The user must accept the VOICEVOX
-/// license terms for each voice character.
+/// This function now checks all resources (ONNX Runtime, dictionary, models) and
+/// downloads any missing components. It replaces the previous models-only check.
 ///
 /// # Returns
 ///
-/// * `Ok(())` - Models are available or successfully downloaded
+/// * `Ok(())` - All resources are available or successfully downloaded
 /// * `Err` - User declined download or download failed
 ///
 /// # Note
@@ -175,48 +381,7 @@ fn try_remove_empty_directory(path: &std::path::PathBuf) {
 /// This function requires user interaction and should not be used in
 /// non-interactive environments (e.g., MCP server, automated scripts).
 pub async fn ensure_models_available() -> Result<()> {
-    if find_models_dir().is_ok() {
-        return Ok(());
-    }
-
-    println!("🎭 VOICEVOX CLI - First Run Setup");
-    println!("Voice models are required for text-to-speech synthesis.");
-    println!("This includes 26+ voice models (~200MB).");
-    println!("Note: Core libraries and dictionary are already included in this build.");
-    println!();
-
-    print!("Would you like to download voice models now? [Y/n]: ");
-    std::io::Write::flush(&mut std::io::stdout())?;
-
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let response = input.trim().to_lowercase();
-
-    if response.is_empty() || response == "y" || response == "yes" {
-        println!("🔄 Starting voice models download...");
-        println!(
-            "Note: This will require accepting VOICEVOX license terms for 26+ voice characters."
-        );
-        println!();
-
-        match launch_downloader_for_user().await {
-            Ok(_) => {
-                println!("✅ Voice models setup completed!");
-                Ok(())
-            }
-            Err(e) => {
-                eprintln!("❌ Voice models download failed: {e}");
-                eprintln!(
-                    "You can manually run: voicevox-download --only models --output {}",
-                    get_default_voicevox_dir().display()
-                );
-                Err(e)
-            }
-        }
-    } else {
-        println!("Skipping voice models download. You can run 'voicevox-setup-models' later.");
-        Err(anyhow!("Voice models are required for operation"))
-    }
+    ensure_resources_available().await
 }
 
 pub async fn update_models_only() -> Result<()> {
@@ -227,19 +392,20 @@ pub async fn update_models_only() -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading voice models only...");
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .status();
+        .status()
+        .await;
 
     match status {
         Ok(exit_status) if exit_status.success() => {
@@ -264,19 +430,20 @@ pub async fn update_dictionary_only() -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading dictionary only...");
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("dict")
         .arg("--output")
         .arg(&target_dir)
-        .status();
+        .status()
+        .await;
 
     match status {
         Ok(exit_status) if exit_status.success() => {
@@ -299,19 +466,20 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading model {model_id} only...");
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .status();
+        .status()
+        .await;
 
     match status {
         Ok(exit_status) if exit_status.success() => {
@@ -372,17 +540,15 @@ pub async fn show_version_info() -> Result<()> {
 
     println!("Voice Models: {} installed", current_models.len());
     for model in &current_models {
-        let file_size = get_file_size(&model.file_path)?;
         let modified = get_file_modified(&model.file_path)?;
         println!(
-            "  Model {}: {} ({}, {})",
+            "  Model {}: {} ({})",
             model.model_id,
             model
                 .file_path
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy(),
-            format_size(file_size),
             modified
         );
     }
@@ -400,44 +566,8 @@ pub async fn show_version_info() -> Result<()> {
     Ok(())
 }
 
-fn find_downloader_binary() -> Result<PathBuf> {
-    if let Ok(current_exe) = std::env::current_exe() {
-        let mut downloader = current_exe.clone();
-        downloader.set_file_name("voicevox-download");
-        if downloader.exists() {
-            return Ok(downloader);
-        }
-
-        if let Some(pkg_root) = current_exe.parent().and_then(|p| p.parent()) {
-            let pkg_downloader = pkg_root.join("bin/voicevox-download");
-            if pkg_downloader.exists() {
-                return Ok(pkg_downloader);
-            }
-        }
-    }
-
-    Err(anyhow!("voicevox-download not found"))
-}
-
-fn get_file_size(path: &PathBuf) -> Result<u64> {
-    Ok(std::fs::metadata(path)?.len())
-}
-
 fn get_file_modified(path: &PathBuf) -> Result<String> {
     let metadata = std::fs::metadata(path)?;
     let modified = metadata.modified()?;
     Ok(format!("{modified:?}"))
-}
-
-fn format_size(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    format!("{size:.1} {}", UNITS[unit_index])
 }

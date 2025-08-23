@@ -115,7 +115,7 @@ jobs:
           file result/bin/voicevox-say
           file result/bin/voicevox-daemon
           file result/bin/voicevox-mcp-server
-          test -x result/bin/voicevox-setup-models
+          test -x result/bin/voicevox-setup
           echo "All binaries built successfully"
 
       - name: Test functionality
@@ -124,6 +124,7 @@ jobs:
           result/bin/voicevox-say --help || echo "Help command test"
           result/bin/voicevox-daemon --help || echo "Help command test"
           result/bin/voicevox-mcp-server --help || echo "Help command test"
+          result/bin/voicevox-setup --help || echo "Setup script test"
           result/bin/voicevox-say --version || echo "Version command not available"
 
       - name: Package verification

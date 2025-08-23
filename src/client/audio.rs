@@ -1,9 +1,18 @@
 use anyhow::{anyhow, Result};
-use rodio::{Decoder, Sink};
 use std::fs;
-use std::io::Cursor;
 
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
+    if std::env::var("VOICEVOX_LOW_LATENCY").is_ok() {
+        play_audio_via_rodio(wav_data)
+    } else {
+        play_audio_via_system(wav_data)
+    }
+}
+
+fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
+    use rodio::{Decoder, Sink};
+    use std::io::Cursor;
+
     match rodio::OutputStreamBuilder::open_default_stream() {
         Ok(stream) => {
             let wav_data_owned = wav_data.to_vec();
@@ -15,10 +24,14 @@ pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
                     sink.append(source);
                     sink.play();
                     sink.sleep_until_end();
+
+                    // Explicitly drop to minimize debug output
+                    drop(sink);
+                    std::mem::drop(stream);
                     Ok(())
                 }
                 Err(_) => {
-                    drop(stream);
+                    std::mem::drop(stream);
                     play_audio_via_system(wav_data)
                 }
             }

@@ -18,7 +18,9 @@ pub use ipc::{
     DaemonRequest, DaemonResponse, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions,
     SynthesizeOptions,
 };
-pub use paths::{find_models_dir, find_models_dir_client, find_openjtalk_dict, get_socket_path};
+pub use paths::{
+    find_models_dir, find_models_dir_client, find_onnxruntime, find_openjtalk_dict, get_socket_path,
+};
 pub use voice::{
     get_model_for_voice_id, resolve_voice_dynamic, scan_available_models, AvailableModel, Speaker,
     Style,

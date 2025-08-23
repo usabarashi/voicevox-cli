@@ -14,6 +14,72 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Function to create ONNX Runtime compatibility symlinks
+create_onnxruntime_symlinks() {
+    local lib_dir="$1"
+    local symlinks_created=false
+    
+    if [ ! -d "$lib_dir" ]; then
+        return 0
+    fi
+    
+    # Check for macOS .dylib files
+    for lib in "$lib_dir"/libvoicevox_onnxruntime.*.dylib; do
+        if [ -f "$lib" ]; then
+            filename=$(basename "$lib")
+            version=${filename#libvoicevox_onnxruntime.}
+            version=${version%.dylib}
+            symlink_path="$lib_dir/libonnxruntime.$version.dylib"
+            
+            if [ ! -e "$symlink_path" ]; then
+                if [ "$symlinks_created" = false ]; then
+                    echo -e "${BLUE}Creating compatibility symlinks...${NC}"
+                    symlinks_created=true
+                fi
+                ln -sf "$filename" "$symlink_path"
+                echo "  Created: libonnxruntime.$version.dylib -> $filename"
+                
+                # Also create version-less symlink
+                versionless_path="$lib_dir/libonnxruntime.dylib"
+                if [ ! -e "$versionless_path" ]; then
+                    ln -sf "$filename" "$versionless_path"
+                    echo "  Created: libonnxruntime.dylib -> $filename"
+                fi
+            fi
+        fi
+    done
+    
+    # Check for Linux .so files
+    for lib in "$lib_dir"/libvoicevox_onnxruntime.*.so; do
+        if [ -f "$lib" ]; then
+            filename=$(basename "$lib")
+            version=${filename#libvoicevox_onnxruntime.}
+            version=${version%.so}
+            symlink_path="$lib_dir/libonnxruntime.$version.so"
+            
+            if [ ! -e "$symlink_path" ]; then
+                if [ "$symlinks_created" = false ]; then
+                    echo -e "${BLUE}Creating compatibility symlinks...${NC}"
+                    symlinks_created=true
+                fi
+                ln -sf "$filename" "$symlink_path"
+                echo "  Created: libonnxruntime.$version.so -> $filename"
+                
+                # Also create version-less symlink
+                versionless_path="$lib_dir/libonnxruntime.so"
+                if [ ! -e "$versionless_path" ]; then
+                    ln -sf "$filename" "$versionless_path"
+                    echo "  Created: libonnxruntime.so -> $filename"
+                fi
+            fi
+        fi
+    done
+    
+    if [ "$symlinks_created" = true ]; then
+        echo ""
+    fi
+}
+
 # Determine the data directory following XDG Base Directory specification
 if [ -n "${VOICEVOX_DIR:-}" ]; then
     DATA_DIR="$VOICEVOX_DIR"
@@ -100,66 +166,7 @@ if [ ${#MISSING_RESOURCES[@]} -eq 0 ]; then
     echo ""
     
     # Even if everything is installed, check and create compatibility symlinks if needed
-    if [ -d "$DATA_DIR/onnxruntime/lib" ]; then
-        SYMLINKS_CREATED=false
-        
-        # Check for macOS .dylib files
-        for lib in "$DATA_DIR/onnxruntime/lib"/libvoicevox_onnxruntime.*.dylib; do
-            if [ -f "$lib" ]; then
-                filename=$(basename "$lib")
-                version=${filename#libvoicevox_onnxruntime.}
-                version=${version%.dylib}
-                symlink_path="$DATA_DIR/onnxruntime/lib/libonnxruntime.$version.dylib"
-                
-                if [ ! -e "$symlink_path" ]; then
-                    if [ "$SYMLINKS_CREATED" = false ]; then
-                        echo -e "${BLUE}Creating compatibility symlinks...${NC}"
-                        SYMLINKS_CREATED=true
-                    fi
-                    ln -sf "$filename" "$symlink_path"
-                    echo "  Created: libonnxruntime.$version.dylib -> $filename"
-                    
-                    # Also create version-less symlink
-                    versionless_path="$DATA_DIR/onnxruntime/lib/libonnxruntime.dylib"
-                    if [ ! -e "$versionless_path" ]; then
-                        ln -sf "$filename" "$versionless_path"
-                        echo "  Created: libonnxruntime.dylib -> $filename"
-                    fi
-                fi
-                
-            fi
-        done
-        
-        # Check for Linux .so files
-        for lib in "$DATA_DIR/onnxruntime/lib"/libvoicevox_onnxruntime.*.so; do
-            if [ -f "$lib" ]; then
-                filename=$(basename "$lib")
-                version=${filename#libvoicevox_onnxruntime.}
-                version=${version%.so}
-                symlink_path="$DATA_DIR/onnxruntime/lib/libonnxruntime.$version.so"
-                
-                if [ ! -e "$symlink_path" ]; then
-                    if [ "$SYMLINKS_CREATED" = false ]; then
-                        echo -e "${BLUE}Creating compatibility symlinks...${NC}"
-                        SYMLINKS_CREATED=true
-                    fi
-                    ln -sf "$filename" "$symlink_path"
-                    echo "  Created: libonnxruntime.$version.so -> $filename"
-                    
-                    # Also create version-less symlink
-                    versionless_path="$DATA_DIR/onnxruntime/lib/libonnxruntime.so"
-                    if [ ! -e "$versionless_path" ]; then
-                        ln -sf "$filename" "$versionless_path"
-                        echo "  Created: libonnxruntime.so -> $filename"
-                    fi
-                fi
-            fi
-        done
-        
-        if [ "$SYMLINKS_CREATED" = true ]; then
-            echo ""
-        fi
-    fi
+    create_onnxruntime_symlinks "$DATA_DIR/onnxruntime/lib"
     
     echo "Installation directory: $DATA_DIR"
     echo ""
@@ -237,41 +244,7 @@ if $DOWNLOADER "${ONLY_ARGS[@]}" --output "$DATA_DIR"; then
     
     # Create symlink for ONNX Runtime compatibility if needed
     if [[ " ${MISSING_RESOURCES[@]} " =~ " onnxruntime " ]]; then
-        if [ -d "$DATA_DIR/onnxruntime/lib" ]; then
-            echo -e "${BLUE}Creating compatibility symlinks...${NC}"
-            # Find the actual VOICEVOX ONNX Runtime library
-            for lib in "$DATA_DIR/onnxruntime/lib"/libvoicevox_onnxruntime.*.dylib; do
-                if [ -f "$lib" ]; then
-                    filename=$(basename "$lib")
-                    # Extract version number (e.g., 1.17.3 from libvoicevox_onnxruntime.1.17.3.dylib)
-                    version=${filename#libvoicevox_onnxruntime.}
-                    version=${version%.dylib}
-                    # Create symlink for compatibility
-                    ln -sf "$filename" "$DATA_DIR/onnxruntime/lib/libonnxruntime.$version.dylib"
-                    echo "  Created: libonnxruntime.$version.dylib -> $filename"
-                    
-                    # Also create version-less symlink
-                    ln -sf "$filename" "$DATA_DIR/onnxruntime/lib/libonnxruntime.dylib"
-                    echo "  Created: libonnxruntime.dylib -> $filename"
-                    
-                fi
-            done
-            # Similar for Linux .so files
-            for lib in "$DATA_DIR/onnxruntime/lib"/libvoicevox_onnxruntime.*.so; do
-                if [ -f "$lib" ]; then
-                    filename=$(basename "$lib")
-                    version=${filename#libvoicevox_onnxruntime.}
-                    version=${version%.so}
-                    ln -sf "$filename" "$DATA_DIR/onnxruntime/lib/libonnxruntime.$version.so"
-                    echo "  Created: libonnxruntime.$version.so -> $filename"
-                    
-                    # Also create version-less symlink
-                    ln -sf "$filename" "$DATA_DIR/onnxruntime/lib/libonnxruntime.so"
-                    echo "  Created: libonnxruntime.so -> $filename"
-                fi
-            done
-            echo ""
-        fi
+        create_onnxruntime_symlinks "$DATA_DIR/onnxruntime/lib"
     fi
     
     # Set up environment variable hints

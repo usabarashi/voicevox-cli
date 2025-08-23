@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::paths::{
     find_models_dir, find_onnxruntime, find_openjtalk_dict, get_default_voicevox_dir,
@@ -36,14 +37,17 @@ pub async fn ensure_resources_available() -> Result<()> {
     println!();
 
     print!("Would you like to download these resources now? [Y/n]: ");
-    std::io::Write::flush(&mut std::io::stdout())?;
+    tokio::io::AsyncWriteExt::flush(&mut tokio::io::stdout()).await?;
     let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    {
+        let mut stdin = BufReader::new(tokio::io::stdin());
+        stdin.read_line(&mut input).await?;
+    }
     let response = input.trim().to_lowercase();
     if response.is_empty() || response == "y" || response == "yes" {
         println!("🔄 Starting resource download...");
         let target_dir = get_default_voicevox_dir();
-        std::fs::create_dir_all(&target_dir)?;
+        tokio::fs::create_dir_all(&target_dir).await?;
         let downloader_path = find_downloader_binary()?;
         println!("📦 Downloading to: {}", target_dir.display());
 
@@ -59,11 +63,11 @@ pub async fn ensure_resources_available() -> Result<()> {
                 cleanup_incomplete_downloads(&target_dir);
             }
 
-            let mut cmd = std::process::Command::new(&downloader_path);
+            let mut cmd = tokio::process::Command::new(&downloader_path);
             for resource in &missing_resources {
                 cmd.arg("--only").arg(resource);
             }
-            let status = cmd.arg("--output").arg(&target_dir).status();
+            let status = cmd.arg("--output").arg(&target_dir).status().await;
 
             match status {
                 Ok(exit_status) if exit_status.success() => {
@@ -88,7 +92,7 @@ pub async fn ensure_resources_available() -> Result<()> {
 
             if attempt < max_retries {
                 println!("⏳ Download failed, waiting 2 seconds before retry...");
-                std::thread::sleep(std::time::Duration::from_secs(2));
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         }
 
@@ -209,7 +213,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = if let Ok(current_exe) = std::env::current_exe() {
         let mut downloader = current_exe.clone();
@@ -237,14 +241,18 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     println!("   Press Enter when ready to continue...");
 
     let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    {
+        let mut stdin = BufReader::new(tokio::io::stdin());
+        stdin.read_line(&mut input).await?;
+    }
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .status()?;
+        .status()
+        .await?;
 
     if status.success() {
         let _vvm_files = std::fs::read_dir(&target_dir)
@@ -384,19 +392,20 @@ pub async fn update_models_only() -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading voice models only...");
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .status();
+        .status()
+        .await;
 
     match status {
         Ok(exit_status) if exit_status.success() => {
@@ -421,19 +430,20 @@ pub async fn update_dictionary_only() -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading dictionary only...");
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("dict")
         .arg("--output")
         .arg(&target_dir)
-        .status();
+        .status()
+        .await;
 
     match status {
         Ok(exit_status) if exit_status.success() => {
@@ -456,19 +466,20 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
         .map(|_| get_default_voicevox_dir())
         .unwrap_or_else(|| PathBuf::from("./voicevox"));
 
-    std::fs::create_dir_all(&target_dir)?;
+    tokio::fs::create_dir_all(&target_dir).await?;
 
     let downloader_path = find_downloader_binary()?;
 
     println!("📦 Target directory: {}", target_dir.display());
     println!("🔄 Downloading model {model_id} only...");
 
-    let status = std::process::Command::new(&downloader_path)
+    let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
         .arg("models")
         .arg("--output")
         .arg(&target_dir)
-        .status();
+        .status()
+        .await;
 
     match status {
         Ok(exit_status) if exit_status.success() => {

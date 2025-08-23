@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use voicevox_cli::client::{
-    daemon_mode, ensure_models_available, get_input_text, list_speakers_daemon,
-    play_audio_from_memory, DaemonClient,
+    ensure_models_available, get_input_text, list_speakers_daemon, play_audio_from_memory,
+    DaemonClient,
 };
 use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
@@ -36,7 +36,7 @@ async fn try_daemon_with_retry(
     options: OwnedSynthesizeOptions,
     output_file: Option<&String>,
     quiet: bool,
-    socket_path: &PathBuf,
+    _socket_path: &Path,
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
@@ -46,7 +46,22 @@ async fn try_daemon_with_retry(
     }
 
     match DaemonClient::new_with_auto_start().await {
-        Ok(_client) => daemon_mode(text, style_id, options, output_file, quiet, socket_path).await,
+        Ok(mut client) => {
+            let wav_data = client.synthesize(text, style_id, options).await?;
+
+            if let Some(output_file) = output_file {
+                std::fs::write(output_file, &wav_data)?;
+            }
+
+            if !quiet && output_file.is_none() {
+                if let Err(e) = play_audio_from_memory(&wav_data) {
+                    eprintln!("Error: Audio playback failed: {e}");
+                    return Err(e);
+                }
+            }
+
+            Ok(())
+        }
         Err(e) => {
             if !quiet {
                 eprintln!("Failed to connect to daemon: {}", e);

@@ -266,6 +266,8 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
         if lib_dir.exists() {
             // Try to find ONNX Runtime library with different naming patterns
             if let Ok(entries) = std::fs::read_dir(&lib_dir) {
+                // First pass: prioritize original voicevox library files
+                let mut candidates = Vec::new();
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if let Some(filename) = path.file_name() {
@@ -286,9 +288,17 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                         };
 
                         if matches && path.is_file() {
-                            return Ok(path);
+                            let is_original = filename_str.starts_with("libvoicevox_onnxruntime.");
+                            candidates.push((path, is_original));
                         }
                     }
+                }
+
+                // Sort to prioritize original voicevox libraries over symlinks
+                // After fixing the rpath, the original library should work directly
+                candidates.sort_by_key(|(_, is_original)| !*is_original);
+                if let Some((path, _)) = candidates.first() {
+                    return Ok(path.clone());
                 }
             }
         }
@@ -300,6 +310,8 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
         let lib_dir = Path::new(path);
         if lib_dir.exists() {
             if let Ok(entries) = std::fs::read_dir(lib_dir) {
+                // First pass: prioritize original voicevox library files
+                let mut candidates = Vec::new();
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if let Some(filename) = path.file_name() {
@@ -320,9 +332,17 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                         };
 
                         if matches && path.is_file() {
-                            return Ok(path);
+                            let is_original = filename_str.starts_with("libvoicevox_onnxruntime.");
+                            candidates.push((path, is_original));
                         }
                     }
+                }
+
+                // Sort to prioritize original voicevox libraries over symlinks
+                // After fixing the rpath, the original library should work directly
+                candidates.sort_by_key(|(_, is_original)| !*is_original);
+                if let Some((path, _)) = candidates.first() {
+                    return Ok(path.clone());
                 }
             }
         }

@@ -7,6 +7,15 @@ use tokio::process::Command;
 use tokio::time::timeout;
 use tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec};
 
+const DAEMON_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
+const DAEMON_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+const DAEMON_STARTUP_MAX_RETRIES: u32 = 20;
+const DAEMON_STARTUP_INITIAL_DELAY: Duration = Duration::from_millis(500);
+const DAEMON_STARTUP_MAX_DELAY: Duration = Duration::from_secs(4);
+const DAEMON_STARTUP_GRACE_PERIOD: Duration = Duration::from_millis(1000);
+const DAEMON_FINAL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const DAEMON_STARTUP_TOTAL_TIME_ESTIMATE: u32 = 80;
+
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
 use crate::voice::Speaker;
@@ -40,7 +49,7 @@ pub async fn daemon_mode(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    let mut stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
+    let mut stream = timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(socket_path))
         .await
         .map_err(|_| anyhow!("Daemon connection timeout"))?
         .map_err(|e| anyhow!("Failed to connect to daemon: {e}"))?;
@@ -67,7 +76,7 @@ pub async fn daemon_mode(
         let (reader, _writer) = stream.split();
         let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
 
-        timeout(Duration::from_secs(30), framed_reader.next())
+        timeout(DAEMON_RESPONSE_TIMEOUT, framed_reader.next())
             .await
             .map_err(|_| anyhow!("Daemon response timeout"))?
             .ok_or_else(|| anyhow!("Connection closed by daemon"))?
@@ -177,24 +186,26 @@ async fn start_daemon_automatically() -> Result<()> {
     match output {
         Ok(output) => {
             if output.status.success() {
-                // Poll for daemon readiness with exponential backoff
-                let max_retries = 10;
-                let mut retry_delay = Duration::from_millis(100);
+                let max_retries = DAEMON_STARTUP_MAX_RETRIES;
+                let mut retry_delay = DAEMON_STARTUP_INITIAL_DELAY;
 
                 for attempt in 0..max_retries {
-                    match UnixStream::connect(&socket_path).await {
-                        Ok(_) => return Ok(()),
-                        Err(_) if attempt < max_retries - 1 => {
+                    match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(&socket_path))
+                        .await
+                    {
+                        Ok(Ok(_)) => return Ok(()),
+                        Ok(Err(_)) | Err(_) if attempt < max_retries - 1 => {
                             tokio::time::sleep(retry_delay).await;
-                            retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
+                            retry_delay = (retry_delay * 2).min(DAEMON_STARTUP_MAX_DELAY);
                         }
-                        Err(_) => {}
+                        Ok(Err(_)) | Err(_) => {}
                     }
                 }
 
                 Err(anyhow!(
-                    "Daemon not responding after {} attempts",
-                    max_retries
+                    "Daemon not responding after {} attempts (~{}s total)",
+                    max_retries,
+                    DAEMON_STARTUP_TOTAL_TIME_ESTIMATE
                 ))
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -274,16 +285,25 @@ impl DaemonClient {
     /// using `new()` with appropriate user prompts.
     pub async fn new_with_auto_start() -> Result<Self> {
         let socket_path = get_socket_path();
-        match UnixStream::connect(&socket_path).await {
-            Ok(stream) => Ok(Self { stream }),
-            Err(_) => {
+        match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(&socket_path)).await {
+            Ok(Ok(stream)) => Ok(Self { stream }),
+            Ok(Err(_)) | Err(_) => {
                 crate::voice::has_available_models()
                     .then_some(())
                     .ok_or_else(|| anyhow!(
                         "No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory."
                     ))?;
                 start_daemon_automatically().await?;
-                let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+
+                tokio::time::sleep(DAEMON_STARTUP_GRACE_PERIOD).await;
+
+                let stream = timeout(
+                    DAEMON_FINAL_CONNECTION_TIMEOUT,
+                    UnixStream::connect(&socket_path),
+                )
+                .await
+                .map_err(|_| anyhow!("Timeout connecting to daemon"))?
+                .map_err(|e| {
                     anyhow!(
                         "Daemon started but failed to connect at {}: {e}",
                         socket_path.display()

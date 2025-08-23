@@ -4,7 +4,7 @@ use voicevox_core::{
     AccelerationMode,
 };
 
-use crate::paths::{find_models_dir, find_openjtalk_dict};
+use crate::paths::{find_models_dir, find_onnxruntime, find_openjtalk_dict};
 use crate::voice::Speaker;
 
 pub trait CoreSynthesis {
@@ -27,8 +27,14 @@ pub struct VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
-        let onnxruntime = Onnxruntime::init_once()
-            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
+        let onnxruntime = if let Ok(ort_path) = find_onnxruntime() {
+            Onnxruntime::load_once()
+                .filename(ort_path)
+                .perform()
+        } else {
+            Onnxruntime::load_once()
+                .perform()
+        }.map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}\nPlease run 'voicevox-setup' to download required resources."))?;
 
         let dict_path = find_openjtalk_dict()?;
 

@@ -11,15 +11,15 @@ pub enum ComponentType {
 impl ComponentType {
     fn error_message(&self) -> anyhow::Error {
         match self {
-            ComponentType::Models => anyhow!(
-                "No VOICEVOX models found. Run voicevox-setup to install."
-            ),
-            ComponentType::Dictionary => anyhow!(
-                "OpenJTalk dictionary not found. Please set VOICEVOX_OPENJTALK_DICT environment variable or run voicevox-setup to install it"
-            ),
-            ComponentType::OnnxRuntime => anyhow!(
-                "ONNX Runtime library not found. Run voicevox-setup to install."
-            ),
+            ComponentType::Models => {
+                anyhow!("No VOICEVOX models found. Run voicevox-setup to install.")
+            }
+            ComponentType::Dictionary => {
+                anyhow!("OpenJTalk dictionary not found. Run voicevox-setup to install.")
+            }
+            ComponentType::OnnxRuntime => {
+                anyhow!("ONNX Runtime library not found. Run voicevox-setup to install.")
+            }
         }
     }
 }

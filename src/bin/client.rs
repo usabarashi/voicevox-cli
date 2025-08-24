@@ -239,12 +239,12 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
-        let core = VoicevoxCore::new()?;
-
         let models = scan_available_models()?;
         if models.is_empty() {
             return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
         }
+
+        let core = VoicevoxCore::new()?;
 
         for model in &models {
             if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {

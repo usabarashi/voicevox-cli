@@ -51,7 +51,7 @@ tokio = { version = "1.40", features = ["full", "tracing"] }
 tokio-util = { version = "0.7", features = ["codec", "io-util"] }
 futures-util = { version = "0.3", features = ["sink", "io"] }
 
-voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", tag = "0.16.0", features = ["link-onnxruntime"], default-features = false }
+voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", tag = "0.16.1", features = ["load-onnxruntime"], default-features = false }
 
 libc = "0.2"
 
@@ -66,6 +66,9 @@ simd = ["rayon"]
 fast-strings = ["compact_str"]
 small-vectors = ["smallvec"]
 performance = ["simd", "fast-strings", "small-vectors", "mimalloc"]
+# ONNX Runtime features (passed through to voicevox_core)
+link-onnxruntime = []
+load-onnxruntime = []
 
 [profile.release]
 lto = "fat"

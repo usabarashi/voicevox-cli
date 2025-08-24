@@ -27,8 +27,7 @@ pub struct VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
-        let onnxruntime = Onnxruntime::init_once()
-            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
+        let onnxruntime = Self::init_onnx_runtime()?;
 
         let dict_path = find_openjtalk_dict()?;
         let open_jtalk = OpenJtalk::new(
@@ -48,14 +47,34 @@ impl VoicevoxCore {
         Ok(VoicevoxCore { synthesizer })
     }
 
+    fn init_onnx_runtime() -> Result<&'static Onnxruntime> {
+        Onnxruntime::load_once()
+            .perform()
+            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))
+    }
+
     pub fn check_onnx_runtime() -> Result<()> {
-        use voicevox_core::blocking::Onnxruntime;
-
-        let _onnxruntime = Onnxruntime::init_once().map_err(|e| {
-            anyhow!("ONNX Runtime libraries not available in user environment: {e}")
-        })?;
-
-        Ok(())
+        // まず実際のライブラリファイルの存在を確認
+        match crate::paths::find_onnxruntime_lib() {
+            Ok(lib_path) => {
+                // パスが見つかった場合、実際に初期化を試みる
+                match Self::init_onnx_runtime() {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(anyhow!(
+                        "ONNX Runtime found at {} but initialization failed: {}",
+                        lib_path.display(),
+                        e
+                    )),
+                }
+            }
+            Err(_) => {
+                // ライブラリが見つからない場合
+                Err(anyhow!(
+                    "ONNX Runtime library not found in XDG paths.\n\
+                     Please run voicevox-setup to download required components."
+                ))
+            }
+        }
     }
 }
 

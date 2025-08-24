@@ -181,7 +181,7 @@
             lockFile = ./Cargo.lock;
             outputHashes = {
               "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-              "voicevox_core-0.0.0" = "sha256-Ud/D3k8J8wOJiNiQ1bWi2RTS+Ix+ImqNEiyMHcCud78=";
+              "voicevox_core-0.0.0" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
               "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
             };
           };
@@ -252,9 +252,11 @@
             export OPENJTALK_DICT_PATH="${voicevoxResources}/openjtalk_dict"
 
             # ONNX Runtime configuration
-            export ORT_STRATEGY="system"
-            export ORT_USE_SYSTEM_LIB="1"
-            export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
+            # Dynamic loading enabled - no build-time path specification needed
+            # Runtime will search XDG paths for ONNX Runtime libraries
+            # export ORT_STRATEGY="system"
+            # export ORT_USE_SYSTEM_LIB="1"
+            # export ORT_LIB_LOCATION="${voicevoxResources}/voicevox_core/lib"
 
             # CMake configuration
             export CMAKE_DISABLE_FIND_PACKAGE_Git="TRUE"

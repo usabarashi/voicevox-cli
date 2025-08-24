@@ -7,6 +7,16 @@ const VVM_SUBDIR: &str = "vvms";
 const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
 
+const ONNXRUNTIME_LIB_SUBDIR: &str = "onnxruntime/lib";
+const VOICEVOX_ROOT_DIR: &str = "voicevox";
+const SYSTEM_SHARE_PREFIX: &str = "/usr/local/share";
+const OPT_PREFIX: &str = "/opt";
+
+#[cfg(target_os = "macos")]
+const ONNXRUNTIME_LIB_NAME: &str = "libvoicevox_onnxruntime.dylib";
+#[cfg(target_os = "linux")]
+const ONNXRUNTIME_LIB_NAME: &str = "libvoicevox_onnxruntime.so";
+
 /// Get the default VOICEVOX data directory path
 pub fn get_default_voicevox_dir() -> PathBuf {
     dirs::home_dir()
@@ -168,5 +178,45 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
     Err(anyhow!(
         "OpenJTalk dictionary not found. Please set VOICEVOX_OPENJTALK_DICT environment variable \
          or ensure the dictionary is installed at <binary>/../share/voicevox/openjtalk_dict"
+    ))
+}
+
+pub fn find_onnxruntime_lib() -> Result<PathBuf> {
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".local/share"));
+
+    let search_paths = [
+        xdg_data_home
+            .join(VOICEVOX_ROOT_DIR)
+            .join(ONNXRUNTIME_LIB_SUBDIR),
+        PathBuf::from(SYSTEM_SHARE_PREFIX)
+            .join(VOICEVOX_ROOT_DIR)
+            .join(ONNXRUNTIME_LIB_SUBDIR),
+        PathBuf::from(OPT_PREFIX)
+            .join(VOICEVOX_ROOT_DIR)
+            .join(ONNXRUNTIME_LIB_SUBDIR),
+    ];
+
+    for path in &search_paths {
+        let dylib = path.join(ONNXRUNTIME_LIB_NAME);
+
+        if dylib.exists() {
+            return Ok(path.clone());
+        }
+    }
+
+    Err(anyhow!(
+        "ONNX Runtime library not found. Please run voicevox-setup to install it.\n\
+         Expected locations:\n  - {}/{}/{}\n  - {}/{}/{}\n  - {}/{}/{}",
+        xdg_data_home.display(),
+        VOICEVOX_ROOT_DIR,
+        ONNXRUNTIME_LIB_SUBDIR,
+        SYSTEM_SHARE_PREFIX,
+        VOICEVOX_ROOT_DIR,
+        ONNXRUNTIME_LIB_SUBDIR,
+        OPT_PREFIX,
+        VOICEVOX_ROOT_DIR,
+        ONNXRUNTIME_LIB_SUBDIR
     ))
 }

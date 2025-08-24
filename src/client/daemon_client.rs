@@ -164,6 +164,7 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
 }
 
 async fn start_daemon_automatically() -> Result<()> {
+    println!("Starting VOICEVOX daemon...");
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary()?;
 

@@ -43,10 +43,6 @@ async fn try_daemon_with_retry(
         return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
     }
 
-    if !quiet {
-        println!("Starting VOICEVOX daemon...");
-    }
-
     match DaemonClient::new_with_auto_start().await {
         Ok(_client) => daemon_mode(text, style_id, options, output_file, quiet, socket_path).await,
         Err(e) => {

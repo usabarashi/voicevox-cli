@@ -280,26 +280,14 @@ pub async fn build_style_to_model_map_async(
         .flat_map(|s| s.styles.iter().map(|style| style.id))
         .collect();
 
-    let mut model_files: Vec<_> = std::fs::read_dir(&models_dir)?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("vvm"))
-        .collect();
-    model_files.sort();
-
-    println!("    Found {} voice model files", model_files.len());
+    let available_models = scan_available_models()?;
+    println!("    Found {} voice model files", available_models.len());
 
     let mut cumulative_style_ids = initial_style_ids.clone();
 
-    for path in &model_files {
-        let model_id = match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u32>().ok())
-        {
-            Some(id) => id,
-            None => continue,
-        };
+    for model in &available_models {
+        let model_id = model.model_id;
+        let path = &model.file_path;
 
         if let Some(filename) = path.file_name() {
             println!("    Processing: {}", filename.to_string_lossy());
@@ -351,15 +339,8 @@ pub async fn build_style_to_model_map_async(
 
     let mut all_speakers = Vec::new();
 
-    for path in &model_files {
-        let model_id = match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u32>().ok())
-        {
-            Some(id) => id,
-            None => continue,
-        };
+    for model in &available_models {
+        let model_id = model.model_id;
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
             eprintln!("      ERROR: Failed to reload model {model_id} for speakers: {e}");
@@ -370,11 +351,14 @@ pub async fn build_style_to_model_map_async(
         all_speakers = speakers;
     }
 
-    for path in &model_files {
-        let path_str = match path.to_str() {
+    for model in &available_models {
+        let path_str = match model.file_path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("      ERROR: Model path contains invalid UTF-8: {:?}", path);
+                eprintln!(
+                    "      ERROR: Model path contains invalid UTF-8: {:?}",
+                    model.file_path
+                );
                 continue;
             }
         };

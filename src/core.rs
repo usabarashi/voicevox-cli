@@ -4,7 +4,7 @@ use voicevox_core::{
     AccelerationMode,
 };
 
-use crate::paths::{find_models_dir, find_openjtalk_dict};
+use crate::paths::find_openjtalk_dict;
 use crate::voice::Speaker;
 
 pub trait CoreSynthesis {
@@ -140,17 +140,32 @@ impl CoreSynthesis for VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
-        let models_dir = find_models_dir()?;
-        let model_path = models_dir.join(format!("{model_name}.vvm"));
+        use crate::voice::scan_available_models;
 
-        if !model_path.exists() {
-            return Err(anyhow!(
-                "Model not found: {model_name}.vvm at {}",
-                models_dir.display()
-            ));
-        }
+        let model_id: u32 = model_name
+            .parse()
+            .map_err(|_| anyhow!("Invalid model name: {model_name}"))?;
 
-        let model = VoiceModelFile::open(&model_path)
+        // Find the actual model file path using the scanning function
+        let available_models =
+            scan_available_models().map_err(|e| anyhow!("Failed to scan models: {e}"))?;
+
+        let model_file = available_models
+            .iter()
+            .find(|m| m.model_id == model_id)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Model {} not found. Available models: {}",
+                    model_id,
+                    available_models
+                        .iter()
+                        .map(|m| m.model_id.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+
+        let model = VoiceModelFile::open(&model_file.file_path)
             .map_err(|e| anyhow!("Failed to open model {model_name}: {e}"))?;
 
         self.synthesizer

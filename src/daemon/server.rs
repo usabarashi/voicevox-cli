@@ -74,30 +74,37 @@ impl DaemonState {
                 }
 
                 let synthesis_result = self.core.synthesize(&text, style_id);
-                if let Ok(models_dir) = crate::paths::find_models_dir() {
-                    let model_path = models_dir.join(format!("{model_id}.vvm"));
-                    let path_str = match model_path.to_str() {
-                        Some(s) => s,
-                        None => {
-                            eprintln!(
-                                "  ERROR: Model path contains invalid UTF-8: {:?}",
-                                model_path
-                            );
-                            return OwnedResponse::Error {
-                                message: format!(
-                                    "Model path contains invalid UTF-8: {:?}",
-                                    model_path
-                                )
-                                .into(),
-                            };
+
+                // Find and unload the actual model file
+                if let Ok(available_models) = crate::voice::scan_available_models() {
+                    if let Some(model_file) =
+                        available_models.iter().find(|m| m.model_id == model_id)
+                    {
+                        let path_str = match model_file.file_path.to_str() {
+                            Some(s) => s,
+                            None => {
+                                eprintln!(
+                                    "  ERROR: Model path contains invalid UTF-8: {:?}",
+                                    model_file.file_path
+                                );
+                                return OwnedResponse::Error {
+                                    message: format!(
+                                        "Model path contains invalid UTF-8: {:?}",
+                                        model_file.file_path
+                                    )
+                                    .into(),
+                                };
+                            }
+                        };
+                        match self.core.unload_voice_model_by_path(path_str) {
+                            Ok(_) => {}
+                            Err(e) => eprintln!("  ERROR: Failed to unload model {model_id}: {e}"),
                         }
-                    };
-                    match self.core.unload_voice_model_by_path(path_str) {
-                        Ok(_) => {}
-                        Err(e) => eprintln!("  ERROR: Failed to unload model {model_id}: {e}"),
+                    } else {
+                        eprintln!("  ERROR: Model {model_id} not found in available models");
                     }
                 } else {
-                    eprintln!("  ERROR: Failed to find models directory for unload");
+                    eprintln!("  ERROR: Failed to scan available models for unload");
                 }
 
                 match synthesis_result {

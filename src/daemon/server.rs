@@ -73,8 +73,6 @@ impl DaemonState {
                     };
                 }
 
-                println!("  Loaded model {model_id} for synthesis");
-
                 let synthesis_result = self.core.synthesize(&text, style_id);
                 if let Ok(models_dir) = crate::paths::find_models_dir() {
                     let model_path = models_dir.join(format!("{model_id}.vvm"));
@@ -95,7 +93,7 @@ impl DaemonState {
                         }
                     };
                     match self.core.unload_voice_model_by_path(path_str) {
-                        Ok(_) => println!("  Unloaded model {model_id} after synthesis"),
+                        Ok(_) => {},
                         Err(e) => eprintln!("  ERROR: Failed to unload model {model_id}: {e}"),
                     }
                 } else {

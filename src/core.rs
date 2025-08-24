@@ -27,10 +27,14 @@ pub struct VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
+        println!("Initializing VOICEVOX Core...");
+        println!("  Loading ONNX Runtime...");
         let onnxruntime = Onnxruntime::init_once()
             .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
 
+        println!("  Loading OpenJTalk dictionary...");
         let dict_path = find_openjtalk_dict()?;
+        println!("    Dictionary: {}", dict_path.display());
 
         let open_jtalk = OpenJtalk::new(
             dict_path
@@ -39,6 +43,7 @@ impl VoicevoxCore {
         )
         .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {e}"))?;
 
+        println!("  Creating synthesizer...");
         let synthesizer = Synthesizer::builder(onnxruntime)
             .text_analyzer(open_jtalk)
             .acceleration_mode(AccelerationMode::Cpu)
@@ -46,6 +51,7 @@ impl VoicevoxCore {
             .build()
             .map_err(|e| anyhow!("Failed to create synthesizer: {e}"))?;
 
+        println!("  Core initialization complete!");
         Ok(VoicevoxCore { synthesizer })
     }
 }

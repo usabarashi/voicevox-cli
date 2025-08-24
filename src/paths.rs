@@ -65,11 +65,12 @@ pub fn find_component_path(
     }
 
     // 2. XDG-compliant path (standard user installation)
-    if let Some(data_dir) = dirs::data_local_dir() {
-        let xdg_path = data_dir.join("voicevox").join(xdg_subpath);
-        if validate_path(&xdg_path, validation_file) {
-            return Ok(xdg_path);
-        }
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".local/share"));
+    let xdg_path = xdg_data_home.join("voicevox").join(xdg_subpath);
+    if validate_path(&xdg_path, validation_file) {
+        return Ok(xdg_path);
     }
 
     Err(component.error_message())

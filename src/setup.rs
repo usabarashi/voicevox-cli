@@ -16,58 +16,6 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
     );
     println!("   No sudo privileges required");
 
-    let exe_path = match std::env::current_exe() {
-        Ok(path) => path,
-        Err(_) => {
-            return show_manual_setup_instructions(&target_dir);
-        }
-    };
-
-    let pkg_root = match exe_path.parent().and_then(|p| p.parent()) {
-        Some(root) => root,
-        None => return show_manual_setup_instructions(&target_dir),
-    };
-
-    let auto_setup = pkg_root.join("bin/voicevox-auto-setup");
-    if !auto_setup.exists() {
-        return show_manual_setup_instructions(&target_dir);
-    }
-
-    println!("Running automatic setup...");
-
-    let status = std::process::Command::new(&auto_setup)
-        .arg(&target_dir)
-        .status();
-
-    match status {
-        Ok(status) if status.success() => {
-            if is_valid_models_directory(&target_dir) {
-                return Ok(target_dir);
-            }
-
-            if let Ok(entries) = std::fs::read_dir(&target_dir) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                        continue;
-                    }
-
-                    let subdir = entry.path();
-                    if is_valid_models_directory(&subdir) {
-                        return Ok(subdir);
-                    }
-                }
-            }
-
-            println!("WARNING: Setup completed but no models found");
-        }
-        Ok(_) => {
-            println!("WARNING: Automatic setup failed");
-        }
-        Err(e) => {
-            println!("WARNING: Could not run automatic setup: {e}");
-        }
-    }
-
     show_manual_setup_instructions(&target_dir)
 }
 

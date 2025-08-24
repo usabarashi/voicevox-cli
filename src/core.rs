@@ -27,15 +27,10 @@ pub struct VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
-        println!("Initializing VOICEVOX Core...");
-        println!("  Loading ONNX Runtime...");
         let onnxruntime = Onnxruntime::init_once()
             .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
 
-        println!("  Loading OpenJTalk dictionary...");
         let dict_path = find_openjtalk_dict()?;
-        println!("    Dictionary: {}", dict_path.display());
-
         let open_jtalk = OpenJtalk::new(
             dict_path
                 .to_str()
@@ -43,7 +38,6 @@ impl VoicevoxCore {
         )
         .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {e}"))?;
 
-        println!("  Creating synthesizer...");
         let synthesizer = Synthesizer::builder(onnxruntime)
             .text_analyzer(open_jtalk)
             .acceleration_mode(AccelerationMode::Cpu)
@@ -51,14 +45,39 @@ impl VoicevoxCore {
             .build()
             .map_err(|e| anyhow!("Failed to create synthesizer: {e}"))?;
 
-        println!("  Core initialization complete!");
         Ok(VoicevoxCore { synthesizer })
     }
 
     pub fn check_onnx_runtime() -> Result<()> {
         use voicevox_core::blocking::Onnxruntime;
 
-        Onnxruntime::init_once().map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
+        // Try to initialize ONNX Runtime and perform a minimal operation to verify it works
+        let onnxruntime = Onnxruntime::init_once()
+            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
+
+        // Try to create a minimal synthesizer to verify ONNX Runtime is actually functional
+        // This will fail if ONNX Runtime libraries are not available in the user environment
+        let dict_path = find_openjtalk_dict().map_err(|_| {
+            anyhow!("OpenJTalk dictionary not found - required for ONNX Runtime verification")
+        })?;
+
+        let open_jtalk = OpenJtalk::new(
+            dict_path
+                .to_str()
+                .ok_or_else(|| anyhow!("Invalid OpenJTalk dictionary path"))?,
+        )
+        .map_err(|e| {
+            anyhow!("Failed to initialize OpenJTalk for ONNX Runtime verification: {e}")
+        })?;
+
+        let _synthesizer = Synthesizer::builder(onnxruntime)
+            .text_analyzer(open_jtalk)
+            .acceleration_mode(AccelerationMode::Cpu)
+            .cpu_num_threads(0)
+            .build()
+            .map_err(|e| {
+                anyhow!("ONNX Runtime verification failed - synthesizer creation failed: {e}")
+            })?;
 
         Ok(())
     }

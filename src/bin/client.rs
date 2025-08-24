@@ -264,7 +264,6 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
-        println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
 
         let models = scan_available_models()?;

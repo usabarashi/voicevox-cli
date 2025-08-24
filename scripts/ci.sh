@@ -72,12 +72,11 @@ fi
 
 if [[ -d "$SCRIPT_DIR" ]]; then
   # Check with more detailed error message
-  if [[ ! -f "$SCRIPT_DIR/voicevox-setup-models.sh" ]]; then
-    echo "ERROR: Missing voicevox-setup-models.sh in $SCRIPT_DIR"
+  if [[ ! -f "$SCRIPT_DIR/voicevox-setup.sh" ]]; then
+    echo "ERROR: Missing voicevox-setup.sh in $SCRIPT_DIR"
     ls -la "$SCRIPT_DIR" || echo "Directory contents unavailable"
     exit 1
   fi
-  test -f "$SCRIPT_DIR/voicevox-auto-setup.sh" || (echo "ERROR: Missing voicevox-auto-setup.sh" && exit 1)
 
   # Validate all scripts
   echo "Validating all scripts..."
@@ -133,7 +132,7 @@ if [[ "$BUILD_PHASE" == "false" ]]; then
   ls -la result/bin/
   file result/bin/voicevox-say
   file result/bin/voicevox-daemon
-  test -x result/bin/voicevox-setup-models
+  test -x result/bin/voicevox-setup
   echo "All binaries built successfully"
 
   echo ""

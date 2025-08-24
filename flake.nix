@@ -281,7 +281,7 @@
           postInstall = ''
             # Install binaries
             cp ${voicevoxResources}/bin/voicevox-download $out/bin/
-            install -m755 ${./scripts/voicevox-setup-models.sh} $out/bin/voicevox-setup-models
+            install -m755 ${./scripts/voicevox-setup.sh} $out/bin/voicevox-setup
 
             # Install OpenJTalk dictionary to standard location
             mkdir -p $out/share/voicevox
@@ -296,15 +296,6 @@
 
           meta = packageMeta;
         };
-
-        licenseAcceptor = pkgs.runCommand "voicevox-auto-setup" { } ''
-          mkdir -p $out/bin
-          substitute ${./scripts/voicevox-auto-setup.sh} $out/bin/voicevox-auto-setup \
-            --replace "@@BASH_PATH@@" "${pkgs.bash}/bin/bash" \
-            --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
-            --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
-          chmod +x $out/bin/voicevox-auto-setup
-        '';
 
         # Common Serena environment setup script
         serenaEnvSetup = ''

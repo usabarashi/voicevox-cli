@@ -11,6 +11,8 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOpti
 use crate::paths::get_socket_path;
 use crate::voice::Speaker;
 use std::borrow::Cow;
+#[allow(unused_imports)]
+use std::os::unix::process::CommandExt;
 
 pub fn find_daemon_binary() -> Result<PathBuf, crate::daemon::DaemonError> {
     if let Ok(current_exe) = std::env::current_exe() {
@@ -166,42 +168,51 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
 async fn start_daemon_automatically() -> Result<()> {
     println!("Starting VOICEVOX daemon...");
     let socket_path = get_socket_path();
+
+    if UnixStream::connect(&socket_path).await.is_ok() {
+        println!("Daemon already running");
+        return Ok(());
+    }
+
     let daemon_path = find_daemon_binary()?;
 
-    let output = Command::new(&daemon_path)
-        .args(["--start", "--detach", "--show-startup"])
-        .output()
-        .await;
+    let mut child = {
+        let mut cmd = Command::new(&daemon_path);
+        cmd.args(["--start", "--detach", "--show-startup"]);
 
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                // Poll for daemon readiness with exponential backoff
-                let max_retries = 10;
-                let mut retry_delay = Duration::from_millis(100);
+        #[cfg(unix)]
+        cmd.process_group(0); // Create independent process group
 
-                for attempt in 0..max_retries {
-                    match UnixStream::connect(&socket_path).await {
-                        Ok(_) => return Ok(()),
-                        Err(_) if attempt < max_retries - 1 => {
-                            tokio::time::sleep(retry_delay).await;
-                            retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
-                        }
-                        Err(_) => {}
-                    }
-                }
+        cmd.spawn()
+            .map_err(|e| anyhow!("Failed to start daemon: {e}"))?
+    };
 
-                Err(anyhow!(
-                    "Daemon not responding after {} attempts",
-                    max_retries
-                ))
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(anyhow!("Daemon failed to start: {}", stderr.trim()))
+    println!("Spawned daemon with PID: {:?}", child.id());
+
+    // Wait for daemon to be ready
+    let max_retries = 20;
+    let mut retry_delay = Duration::from_millis(200);
+
+    for attempt in 0..max_retries {
+        match UnixStream::connect(&socket_path).await {
+            Ok(_) => {
+                // Daemon is ready, let it continue running in background
+                return Ok(());
             }
+            Err(_) if attempt < max_retries - 1 => {
+                tokio::time::sleep(retry_delay).await;
+                retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
+            }
+            Err(_) => {}
         }
-        Err(e) => Err(anyhow!("Failed to execute daemon: {e}")),
     }
+
+    // If daemon didn't start properly, try to kill the process
+    let _ = child.kill().await;
+    Err(anyhow!(
+        "Daemon not responding after {} attempts",
+        max_retries
+    ))
 }
 
 pub struct DaemonClient {

@@ -54,6 +54,14 @@ impl VoicevoxCore {
         println!("  Core initialization complete!");
         Ok(VoicevoxCore { synthesizer })
     }
+
+    pub fn check_onnx_runtime() -> Result<()> {
+        use voicevox_core::blocking::Onnxruntime;
+
+        Onnxruntime::init_once().map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))?;
+
+        Ok(())
+    }
 }
 
 impl CoreSynthesis for VoicevoxCore {

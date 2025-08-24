@@ -188,6 +188,15 @@ async fn main() -> Result<()> {
 
         println!("Application: v{}", env!("CARGO_PKG_VERSION"));
 
+        match VoicevoxCore::check_onnx_runtime() {
+            Ok(_) => {
+                println!("ONNX Runtime: [OK]");
+            }
+            Err(e) => {
+                println!("ONNX Runtime: [ERROR] {e}");
+            }
+        }
+
         match scan_available_models() {
             Ok(current_models) => {
                 println!("Voice Models: {} files installed", current_models.len());
@@ -212,16 +221,15 @@ async fn main() -> Result<()> {
                 use voicevox_cli::paths::find_openjtalk_dict;
                 match find_openjtalk_dict() {
                     Ok(dict_path) => {
-                        println!("Dictionary: {} [OK]", dict_path.display());
+                        println!("Dictionary: [OK] {}", dict_path.display());
                     }
                     Err(_) => {
-                        println!("Dictionary: Not found [ERROR]");
-                        println!("  Install with: voicevox-setup");
+                        println!("Dictionary: [ERROR] Not found - Install with: voicevox-setup");
                     }
                 }
             }
             Err(e) => {
-                eprintln!("Error scanning models: {e}");
+                println!("Voice Models: [ERROR] {e}");
             }
         }
         return Ok(());

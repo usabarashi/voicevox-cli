@@ -37,7 +37,6 @@ fn validate_path(path: &std::path::Path, validation_file: Option<&str>) -> bool 
     }
 }
 
-const VOICEVOX_DATA_SUBDIR: &str = ".local/share/voicevox";
 const MODELS_SUBDIR: &str = "models";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
 
@@ -83,9 +82,10 @@ const ONNXRUNTIME_LIB_NAME: &str = "libvoicevox_onnxruntime.so";
 
 /// Get the default VOICEVOX data directory path
 pub fn get_default_voicevox_dir() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(VOICEVOX_DATA_SUBDIR))
-        .unwrap_or_else(|| PathBuf::from("."))
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".local/share"));
+    xdg_data_home.join("voicevox")
 }
 
 /// Get the default models directory path
@@ -153,13 +153,57 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
     }
 }
 
+fn find_dict_subdirectory(dict_base: &std::path::Path) -> Option<PathBuf> {
+    if dict_base.exists() && dict_base.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(dict_base) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_dir() {
+                    let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+                    // Check if directory starts with "open_jtalk_dic"
+                    if dir_name.starts_with("open_jtalk_dic") {
+                        // Verify sys.dic exists
+                        if path.join("sys.dic").exists() {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
-    find_component_path(
-        ComponentType::Dictionary,
-        Some("VOICEVOX_OPENJTALK_DICT"),
-        "openjtalk_dict",
-        None,
-    )
+    // 1. Environment variable (highest priority)
+    if let Ok(path) = std::env::var("VOICEVOX_OPENJTALK_DICT") {
+        let dict_path = PathBuf::from(path);
+        if validate_path(&dict_path, Some("sys.dic")) {
+            return Ok(dict_path);
+        }
+    }
+
+    // 2. XDG-compliant path (standard user installation)
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".local/share"));
+
+    let voicevox_dir = xdg_data_home.join("voicevox");
+
+    // Search for versioned dictionary directories in dict/
+    let dict_base = voicevox_dir.join("dict");
+    if let Some(dict_path) = find_dict_subdirectory(&dict_base) {
+        return Ok(dict_path);
+    }
+
+    // Fallback to old path structure for backward compatibility
+    let old_dict_path = voicevox_dir.join("openjtalk_dict");
+    if validate_path(&old_dict_path, Some("sys.dic")) {
+        return Ok(old_dict_path);
+    }
+
+    Err(ComponentType::Dictionary.error_message())
 }
 
 pub fn find_onnxruntime_lib() -> Result<PathBuf> {

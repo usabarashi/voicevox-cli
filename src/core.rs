@@ -54,26 +54,19 @@ impl VoicevoxCore {
     }
 
     pub fn check_onnx_runtime() -> Result<()> {
-        // まず実際のライブラリファイルの存在を確認
         match crate::paths::find_onnxruntime_lib() {
-            Ok(lib_path) => {
-                // パスが見つかった場合、実際に初期化を試みる
-                match Self::init_onnx_runtime() {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(anyhow!(
-                        "ONNX Runtime found at {} but initialization failed: {}",
-                        lib_path.display(),
-                        e
-                    )),
-                }
-            }
-            Err(_) => {
-                // ライブラリが見つからない場合
-                Err(anyhow!(
-                    "ONNX Runtime library not found in XDG paths.\n\
+            Ok(lib_path) => match Self::init_onnx_runtime() {
+                Ok(_) => Ok(()),
+                Err(e) => Err(anyhow!(
+                    "ONNX Runtime found at {} but initialization failed: {}",
+                    lib_path.display(),
+                    e
+                )),
+            },
+            Err(_) => Err(anyhow!(
+                "ONNX Runtime library not found in XDG paths.\n\
                      Please run voicevox-setup to download required components."
-                ))
-            }
+            )),
         }
     }
 }

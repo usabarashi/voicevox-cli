@@ -121,6 +121,20 @@ voicevox-say --status             # Check installation status
 
 **Important**: This version is designed exclusively for Apple Silicon Macs with Nix package manager. NixOS, Linux, Intel Mac, and Windows are not supported.
 
+## Environment Variables
+
+Customize component locations with environment variables:
+
+- `VOICEVOX_MODELS_DIR` - Custom path for voice model files (default: `~/.local/share/voicevox/models`)
+- `VOICEVOX_OPENJTALK_DICT` - Custom path for OpenJTalk dictionary (default: `~/.local/share/voicevox/openjtalk_dict`)
+- `VOICEVOX_ONNXRUNTIME_DIR` - Custom path for ONNX Runtime library (default: `~/.local/share/voicevox/onnxruntime`)
+
+Example:
+```bash
+export VOICEVOX_MODELS_DIR="/custom/path/to/models"
+voicevox-say "カスタムパスの音声モデルを使用"
+```
+
 ## MCP Server (AI Assistant Integration)
 
 Enable AI assistants to use VOICEVOX for Japanese speech synthesis:

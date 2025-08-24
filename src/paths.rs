@@ -1,16 +1,79 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone)]
+pub enum ComponentType {
+    Models,
+    Dictionary,
+    OnnxRuntime,
+}
+
+impl ComponentType {
+    fn error_message(&self) -> anyhow::Error {
+        match self {
+            ComponentType::Models => anyhow!(
+                "No VOICEVOX models found. Run voicevox-setup to install."
+            ),
+            ComponentType::Dictionary => anyhow!(
+                "OpenJTalk dictionary not found. Please set VOICEVOX_OPENJTALK_DICT environment variable or run voicevox-setup to install it"
+            ),
+            ComponentType::OnnxRuntime => anyhow!(
+                "ONNX Runtime library not found. Run voicevox-setup to install."
+            ),
+        }
+    }
+}
+
+fn validate_path(path: &std::path::Path, validation_file: Option<&str>) -> bool {
+    if !path.exists() || !path.is_dir() {
+        return false;
+    }
+
+    if let Some(file) = validation_file {
+        let file_path = path.join(file);
+        file_path.exists() && file_path.is_file()
+    } else {
+        true
+    }
+}
+
 const VOICEVOX_DATA_SUBDIR: &str = ".local/share/voicevox";
 const MODELS_SUBDIR: &str = "models";
-const VVM_SUBDIR: &str = "vvms";
-const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
 
-const ONNXRUNTIME_LIB_SUBDIR: &str = "onnxruntime/lib";
-const VOICEVOX_ROOT_DIR: &str = "voicevox";
-const SYSTEM_SHARE_PREFIX: &str = "/usr/local/share";
-const OPT_PREFIX: &str = "/opt";
+/// Common path search function with unified priority order
+pub fn find_component_path(
+    component: ComponentType,
+    env_var: Option<&str>,
+    xdg_subpath: &str,
+    validation_file: Option<&str>,
+) -> Result<PathBuf> {
+    // 1. Environment variable (highest priority)
+    if let Some(env_var) = env_var {
+        if let Ok(path) = std::env::var(env_var) {
+            let component_path = match component {
+                ComponentType::OnnxRuntime => {
+                    // For ONNX Runtime, the env var points to the parent dir, append /lib
+                    PathBuf::from(path).join("lib")
+                }
+                _ => PathBuf::from(path),
+            };
+            if validate_path(&component_path, validation_file) {
+                return Ok(component_path);
+            }
+        }
+    }
+
+    // 2. XDG-compliant path (standard user installation)
+    if let Some(data_dir) = dirs::data_local_dir() {
+        let xdg_path = data_dir.join("voicevox").join(xdg_subpath);
+        if validate_path(&xdg_path, validation_file) {
+            return Ok(xdg_path);
+        }
+    }
+
+    Err(component.error_message())
+}
 
 #[cfg(target_os = "macos")]
 const ONNXRUNTIME_LIB_NAME: &str = "libvoicevox_onnxruntime.dylib";
@@ -54,66 +117,12 @@ pub fn get_socket_path() -> PathBuf {
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {
-    let env_model_paths = [
-        "VOICEVOX_MODELS_DIR",
-        "VOICEVOX_MODEL_DIR",
-        "VOICEVOX_MODELS_PATH",
-        "VOICEVOX_MODEL_PATH",
-        "VOICEVOX_MODELS",
-    ];
-
-    for env_var in &env_model_paths {
-        if let Ok(path) = std::env::var(env_var) {
-            let models_dir = PathBuf::from(path);
-            if models_dir.exists() && models_dir.is_dir() {
-                return Ok(models_dir);
-            }
-        }
-    }
-
-    let search_dirs = [
-        dirs::data_local_dir()
-            .map(|d| d.join("voicevox"))
-            .unwrap_or_default(),
-        dirs::home_dir()
-            .map(|h| h.join(VOICEVOX_DATA_SUBDIR))
-            .unwrap_or_default(),
-    ];
-
-    for dir in &search_dirs {
-        let candidate = dir.join(MODELS_SUBDIR);
-        if candidate.exists() && candidate.is_dir() {
-            let vvms_dir = candidate.join(VVM_SUBDIR);
-            if vvms_dir.exists() && vvms_dir.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&vvms_dir) {
-                    let has_vvm = entries.filter_map(Result::ok).any(|entry| {
-                        entry
-                            .path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            .map(|ext| ext == "vvm")
-                            .unwrap_or(false)
-                    });
-                    if has_vvm {
-                        return Ok(vvms_dir);
-                    }
-                }
-            }
-            return Ok(candidate);
-        }
-    }
-
-    for dir in &search_dirs {
-        if dir.exists() && dir.is_dir() {
-            return Ok(dir.clone());
-        }
-    }
-
-    Err(anyhow!(
-        "Models directory not found. Please set VOICEVOX_MODELS_DIR or place models in ~/{}/{}",
-        VOICEVOX_DATA_SUBDIR,
-        MODELS_SUBDIR
-    ))
+    find_component_path(
+        ComponentType::Models,
+        Some("VOICEVOX_MODELS_DIR"),
+        "models",
+        None,
+    )
 }
 
 pub fn find_models_dir_client() -> Result<PathBuf> {
@@ -144,81 +153,21 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
 }
 
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
-    if let Some(embedded_path) = option_env!("VOICEVOX_OPENJTALK_DICT_EMBEDDED") {
-        let dict_path = PathBuf::from(embedded_path);
-        if dict_path.exists() && dict_path.is_dir() {
-            return Ok(dict_path);
-        }
-    }
-
-    if let Ok(path) = std::env::var("VOICEVOX_OPENJTALK_DICT") {
-        let dict_path = PathBuf::from(path);
-        if dict_path.exists() && dict_path.is_dir() {
-            return Ok(dict_path);
-        }
-    }
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            let installed_path = exe_dir
-                .join("../share/voicevox")
-                .join(OPENJTALK_DICT_SUBDIR);
-            if installed_path.exists() && installed_path.is_dir() {
-                return Ok(installed_path);
-            }
-        }
-    }
-    if let Some(data_dir) = dirs::data_local_dir() {
-        let user_dict_path = data_dir.join("voicevox").join(OPENJTALK_DICT_SUBDIR);
-        if user_dict_path.exists() && user_dict_path.is_dir() {
-            return Ok(user_dict_path);
-        }
-    }
-
-    Err(anyhow!(
-        "OpenJTalk dictionary not found. Please set VOICEVOX_OPENJTALK_DICT environment variable \
-         or ensure the dictionary is installed at <binary>/../share/voicevox/openjtalk_dict"
-    ))
+    find_component_path(
+        ComponentType::Dictionary,
+        Some("VOICEVOX_OPENJTALK_DICT"),
+        "openjtalk_dict",
+        None,
+    )
 }
 
 pub fn find_onnxruntime_lib() -> Result<PathBuf> {
-    let xdg_data_home = std::env::var("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".local/share"));
-
-    let search_paths = [
-        xdg_data_home
-            .join(VOICEVOX_ROOT_DIR)
-            .join(ONNXRUNTIME_LIB_SUBDIR),
-        PathBuf::from(SYSTEM_SHARE_PREFIX)
-            .join(VOICEVOX_ROOT_DIR)
-            .join(ONNXRUNTIME_LIB_SUBDIR),
-        PathBuf::from(OPT_PREFIX)
-            .join(VOICEVOX_ROOT_DIR)
-            .join(ONNXRUNTIME_LIB_SUBDIR),
-    ];
-
-    for path in &search_paths {
-        let dylib = path.join(ONNXRUNTIME_LIB_NAME);
-
-        if dylib.exists() {
-            return Ok(path.clone());
-        }
-    }
-
-    Err(anyhow!(
-        "ONNX Runtime library not found. Please run voicevox-setup to install it.\n\
-         Expected locations:\n  - {}/{}/{}\n  - {}/{}/{}\n  - {}/{}/{}",
-        xdg_data_home.display(),
-        VOICEVOX_ROOT_DIR,
-        ONNXRUNTIME_LIB_SUBDIR,
-        SYSTEM_SHARE_PREFIX,
-        VOICEVOX_ROOT_DIR,
-        ONNXRUNTIME_LIB_SUBDIR,
-        OPT_PREFIX,
-        VOICEVOX_ROOT_DIR,
-        ONNXRUNTIME_LIB_SUBDIR
-    ))
+    find_component_path(
+        ComponentType::OnnxRuntime,
+        Some("VOICEVOX_ONNXRUNTIME_DIR"),
+        "onnxruntime/lib",
+        Some(ONNXRUNTIME_LIB_NAME),
+    )
 }
 
 #[derive(Debug)]

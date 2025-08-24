@@ -2,12 +2,31 @@ use anyhow::{anyhow, Context, Result};
 use rodio::{OutputStream, Sink};
 use serde::Deserialize;
 use serde_json::Value;
+use thiserror::Error;
 
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
 use crate::mcp::types::{ToolCallResult, ToolContent};
 use crate::synthesis::StreamingSynthesizer;
 
 const MAX_STYLE_ID: u32 = 1000;
+
+#[derive(Error, Debug)]
+pub enum SynthesisError {
+    #[error("Text cannot be empty")]
+    EmptyText,
+
+    #[error("Text too long: {length} characters (max: {max})")]
+    TextTooLong { length: usize, max: usize },
+
+    #[error("Rate must be between 0.5 and 2.0")]
+    InvalidRate,
+
+    #[error("Invalid style_id: {style_id} (max: {max})")]
+    InvalidStyleId { style_id: u32, max: u32 },
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
 
 #[derive(Debug, Deserialize)]
 struct SynthesizeParams {
@@ -33,45 +52,43 @@ struct ListVoiceStylesParams {
     style_name: Option<String>,
 }
 
-pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
-    let params: SynthesizeParams =
-        serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
+pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult, SynthesisError> {
+    let params: SynthesizeParams = serde_json::from_value(arguments).map_err(|e| {
+        SynthesisError::Other(anyhow!("Invalid parameters for text_to_speech: {}", e))
+    })?;
 
     let text = params.text.trim();
-    (!text.is_empty())
-        .then_some(())
-        .ok_or_else(|| anyhow!("Text cannot be empty"))?;
+    if text.is_empty() {
+        return Err(SynthesisError::EmptyText);
+    }
 
     const MAX_TEXT_LENGTH: usize = 10_000;
-    (text.len() <= MAX_TEXT_LENGTH)
-        .then_some(())
-        .ok_or_else(|| {
-            anyhow!(
-                "Text too long: {} characters (max: {})",
-                text.len(),
-                MAX_TEXT_LENGTH
-            )
-        })?;
+    if text.len() > MAX_TEXT_LENGTH {
+        return Err(SynthesisError::TextTooLong {
+            length: text.len(),
+            max: MAX_TEXT_LENGTH,
+        });
+    }
 
-    (0.5..=2.0)
-        .contains(&params.rate)
-        .then_some(())
-        .ok_or_else(|| anyhow!("Rate must be between 0.5 and 2.0"))?;
+    if !(0.5..=2.0).contains(&params.rate) {
+        return Err(SynthesisError::InvalidRate);
+    }
 
-    (params.style_id <= MAX_STYLE_ID)
-        .then_some(())
-        .ok_or_else(|| {
-            anyhow!(
-                "Invalid style_id: {} (max: {})",
-                params.style_id,
-                MAX_STYLE_ID
-            )
-        })?;
+    if params.style_id > MAX_STYLE_ID {
+        return Err(SynthesisError::InvalidStyleId {
+            style_id: params.style_id,
+            max: MAX_STYLE_ID,
+        });
+    }
 
     if params.streaming {
-        handle_streaming_synthesis(params).await
+        handle_streaming_synthesis(params)
+            .await
+            .map_err(SynthesisError::Other)
     } else {
-        handle_daemon_synthesis(params).await
+        handle_daemon_synthesis(params)
+            .await
+            .map_err(SynthesisError::Other)
     }
 }
 
@@ -227,10 +244,7 @@ mod tests {
 
         let result = handle_text_to_speech(args).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Text cannot be empty"));
+        assert!(matches!(result.unwrap_err(), SynthesisError::EmptyText));
     }
 
     #[tokio::test]
@@ -244,7 +258,10 @@ mod tests {
 
         let result = handle_text_to_speech(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Text too long"));
+        assert!(matches!(
+            result.unwrap_err(),
+            SynthesisError::TextTooLong { .. }
+        ));
     }
 
     #[tokio::test]
@@ -258,10 +275,7 @@ mod tests {
 
         let result = handle_text_to_speech(args).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Rate must be between 0.5 and 2.0"));
+        assert!(matches!(result.unwrap_err(), SynthesisError::InvalidRate));
     }
 
     #[tokio::test]
@@ -274,6 +288,9 @@ mod tests {
 
         let result = handle_text_to_speech(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid style_id"));
+        assert!(matches!(
+            result.unwrap_err(),
+            SynthesisError::InvalidStyleId { .. }
+        ));
     }
 }

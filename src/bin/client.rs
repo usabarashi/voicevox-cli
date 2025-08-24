@@ -36,10 +36,6 @@ async fn try_daemon_with_retry(
     _socket_path: &Path,
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
-        if !quiet {
-            eprintln!("Voice models not found.");
-            eprintln!("Please run 'voicevox-setup' to download and configure voice models.");
-        }
         return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
     }
 
@@ -63,7 +59,12 @@ async fn try_daemon_with_retry(
         },
         Err(e) => {
             if !quiet {
-                eprintln!("Failed to connect to daemon: {}", e);
+                match e.downcast_ref::<voicevox_cli::daemon::DaemonError>() {
+                    Some(voicevox_cli::daemon::DaemonError::NoModelsAvailable) => {}
+                    _ => {
+                        eprintln!("Failed to connect to daemon: {}", e);
+                    }
+                }
             }
             Err(e)
         }
@@ -177,8 +178,7 @@ async fn main() -> Result<()> {
         });
 
         if models.is_empty() {
-            eprintln!("{}", voicevox_cli::daemon::DaemonError::NoModelsAvailable);
-            return Ok(());
+            return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
         }
 
         println!("Available voice models:");
@@ -215,6 +215,9 @@ async fn main() -> Result<()> {
 
         match scan_available_models() {
             Ok(current_models) => {
+                if current_models.is_empty() {
+                    return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
+                }
                 println!("Voice Models: {} files installed", current_models.len());
                 for model in &current_models {
                     let model_info = match std::fs::metadata(&model.file_path) {
@@ -265,6 +268,10 @@ async fn main() -> Result<()> {
         let core = VoicevoxCore::new()?;
 
         let models = scan_available_models()?;
+        if models.is_empty() {
+            return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
+        }
+
         for model in &models {
             if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {
                 println!("Warning: Failed to load model {}: {e}", model.model_id);

@@ -286,7 +286,7 @@ pub async fn build_style_to_model_map_async(
         .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("vvm"))
         .collect();
     model_files.sort();
-    
+
     println!("    Found {} voice model files", model_files.len());
 
     let mut cumulative_style_ids = initial_style_ids.clone();

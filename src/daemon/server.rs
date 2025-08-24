@@ -93,7 +93,7 @@ impl DaemonState {
                         }
                     };
                     match self.core.unload_voice_model_by_path(path_str) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => eprintln!("  ERROR: Failed to unload model {model_id}: {e}"),
                     }
                 } else {

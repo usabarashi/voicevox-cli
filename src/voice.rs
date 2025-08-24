@@ -234,7 +234,7 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
     (!available_models.is_empty())
         .then_some(())
         .ok_or_else(|| anyhow!(
-            "No voice models available. Please download models first or use --speaker-id for direct ID specification."
+            "No voice models available. Please run 'voicevox-setup' to download and configure voice models or use --speaker-id for direct ID specification."
         ))?;
 
     voice_input
@@ -260,21 +260,6 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
                 available_models.len()
             ))
         })
-}
-
-pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
-    if let Ok(available_models) = scan_available_models() {
-        available_models
-            .iter()
-            .find(|model| {
-                model.model_id == voice_id
-                    || (voice_id >= model.model_id * 10 && voice_id < (model.model_id + 1) * 10)
-            })
-            .map(|model| model.model_id)
-            .or_else(|| available_models.first().map(|model| model.model_id))
-    } else {
-        None
-    }
 }
 
 /// Build style-to-model mapping by scanning all available models dynamically
@@ -313,7 +298,7 @@ pub async fn build_style_to_model_map_async(
         };
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("  ✗ Failed to load model {model_id} for mapping: {e}");
+            eprintln!("  ERROR: Failed to load model {model_id} for mapping: {e}");
             continue;
         }
 
@@ -323,12 +308,12 @@ pub async fn build_style_to_model_map_async(
                 let path_str = match path.to_str() {
                     Some(s) => s,
                     None => {
-                        eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                        eprintln!("  ERROR: Model path contains invalid UTF-8: {:?}", path);
                         continue;
                     }
                 };
                 if let Err(e) = core.unload_voice_model_by_path(path_str) {
-                    eprintln!("  ✗ Failed to unload model {model_id} after error: {e}");
+                    eprintln!("  ERROR: Failed to unload model {model_id} after error: {e}");
                 }
                 continue;
             }
@@ -347,12 +332,12 @@ pub async fn build_style_to_model_map_async(
         let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                eprintln!("  ERROR: Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
         if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("  ✗ Failed to unload model {model_id} after mapping: {e}");
+            eprintln!("  ERROR: Failed to unload model {model_id} after mapping: {e}");
         }
     }
 
@@ -369,7 +354,7 @@ pub async fn build_style_to_model_map_async(
         };
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("  ✗ Failed to reload model {model_id} for speakers: {e}");
+            eprintln!("  ERROR: Failed to reload model {model_id} for speakers: {e}");
         }
     }
 
@@ -381,12 +366,12 @@ pub async fn build_style_to_model_map_async(
         let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                eprintln!("  ERROR: Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
         if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("  ✗ Failed to unload model after speaker collection: {e}");
+            eprintln!("  ERROR: Failed to unload model after speaker collection: {e}");
         }
     }
 

@@ -277,9 +277,7 @@ impl DaemonClient {
             Err(_) => {
                 crate::voice::has_available_models()
                     .then_some(())
-                    .ok_or_else(|| anyhow!(
-                        "No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory."
-                    ))?;
+                    .ok_or(crate::daemon::DaemonError::NoModelsAvailable)?;
                 start_daemon_automatically().await?;
                 let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
                     anyhow!(

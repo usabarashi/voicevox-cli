@@ -3,9 +3,7 @@ use clap::{Arg, Command};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use voicevox_cli::client::{
-    daemon_mode, ensure_models_available, get_input_text, list_speakers_daemon, DaemonClient,
-};
+use voicevox_cli::client::{daemon_mode, get_input_text, list_speakers_daemon, DaemonClient};
 use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
@@ -39,9 +37,10 @@ async fn try_daemon_with_retry(
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
-            println!("Voice models not found. Setting up VOICEVOX...");
+            eprintln!("Voice models not found.");
+            eprintln!("Please run 'voicevox-setup' to download and configure voice models.");
         }
-        ensure_models_available().await?;
+        return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
     }
 
     if !quiet {
@@ -166,7 +165,7 @@ async fn main() -> Result<()> {
         });
 
         if models.is_empty() {
-            println!("No voice models found. Please start voicevox-daemon to download voice models automatically.");
+            eprintln!("{}", voicevox_cli::daemon::DaemonError::NoModelsAvailable);
             return Ok(());
         }
 
@@ -221,7 +220,7 @@ async fn main() -> Result<()> {
                     }
                     Err(_) => {
                         println!("Dictionary: Not found [ERROR]");
-                        println!("  Install with: voicevox-setup-models");
+                        println!("  Install with: voicevox-setup");
                     }
                 }
             }

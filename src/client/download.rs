@@ -207,14 +207,13 @@ pub async fn ensure_models_available() -> Result<()> {
             Err(e) => {
                 eprintln!("ERROR: Voice models download failed: {e}");
                 eprintln!(
-                    "You can manually run: voicevox-download --only models --output {}",
-                    get_default_voicevox_dir().display()
+                    "You can manually run: voicevox-setup to download and configure voice models"
                 );
                 Err(e)
             }
         }
     } else {
-        println!("Skipping voice models download. You can run 'voicevox-setup-models' later.");
+        println!("Skipping voice models download. You can run 'voicevox-setup' later.");
         Err(anyhow!("Voice models are required for operation"))
     }
 }
@@ -357,7 +356,7 @@ pub async fn check_updates() -> Result<()> {
     }
 
     println!();
-    println!("💡 Update options:");
+    println!("Update options:");
     println!("  --update-models     Update all voice models");
     println!("  --update-dict       Update dictionary only");
     println!("  --update-model N    Update specific model N");

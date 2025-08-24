@@ -179,7 +179,7 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
-    println!("🛑 Stopping VOICEVOX daemon...");
+    println!("Stopping VOICEVOX daemon...");
 
     if UnixStream::connect(socket_path).await.is_err() {
         println!("Daemon is not running");

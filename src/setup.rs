@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::paths::get_default_models_dir;
@@ -75,7 +75,7 @@ fn show_manual_setup_instructions(target_dir: &Path) -> Result<PathBuf> {
     println!();
     println!("Manual Setup Required:");
     println!(
-        "1. Run: voicevox-download --output {}",
+        "1. Run: voicevox-setup to download models to {}",
         target_dir.display()
     );
     println!("2. Accept the VOICEVOX license terms");
@@ -86,9 +86,7 @@ fn show_manual_setup_instructions(target_dir: &Path) -> Result<PathBuf> {
     println!("- Credit required: 'VOICEVOX:[Character Name]' in generated audio");
     println!("- Full terms: https://voicevox.hiroshiba.jp/");
 
-    Err(anyhow!(
-        "Voice models not available. Please run setup manually."
-    ))
+    Err(crate::daemon::DaemonError::NoModelsAvailable.into())
 }
 
 pub fn is_valid_models_directory(path: &PathBuf) -> bool {

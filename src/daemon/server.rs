@@ -28,7 +28,7 @@ impl DaemonState {
         *style_to_model_map.lock().await = mapping;
         let all_speakers = Arc::new(Mutex::new(speakers));
         println!(
-            "  ✓ Discovered {} style mappings",
+            "  Discovered {} style mappings",
             style_to_model_map.lock().await.len()
         );
 
@@ -73,7 +73,7 @@ impl DaemonState {
                     };
                 }
 
-                println!("  ✓ Loaded model {model_id} for synthesis");
+                println!("  Loaded model {model_id} for synthesis");
 
                 let synthesis_result = self.core.synthesize(&text, style_id);
                 if let Ok(models_dir) = crate::paths::find_models_dir() {
@@ -81,7 +81,10 @@ impl DaemonState {
                     let path_str = match model_path.to_str() {
                         Some(s) => s,
                         None => {
-                            eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", model_path);
+                            eprintln!(
+                                "  ERROR: Model path contains invalid UTF-8: {:?}",
+                                model_path
+                            );
                             return OwnedResponse::Error {
                                 message: format!(
                                     "Model path contains invalid UTF-8: {:?}",
@@ -92,11 +95,11 @@ impl DaemonState {
                         }
                     };
                     match self.core.unload_voice_model_by_path(path_str) {
-                        Ok(_) => println!("  ✓ Unloaded model {model_id} after synthesis"),
-                        Err(e) => eprintln!("  ✗ Failed to unload model {model_id}: {e}"),
+                        Ok(_) => println!("  Unloaded model {model_id} after synthesis"),
+                        Err(e) => eprintln!("  ERROR: Failed to unload model {model_id}: {e}"),
                     }
                 } else {
-                    eprintln!("  ✗ Failed to find models directory for unload");
+                    eprintln!("  ERROR: Failed to find models directory for unload");
                 }
 
                 match synthesis_result {

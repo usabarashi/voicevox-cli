@@ -64,8 +64,7 @@ impl VoicevoxCore {
                 )),
             },
             Err(_) => Err(anyhow!(
-                "ONNX Runtime library not found in XDG paths.\n\
-                     Please run voicevox-setup to download required components."
+                "ONNX Runtime library not found. Run voicevox-setup to install."
             )),
         }
     }

@@ -198,58 +198,34 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("status") {
+        use voicevox_cli::paths::check_all_components;
+
+        let components = check_all_components();
+        let errors: Vec<_> = components
+            .iter()
+            .filter_map(|c| c.status.as_ref().err())
+            .collect();
         println!("VOICEVOX CLI Installation Status");
         println!("=====================================");
-
         println!("Application: v{}", env!("CARGO_PKG_VERSION"));
 
-        match VoicevoxCore::check_onnx_runtime() {
-            Ok(_) => {
-                println!("ONNX Runtime: [OK]");
+        for component in &components {
+            match &component.status {
+                Ok(msg) => println!("{}: [OK] {}", component.name, msg),
+                Err(e) => println!("{}: [ERROR] {}", component.name, e),
             }
-            Err(e) => {
-                println!("ONNX Runtime: [ERROR] {e}");
+            for detail in &component.details {
+                println!("{}", detail);
             }
         }
 
-        match scan_available_models() {
-            Ok(current_models) => {
-                if current_models.is_empty() {
-                    return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
-                }
-                println!("Voice Models: {} files installed", current_models.len());
-                for model in &current_models {
-                    let model_info = match std::fs::metadata(&model.file_path) {
-                        Ok(metadata) => {
-                            let size_kb = metadata.len() / 1024;
-                            let filename = model
-                                .file_path
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy();
-                            format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
-                        }
-                        Err(_) => {
-                            format!("  Model {} ({})", model.model_id, model.file_path.display())
-                        }
-                    };
-                    println!("{model_info}");
-                }
-
-                use voicevox_cli::paths::find_openjtalk_dict;
-                match find_openjtalk_dict() {
-                    Ok(dict_path) => {
-                        println!("Dictionary: [OK] {}", dict_path.display());
-                    }
-                    Err(_) => {
-                        println!("Dictionary: [ERROR] Not found - Install with: voicevox-setup");
-                    }
-                }
-            }
-            Err(e) => {
-                println!("Voice Models: [ERROR] {e}");
-            }
+        if !errors.is_empty() {
+            println!("\n[!] Some components are missing. Run 'voicevox-setup' to install them.");
+            return Err(anyhow!("Installation incomplete"));
+        } else {
+            println!("\n[✓] All components are properly installed.");
         }
+
         return Ok(());
     }
 

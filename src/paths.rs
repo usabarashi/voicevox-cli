@@ -220,3 +220,69 @@ pub fn find_onnxruntime_lib() -> Result<PathBuf> {
         ONNXRUNTIME_LIB_SUBDIR
     ))
 }
+
+#[derive(Debug)]
+pub struct ComponentStatus {
+    pub name: &'static str,
+    pub status: Result<String>,
+    pub details: Vec<String>,
+}
+
+pub fn check_all_components() -> Vec<ComponentStatus> {
+    let mut components = Vec::new();
+
+    components.push(ComponentStatus {
+        name: "ONNX Runtime",
+        status: crate::core::VoicevoxCore::check_onnx_runtime().map(|_| "OK".to_string()),
+        details: vec![],
+    });
+
+    let models_status = crate::voice::scan_available_models().and_then(|models| {
+        if models.is_empty() {
+            Err(anyhow!(
+                "No VOICEVOX models found. Run voicevox-setup to install."
+            ))
+        } else {
+            Ok((format!("{} files installed", models.len()), models))
+        }
+    });
+
+    let mut model_details = vec![];
+    let models_result = match models_status {
+        Ok((status, models)) => {
+            for model in &models {
+                let model_info = match std::fs::metadata(&model.file_path) {
+                    Ok(metadata) => {
+                        let size_kb = metadata.len() / 1024;
+                        let filename = model
+                            .file_path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy();
+                        format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
+                    }
+                    Err(_) => {
+                        format!("  Model {} ({})", model.model_id, model.file_path.display())
+                    }
+                };
+                model_details.push(model_info);
+            }
+            Ok(status)
+        }
+        Err(e) => Err(e),
+    };
+
+    components.push(ComponentStatus {
+        name: "Voice Models",
+        status: models_result,
+        details: model_details,
+    });
+
+    components.push(ComponentStatus {
+        name: "Dictionary",
+        status: find_openjtalk_dict().map(|path| path.display().to_string()),
+        details: vec![],
+    });
+
+    components
+}

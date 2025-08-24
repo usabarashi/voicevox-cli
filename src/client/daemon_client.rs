@@ -167,16 +167,9 @@ async fn start_daemon_automatically() -> Result<()> {
     println!("Starting VOICEVOX daemon...");
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary()?;
-    let log_file = std::env::temp_dir().join("voicevox_daemon_startup.log");
+
     let output = Command::new(&daemon_path)
-        .args(["--start", "--detach"])
-        .stdout(std::process::Stdio::from(std::fs::File::create(&log_file)?))
-        .stderr(std::process::Stdio::from(
-            std::fs::File::options()
-                .create(true)
-                .append(true)
-                .open(&log_file)?,
-        ))
+        .args(["--start", "--detach", "--show-startup"])
         .output()
         .await;
 
@@ -189,17 +182,7 @@ async fn start_daemon_automatically() -> Result<()> {
 
                 for attempt in 0..max_retries {
                     match UnixStream::connect(&socket_path).await {
-                        Ok(_) => {
-                            // Daemon is ready, read and display startup logs
-                            if let Ok(log_content) = tokio::fs::read_to_string(&log_file).await {
-                                if !log_content.trim().is_empty() {
-                                    print!("{}", log_content);
-                                }
-                            }
-                            // Clean up log file
-                            let _ = tokio::fs::remove_file(&log_file).await;
-                            return Ok(());
-                        }
+                        Ok(_) => return Ok(()),
                         Err(_) if attempt < max_retries - 1 => {
                             tokio::time::sleep(retry_delay).await;
                             retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
@@ -208,22 +191,16 @@ async fn start_daemon_automatically() -> Result<()> {
                     }
                 }
 
-                // Clean up log file on timeout
-                let _ = tokio::fs::remove_file(&log_file).await;
                 Err(anyhow!(
                     "Daemon not responding after {} attempts",
                     max_retries
                 ))
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                let _ = tokio::fs::remove_file(&log_file).await;
                 Err(anyhow!("Daemon failed to start: {}", stderr.trim()))
             }
         }
-        Err(e) => {
-            let _ = tokio::fs::remove_file(&log_file).await;
-            Err(anyhow!("Failed to execute daemon: {e}"))
-        }
+        Err(e) => Err(anyhow!("Failed to execute daemon: {e}")),
     }
 }
 

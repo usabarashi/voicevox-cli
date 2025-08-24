@@ -55,6 +55,12 @@ async fn main() -> Result<()> {
                 .help("Restart the daemon (stop then start)")
                 .long("restart")
                 .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("show-startup")
+                .help("Show detailed startup logs before detaching")
+                .long("show-startup")
+                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
@@ -71,6 +77,7 @@ async fn main() -> Result<()> {
     let stop = matches.get_flag("stop");
     let status = matches.get_flag("status");
     let restart = matches.get_flag("restart");
+    let show_startup = matches.get_flag("show-startup");
 
     if stop {
         return handle_stop_daemon(&socket_path).await;
@@ -104,19 +111,35 @@ async fn main() -> Result<()> {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
 
-        println!("Starting daemon in detached mode...");
+        let child = if show_startup {
+            println!("Starting daemon with startup logs...");
 
-        let mut args: Vec<String> = std::env::args().collect();
-        args.retain(|arg| arg != "--detach" && arg != "-d");
-        args.push("--foreground".to_string());
+            let mut args: Vec<String> = std::env::args().collect();
+            args.retain(|arg| arg != "--detach" && arg != "-d" && arg != "--show-startup");
+            args.push("--foreground".to_string());
 
-        let child = Command::new(&args[0])
-            .args(&args[1..])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .process_group(0)
-            .spawn();
+            // Start in foreground first to show startup logs, then detach
+            Command::new(&args[0])
+                .args(&args[1..])
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn()
+        } else {
+            println!("Starting daemon in detached mode...");
+
+            let mut args: Vec<String> = std::env::args().collect();
+            args.retain(|arg| arg != "--detach" && arg != "-d");
+            args.push("--foreground".to_string());
+
+            Command::new(&args[0])
+                .args(&args[1..])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .process_group(0)
+                .spawn()
+        };
 
         match child {
             Ok(mut child) => {

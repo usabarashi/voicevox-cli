@@ -7,19 +7,19 @@ if [[ "${1:-}" == "--build-phase" ]]; then
   BUILD_PHASE=true
 fi
 
-echo "🔍 Running Complete CI Pipeline..."
+echo "Running Complete CI Pipeline..."
 echo "=================================="
 
 # Skip Nix flake check during build phase (would be circular)
 if [[ "$BUILD_PHASE" == "false" ]]; then
   # Static Analysis
   echo ""
-  echo "📦 Checking Nix flake..."
+  echo "Checking Nix flake..."
   nix flake check --show-trace
 fi
 
 echo ""
-echo "🛠️  Verifying Rust toolchain..."
+echo "Verifying Rust toolchain..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
   # During build, use direct commands
   rustc --version
@@ -31,11 +31,11 @@ else
 fi
 
 echo ""
-echo "📝 Checking code formatting..."
+echo "Checking code formatting..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
   # Check formatting and show diff if needed
   if ! cargo fmt --check; then
-    echo "❌ Code formatting errors detected. Run 'cargo fmt' to fix."
+    echo "ERROR: Code formatting errors detected. Run 'cargo fmt' to fix."
     echo ""
     echo "Hint: The most common issue is missing newline at end of file."
     echo "You can fix this by running: cargo fmt"
@@ -46,15 +46,15 @@ else
 fi
 
 echo ""
-echo "🧹 Running clippy analysis..."
+echo "Running clippy analysis..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
-  cargo clippy --all-targets --all-features -- -D warnings || (echo "❌ Clippy warnings detected. Fix them before building." && exit 1)
+  cargo clippy --all-targets --all-features -- -D warnings || (echo "ERROR: Clippy warnings detected. Fix them before building." && exit 1)
 else
   nix develop --command cargo clippy --all-targets --all-features -- -D warnings
 fi
 
 echo ""
-echo "📜 Checking scripts..."
+echo "Checking scripts..."
 
 # Check required scripts exist
 echo "Checking for required scripts..."
@@ -73,11 +73,11 @@ fi
 if [[ -d "$SCRIPT_DIR" ]]; then
   # Check with more detailed error message
   if [[ ! -f "$SCRIPT_DIR/voicevox-setup-models.sh" ]]; then
-    echo "❌ Missing voicevox-setup-models.sh in $SCRIPT_DIR"
+    echo "ERROR: Missing voicevox-setup-models.sh in $SCRIPT_DIR"
     ls -la "$SCRIPT_DIR" || echo "Directory contents unavailable"
     exit 1
   fi
-  test -f "$SCRIPT_DIR/voicevox-auto-setup.sh" || (echo "❌ Missing voicevox-auto-setup.sh" && exit 1)
+  test -f "$SCRIPT_DIR/voicevox-auto-setup.sh" || (echo "ERROR: Missing voicevox-auto-setup.sh" && exit 1)
 
   # Validate all scripts
   echo "Validating all scripts..."
@@ -91,13 +91,13 @@ if [[ -d "$SCRIPT_DIR" ]]; then
       fi
     fi
   done
-  echo "✅ All scripts validated successfully"
+  echo "All scripts validated successfully"
 else
   echo "Warning: Scripts directory not found, skipping script validation"
 fi
 
 echo ""
-echo "🔒 Running security audit..."
+echo "Running security audit..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
   # Skip during build phase - cargo-audit might not be available
   echo "Skipping security audit during build phase"
@@ -112,24 +112,24 @@ fi
 # Build verification - skip during build phase to avoid circular dependency
 if [[ "$BUILD_PHASE" == "false" ]]; then
   echo ""
-  echo "🔨 Building project with Nix..."
+  echo "Building project with Nix..."
   nix build --show-trace
 fi
 
 # Build artifact verification - only run after successful build
 if [[ "$BUILD_PHASE" == "false" ]]; then
   echo ""
-  echo "📊 Verifying build artifacts..."
+  echo "Verifying build artifacts..."
   if [[ -d result/bin ]]; then
     ls -la result/bin/
-    echo "✅ Build artifacts verified"
+    echo "Build artifacts verified"
   else
-    echo "❌ Build artifacts not found"
+    echo "ERROR: Build artifacts not found"
     exit 1
   fi
 
   echo ""
-  echo "🔧 Verifying build artifacts..."
+  echo "Verifying build artifacts..."
   ls -la result/bin/
   file result/bin/voicevox-say
   file result/bin/voicevox-daemon
@@ -137,13 +137,13 @@ if [[ "$BUILD_PHASE" == "false" ]]; then
   echo "All binaries built successfully"
 
   echo ""
-  echo "🧪 Testing functionality..."
+  echo "Testing functionality..."
   result/bin/voicevox-say --help || echo "Help command test"
   result/bin/voicevox-daemon --help || echo "Help command test"
   result/bin/voicevox-say --version || echo "Version command not available"
 
   echo ""
-  echo "📦 Package verification..."
+  echo "Package verification..."
   echo "Binary sizes:"
   ls -lah result/bin/
   echo "Static linking verification:"
@@ -154,7 +154,7 @@ fi
 
 echo ""
 if [[ "$BUILD_PHASE" == "true" ]]; then
-  echo "✅ Pre-build CI checks completed successfully!"
+  echo "Pre-build CI checks completed successfully!"
 else
-  echo "✅ All CI checks completed successfully!"
+  echo "All CI checks completed successfully!"
 fi

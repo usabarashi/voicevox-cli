@@ -31,8 +31,8 @@ pub async fn launch_downloader_for_user() -> Result<()> {
         return Err(anyhow!("Could not find voicevox-download"));
     };
 
-    println!("📦 Target directory: {}", target_dir.display());
-    println!("🔄 Launching VOICEVOX downloader...");
+    println!("Target directory: {}", target_dir.display());
+    println!("Launching VOICEVOX downloader...");
     println!("   This will download: 26+ voice models only");
     println!("   Please follow the on-screen instructions to accept license terms.");
     println!("   Press Enter when ready to continue...");
@@ -65,7 +65,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
 
         if vvm_count > 0 {
             println!(
-                "✅ Voice models successfully downloaded to: {}",
+                "Voice models successfully downloaded to: {}",
                 target_dir.display()
             );
             println!("   Found {vvm_count} VVM model files");
@@ -179,7 +179,7 @@ pub async fn ensure_models_available() -> Result<()> {
         return Ok(());
     }
 
-    println!("🎭 VOICEVOX CLI - First Run Setup");
+    println!("VOICEVOX CLI - First Run Setup");
     println!("Voice models are required for text-to-speech synthesis.");
     println!("This includes 26+ voice models (~200MB).");
     println!("Note: Core libraries and dictionary are already included in this build.");
@@ -193,7 +193,7 @@ pub async fn ensure_models_available() -> Result<()> {
     let response = input.trim().to_lowercase();
 
     if response.is_empty() || response == "y" || response == "yes" {
-        println!("🔄 Starting voice models download...");
+        println!("Starting voice models download...");
         println!(
             "Note: This will require accepting VOICEVOX license terms for 26+ voice characters."
         );
@@ -201,11 +201,11 @@ pub async fn ensure_models_available() -> Result<()> {
 
         match launch_downloader_for_user().await {
             Ok(_) => {
-                println!("✅ Voice models setup completed!");
+                println!("Voice models setup completed!");
                 Ok(())
             }
             Err(e) => {
-                eprintln!("❌ Voice models download failed: {e}");
+                eprintln!("ERROR: Voice models download failed: {e}");
                 eprintln!(
                     "You can manually run: voicevox-download --only models --output {}",
                     get_default_voicevox_dir().display()
@@ -220,7 +220,7 @@ pub async fn ensure_models_available() -> Result<()> {
 }
 
 pub async fn update_models_only() -> Result<()> {
-    println!("🔄 Updating voice models only...");
+    println!("Updating voice models only...");
 
     let target_dir = std::env::var("HOME")
         .ok()
@@ -231,8 +231,8 @@ pub async fn update_models_only() -> Result<()> {
 
     let downloader_path = find_downloader_binary()?;
 
-    println!("📦 Target directory: {}", target_dir.display());
-    println!("🔄 Downloading voice models only...");
+    println!("Target directory: {}", target_dir.display());
+    println!("Downloading voice models only...");
 
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
@@ -244,20 +244,20 @@ pub async fn update_models_only() -> Result<()> {
     match status {
         Ok(exit_status) if exit_status.success() => {
             let vvm_count = count_vvm_files_recursive(&target_dir.join("models"));
-            println!("✅ Voice models updated successfully!");
+            println!("Voice models updated successfully!");
             println!("   Found {vvm_count} VVM model files");
             cleanup_unnecessary_files(&target_dir);
             Ok(())
         }
         _ => {
-            println!("⚠️  Models-only update not supported, falling back to full update...");
+            println!("WARNING: Models-only update not supported, falling back to full update...");
             launch_downloader_for_user().await
         }
     }
 }
 
 pub async fn update_dictionary_only() -> Result<()> {
-    println!("🔄 Updating dictionary only...");
+    println!("Updating dictionary only...");
 
     let target_dir = std::env::var("HOME")
         .ok()
@@ -268,8 +268,8 @@ pub async fn update_dictionary_only() -> Result<()> {
 
     let downloader_path = find_downloader_binary()?;
 
-    println!("📦 Target directory: {}", target_dir.display());
-    println!("🔄 Downloading dictionary only...");
+    println!("Target directory: {}", target_dir.display());
+    println!("Downloading dictionary only...");
 
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
@@ -280,19 +280,21 @@ pub async fn update_dictionary_only() -> Result<()> {
 
     match status {
         Ok(exit_status) if exit_status.success() => {
-            println!("✅ Dictionary updated successfully!");
+            println!("Dictionary updated successfully!");
             cleanup_unnecessary_files(&target_dir);
             Ok(())
         }
         _ => {
-            println!("⚠️  Dictionary-only update not supported, falling back to full update...");
+            println!(
+                "WARNING: Dictionary-only update not supported, falling back to full update..."
+            );
             launch_downloader_for_user().await
         }
     }
 }
 
 pub async fn update_specific_model(model_id: u32) -> Result<()> {
-    println!("🔄 Updating model {model_id} only...");
+    println!("Updating model {model_id} only...");
 
     let target_dir = std::env::var("HOME")
         .ok()
@@ -303,8 +305,8 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
 
     let downloader_path = find_downloader_binary()?;
 
-    println!("📦 Target directory: {}", target_dir.display());
-    println!("🔄 Downloading model {model_id} only...");
+    println!("Target directory: {}", target_dir.display());
+    println!("Downloading model {model_id} only...");
 
     let status = std::process::Command::new(&downloader_path)
         .arg("--only")
@@ -315,24 +317,26 @@ pub async fn update_specific_model(model_id: u32) -> Result<()> {
 
     match status {
         Ok(exit_status) if exit_status.success() => {
-            println!("✅ Model {model_id} updated successfully!");
+            println!("Model {model_id} updated successfully!");
             cleanup_unnecessary_files(&target_dir);
             Ok(())
         }
         _ => {
-            println!("⚠️  Specific model update not supported, falling back to full update...");
+            println!(
+                "WARNING: Specific model update not supported, falling back to full update..."
+            );
             launch_downloader_for_user().await
         }
     }
 }
 
 pub async fn check_updates() -> Result<()> {
-    println!("🔍 Checking for available updates...");
+    println!("Checking for available updates...");
 
     use crate::voice::scan_available_models;
     let current_models = scan_available_models()?;
 
-    println!("📊 Current installation status:");
+    println!("Current installation status:");
     println!("  Voice models: {} VVM files", current_models.len());
     for model in &current_models {
         println!(
@@ -345,10 +349,10 @@ pub async fn check_updates() -> Result<()> {
     use crate::paths::find_openjtalk_dict;
     match find_openjtalk_dict() {
         Ok(dict_path) => {
-            println!("  Dictionary: {} ✅", dict_path.display());
+            println!("  Dictionary: {} [OK]", dict_path.display());
         }
         Err(_) => {
-            println!("  Dictionary: Not found ❌");
+            println!("  Dictionary: Not found [ERROR]");
         }
     }
 
@@ -362,7 +366,7 @@ pub async fn check_updates() -> Result<()> {
 }
 
 pub async fn show_version_info() -> Result<()> {
-    println!("📋 VOICEVOX CLI Version Information");
+    println!("VOICEVOX CLI Version Information");
     println!("=====================================");
 
     println!("Application: v{}", env!("CARGO_PKG_VERSION"));

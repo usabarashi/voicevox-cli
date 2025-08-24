@@ -4,14 +4,14 @@ use std::path::{Path, PathBuf};
 use crate::paths::get_default_models_dir;
 
 pub fn attempt_first_run_setup() -> Result<PathBuf> {
-    println!("🎭 VOICEVOX CLI - User Setup");
+    println!("VOICEVOX CLI - User Setup");
     println!("Setting up voice models for current user...");
     println!();
 
     let target_dir = get_default_models_dir();
 
     println!(
-        "📦 Installing models to: {} (user-specific)",
+        "Installing models to: {} (user-specific)",
         target_dir.display()
     );
     println!("   No sudo privileges required");
@@ -33,7 +33,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
         return show_manual_setup_instructions(&target_dir);
     }
 
-    println!("🔄 Running automatic setup...");
+    println!("Running automatic setup...");
 
     let status = std::process::Command::new(&auto_setup)
         .arg(&target_dir)
@@ -58,13 +58,13 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
                 }
             }
 
-            println!("⚠️  Setup completed but no models found");
+            println!("WARNING: Setup completed but no models found");
         }
         Ok(_) => {
-            println!("⚠️  Automatic setup failed");
+            println!("WARNING: Automatic setup failed");
         }
         Err(e) => {
-            println!("⚠️  Could not run automatic setup: {e}");
+            println!("WARNING: Could not run automatic setup: {e}");
         }
     }
 
@@ -73,7 +73,7 @@ pub fn attempt_first_run_setup() -> Result<PathBuf> {
 
 fn show_manual_setup_instructions(target_dir: &Path) -> Result<PathBuf> {
     println!();
-    println!("📋 Manual Setup Required:");
+    println!("Manual Setup Required:");
     println!(
         "1. Run: voicevox-download --output {}",
         target_dir.display()

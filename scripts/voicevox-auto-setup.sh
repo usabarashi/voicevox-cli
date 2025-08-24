@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODELS_DIR="$1"
 
-echo "🎭 VOICEVOX CLI - Voice Models Setup"
+echo "VOICEVOX CLI - Voice Models Setup"
 echo "Setting up voice models for current user..."
 echo "Note: VOICEVOX Core libraries and ONNX Runtime are statically linked"
 echo ""
@@ -29,11 +29,11 @@ mkdir -p "$MODELS_DIR"
     eof
   }
 " || {
-  echo "⚠️  Automatic download failed. You can manually run:"
+  echo "WARNING: Automatic download failed. You can manually run:"
   echo "  voicevox-download --only models --output $MODELS_DIR"
   exit 1
 }
 
-echo "✅ Voice models setup completed!"
+echo "Voice models setup completed!"
 echo "   26+ voice characters ready for text-to-speech synthesis"
 echo "   Static libraries (Core + ONNX Runtime) already available"

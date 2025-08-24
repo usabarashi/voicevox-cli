@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use voicevox_cli::client::{
-    daemon_mode, ensure_models_available, get_input_text, list_speakers_daemon,
-    play_audio_from_memory, DaemonClient,
+    daemon_mode, ensure_models_available, get_input_text, list_speakers_daemon, DaemonClient,
 };
 use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
@@ -40,9 +39,13 @@ async fn try_daemon_with_retry(
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
-            println!("🎭 Voice models not found. Setting up VOICEVOX...");
+            println!("Voice models not found. Setting up VOICEVOX...");
         }
         ensure_models_available().await?;
+    }
+
+    if !quiet {
+        println!("Starting VOICEVOX daemon...");
     }
 
     match DaemonClient::new_with_auto_start().await {
@@ -54,38 +57,6 @@ async fn try_daemon_with_retry(
             Err(e)
         }
     }
-}
-
-async fn standalone_mode(
-    text: &str,
-    style_id: u32,
-    output_file: Option<&String>,
-    quiet: bool,
-) -> Result<()> {
-    if voicevox_cli::paths::find_models_dir().is_err() {
-        if !quiet {
-            println!("🎭 Voice models not found. Setting up VOICEVOX...");
-        }
-        ensure_models_available().await?;
-    }
-
-    let core = VoicevoxCore::new()?;
-    let model_id = voicevox_cli::voice::get_model_for_voice_id(style_id)
-        .ok_or_else(|| anyhow!("No model found for style ID {style_id}"))?;
-    core.load_specific_model(&model_id.to_string())?;
-
-    let wav_data = core.synthesize(text, style_id)?;
-
-    match output_file {
-        Some(file_path) => std::fs::write(file_path, &wav_data)?,
-        None if !quiet => play_audio_from_memory(&wav_data).map_err(|e| {
-            eprintln!("Error: Audio playback failed: {e}");
-            e
-        })?,
-        _ => {}
-    }
-
-    Ok(())
 }
 
 #[tokio::main]
@@ -172,12 +143,6 @@ async fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("standalone")
-                .help("Force standalone mode (don't use daemon)")
-                .long("standalone")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("socket-path")
                 .help("Specify custom Unix socket path")
                 .long("socket-path")
@@ -252,10 +217,10 @@ async fn main() -> Result<()> {
                 use voicevox_cli::paths::find_openjtalk_dict;
                 match find_openjtalk_dict() {
                     Ok(dict_path) => {
-                        println!("Dictionary: {} ✅", dict_path.display());
+                        println!("Dictionary: {} [OK]", dict_path.display());
                     }
                     Err(_) => {
-                        println!("Dictionary: Not found ❌");
+                        println!("Dictionary: Not found [ERROR]");
                         println!("  Install with: voicevox-setup-models");
                     }
                 }
@@ -273,7 +238,7 @@ async fn main() -> Result<()> {
             .map(PathBuf::from)
             .unwrap_or_else(get_socket_path);
 
-        if !matches.get_flag("standalone") && list_speakers_daemon(&socket_path).await.is_ok() {
+        if list_speakers_daemon(&socket_path).await.is_ok() {
             return Ok(());
         }
 
@@ -325,7 +290,6 @@ async fn main() -> Result<()> {
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
     let quiet = matches.get_flag("quiet");
     let output_file = matches.get_one::<String>("output-file");
-    let force_standalone = matches.get_flag("standalone");
 
     if !(0.5..=2.0).contains(&rate) {
         return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
@@ -336,30 +300,10 @@ async fn main() -> Result<()> {
         ..Default::default()
     };
 
-    if !force_standalone {
-        let socket_path = matches
-            .get_one::<String>("socket-path")
-            .map(PathBuf::from)
-            .unwrap_or_else(get_socket_path);
+    let socket_path = matches
+        .get_one::<String>("socket-path")
+        .map(PathBuf::from)
+        .unwrap_or_else(get_socket_path);
 
-        if try_daemon_with_retry(
-            &text,
-            style_id,
-            options.clone(),
-            output_file,
-            quiet,
-            &socket_path,
-        )
-        .await
-        .is_ok()
-        {
-            return Ok(());
-        }
-
-        if !quiet {
-            println!("🔄 Daemon unavailable, using standalone mode...");
-        }
-    }
-
-    standalone_mode(&text, style_id, output_file, quiet).await
+    try_daemon_with_retry(&text, style_id, options, output_file, quiet, &socket_path).await
 }

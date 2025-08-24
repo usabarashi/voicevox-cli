@@ -26,6 +26,7 @@ echo "      Only voice model files (.vvm) will be downloaded"
 
 # Create VOICEVOX directory (models will be created within)
 mkdir -p "$VOICEVOX_DIR"
+mkdir -p "$MODEL_DIR"
 
 # Check if downloader is available
 if ! command -v "$DOWNLOADER" >/dev/null 2>&1; then

@@ -171,7 +171,6 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("list-models") {
-        println!("Scanning for available voice models...");
         let models = scan_available_models().unwrap_or_else(|e| {
             eprintln!("Error scanning models: {e}");
             std::process::exit(1);

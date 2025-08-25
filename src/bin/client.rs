@@ -1,13 +1,11 @@
 use anyhow::{anyhow, Result};
 use clap::{Arg, Command};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use voicevox_cli::client::{
     ensure_models_available, get_input_text, list_speakers_daemon, play_audio_from_memory,
     DaemonClient,
 };
-use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
@@ -271,43 +269,7 @@ async fn main() -> Result<()> {
             .map(PathBuf::from)
             .unwrap_or_else(get_socket_path);
 
-        if list_speakers_daemon(&socket_path).await.is_ok() {
-            return Ok(());
-        }
-
-        println!("Initializing VOICEVOX Core...");
-        let core = VoicevoxCore::new()?;
-
-        let models = scan_available_models()?;
-        for model in &models {
-            if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {
-                println!("Warning: Failed to load model {}: {e}", model.model_id);
-            }
-        }
-
-        println!("All available speakers and styles from loaded models:");
-        let speakers = core.get_speakers()?;
-
-        println!("Building style-to-model mapping...");
-        let style_to_model: HashMap<u32, u32> = speakers
-            .iter()
-            .flat_map(|s| s.styles.iter().map(|style| (style.id, style.id)))
-            .collect();
-
-        for speaker in &speakers {
-            println!("  {}", speaker.name);
-            for style in &speaker.styles {
-                let model_id = style_to_model.get(&style.id).copied().unwrap_or(style.id);
-                println!(
-                    "    {} (Model: {model_id}, Style ID: {})",
-                    style.name, style.id
-                );
-                if let Some(style_type) = &style.style_type {
-                    println!("        Type: {style_type}");
-                }
-            }
-            println!();
-        }
+        list_speakers_daemon(&socket_path).await?;
         return Ok(());
     }
 

@@ -175,8 +175,32 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
 }
 
 async fn start_daemon_automatically() -> Result<()> {
+    use std::io::Write;
+
     let socket_path = get_socket_path();
     let daemon_path = find_daemon_binary()?;
+
+    println!("Starting VOICEVOX daemon (first startup may take a few seconds)...");
+    println!("  Resources:");
+
+    let onnx_path = crate::paths::find_onnxruntime()?;
+    println!("    ONNX Runtime: {}", onnx_path.display());
+
+    let dict_path = crate::paths::find_openjtalk_dict()?;
+    println!("    OpenJTalk Dictionary: {}", dict_path.display());
+
+    let models_dir = crate::paths::find_models_dir()?;
+    let models = crate::voice::scan_available_models()?;
+    println!(
+        "    Voice Models: {} in {}",
+        models.len(),
+        models_dir.display()
+    );
+
+    println!("  Building voice model mappings...");
+
+    print!("  Starting daemon process");
+    std::io::stdout().flush().unwrap();
 
     let output = Command::new(&daemon_path)
         .args(["--start", "--detach"])
@@ -193,8 +217,14 @@ async fn start_daemon_automatically() -> Result<()> {
                     match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(&socket_path))
                         .await
                     {
-                        Ok(Ok(_)) => return Ok(()),
+                        Ok(Ok(_)) => {
+                            println!(" done!");
+                            println!("VOICEVOX daemon started successfully");
+                            return Ok(());
+                        }
                         Ok(Err(_)) | Err(_) if attempt < max_retries - 1 => {
+                            print!(".");
+                            std::io::stdout().flush().unwrap();
                             tokio::time::sleep(retry_delay).await;
                             retry_delay = (retry_delay * 2).min(DAEMON_STARTUP_MAX_DELAY);
                         }

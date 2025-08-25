@@ -8,12 +8,12 @@ Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon
 
 ## Features
 
-- **🚀 Zero Configuration**: Install and use immediately
-- **🎭 26+ Voice Characters**: Automatic detection of available voice models
-- **⚡ Instant Response**: Fast voice synthesis after initial setup
-- **🔇 Silent Operation**: Works like macOS `say` command
-- **💾 Lightweight**: Small download size, easy installation
-- **👤 Interactive Setup**: Guided setup with license acceptance on first use
+- **Zero Configuration**: Install and use immediately
+- **26+ Voice Characters**: Automatic detection of available voice models
+- **Instant Response**: Fast voice synthesis after initial setup
+- **Silent Operation**: Works like macOS `say` command
+- **Lightweight**: Small download size, easy installation
+- **Interactive Setup**: Guided setup with license acceptance on first use
 
 ## Quick Start
 
@@ -165,10 +165,10 @@ voicevox-daemon --restart          # Restart daemon
 This project includes multiple components with different licenses. See [LICENSE](LICENSE) for complete details.
 
 **Quick Summary for Users:**
-- ✅ Commercial and non-commercial use of generated audio allowed
-- ⚠️ **Required**: Credit "VOICEVOX:[Character Name]" in your work (e.g., "VOICEVOX:ずんだもん")
-- ❌ No redistribution of VOICEVOX software without permission
-- 📋 Individual character license terms apply (displayed during setup)
+- Commercial and non-commercial use of generated audio allowed
+- **Required**: Credit "VOICEVOX:[Character Name]" in your work (e.g., "VOICEVOX:ずんだもん")
+- No redistribution of VOICEVOX software without permission
+- Individual character license terms apply (displayed during setup)
 
 **Important**: You'll need to accept license terms for all voice characters during first-run setup.
 

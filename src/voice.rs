@@ -280,7 +280,11 @@ pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
 /// Build style-to-model mapping by scanning all available models dynamically
 pub async fn build_style_to_model_map_async(
     core: &crate::core::VoicevoxCore,
-) -> Result<(std::collections::HashMap<u32, u32>, Vec<Speaker>)> {
+) -> Result<(
+    std::collections::HashMap<u32, u32>,
+    Vec<Speaker>,
+    Vec<AvailableModel>,
+)> {
     use crate::core::CoreSynthesis;
     use std::collections::{HashMap, HashSet};
 
@@ -390,5 +394,8 @@ pub async fn build_style_to_model_map_async(
         }
     }
 
-    Ok((style_map, all_speakers))
+    // Build available models list using existing scan function
+    let available_models = scan_available_models().unwrap_or_default();
+
+    Ok((style_map, all_speakers, available_models))
 }

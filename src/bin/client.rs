@@ -71,7 +71,6 @@ async fn try_daemon_with_retry(
     }
 }
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let app = Command::new("voicevox-say")
@@ -179,7 +178,7 @@ async fn main() -> Result<()> {
         });
 
         if models.is_empty() {
-            println!("No voice models found. Please start voicevox-daemon to download voice models automatically.");
+            println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
             return Ok(());
         }
 
@@ -206,25 +205,44 @@ async fn main() -> Result<()> {
 
         println!("Application: v{}", env!("CARGO_PKG_VERSION"));
 
+        match voicevox_cli::paths::find_onnxruntime() {
+            Ok(onnx_path) => {
+                println!("ONNX Runtime: {}", onnx_path.display());
+            }
+            Err(_) => {
+                println!("ONNX Runtime: Not found");
+                println!("  Install with: voicevox-setup");
+            }
+        }
+
         match scan_available_models() {
             Ok(current_models) => {
-                println!("Voice Models: {} files installed", current_models.len());
-                for model in &current_models {
-                    let model_info = match std::fs::metadata(&model.file_path) {
-                        Ok(metadata) => {
-                            let size_kb = metadata.len() / 1024;
-                            let filename = model
-                                .file_path
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy();
-                            format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
-                        }
-                        Err(_) => {
-                            format!("  Model {} ({})", model.model_id, model.file_path.display())
-                        }
-                    };
-                    println!("{model_info}");
+                if current_models.is_empty() {
+                    println!("Voice Models: Not found");
+                    println!("  Install with: voicevox-setup");
+                } else {
+                    println!("Voice Models: {} files installed", current_models.len());
+                    for model in &current_models {
+                        let model_info = match std::fs::metadata(&model.file_path) {
+                            Ok(metadata) => {
+                                let size_kb = metadata.len() / 1024;
+                                let filename = model
+                                    .file_path
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy();
+                                format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
+                            }
+                            Err(_) => {
+                                format!(
+                                    "  Model {} ({})",
+                                    model.model_id,
+                                    model.file_path.display()
+                                )
+                            }
+                        };
+                        println!("{model_info}");
+                    }
                 }
 
                 use voicevox_cli::paths::find_openjtalk_dict;
@@ -234,11 +252,13 @@ async fn main() -> Result<()> {
                     }
                     Err(_) => {
                         println!("Dictionary: Not found");
-                        println!("  Install with: voicevox-setup-models");
+                        println!("  Install with: voicevox-setup");
                     }
                 }
             }
             Err(e) => {
+                println!("Voice Models: Not found");
+                println!("  Install with: voicevox-setup");
                 eprintln!("Error scanning models: {e}");
             }
         }

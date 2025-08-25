@@ -55,12 +55,6 @@ async fn main() -> Result<()> {
                 .help("Restart the daemon (stop then start)")
                 .long("restart")
                 .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("show-startup")
-                .help("Show detailed startup logs before detaching")
-                .long("show-startup")
-                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
@@ -77,7 +71,6 @@ async fn main() -> Result<()> {
     let stop = matches.get_flag("stop");
     let status = matches.get_flag("status");
     let restart = matches.get_flag("restart");
-    let show_startup = matches.get_flag("show-startup");
 
     if stop {
         return handle_stop_daemon(&socket_path).await;
@@ -88,7 +81,7 @@ async fn main() -> Result<()> {
     }
 
     if restart {
-        println!("Restarting daemon...");
+        println!("🔄 Restarting daemon...");
         let _ = handle_stop_daemon(&socket_path).await;
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
     }
@@ -111,35 +104,19 @@ async fn main() -> Result<()> {
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
 
-        let child = if show_startup {
-            println!("Starting daemon with startup logs...");
+        println!("Starting daemon in detached mode...");
 
-            let mut args: Vec<String> = std::env::args().collect();
-            args.retain(|arg| arg != "--detach" && arg != "-d" && arg != "--show-startup");
-            args.push("--foreground".to_string());
+        let mut args: Vec<String> = std::env::args().collect();
+        args.retain(|arg| arg != "--detach" && arg != "-d");
+        args.push("--foreground".to_string());
 
-            // Start in foreground first to show startup logs, then detach
-            Command::new(&args[0])
-                .args(&args[1..])
-                .stdin(Stdio::null())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .spawn()
-        } else {
-            println!("Starting daemon in detached mode...");
-
-            let mut args: Vec<String> = std::env::args().collect();
-            args.retain(|arg| arg != "--detach" && arg != "-d");
-            args.push("--foreground".to_string());
-
-            Command::new(&args[0])
-                .args(&args[1..])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .process_group(0)
-                .spawn()
-        };
+        let child = Command::new(&args[0])
+            .args(&args[1..])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn();
 
         match child {
             Ok(mut child) => {
@@ -147,22 +124,22 @@ async fn main() -> Result<()> {
 
                 match child.try_wait() {
                     Ok(None) => {
-                        println!("VOICEVOX daemon started successfully in background");
+                        println!("✅ VOICEVOX daemon started successfully in background");
                         println!("   Socket: {}", socket_path.display());
                         std::process::exit(0);
                     }
                     Ok(Some(status)) => {
-                        eprintln!("ERROR: Daemon failed to start: exit code {status}");
+                        eprintln!("❌ Daemon failed to start: exit code {status}");
                         std::process::exit(1);
                     }
                     Err(e) => {
-                        eprintln!("ERROR: Failed to check daemon status: {e}");
+                        eprintln!("❌ Failed to check daemon status: {e}");
                         std::process::exit(1);
                     }
                 }
             }
             Err(e) => {
-                eprintln!("ERROR: Failed to spawn daemon process: {e}");
+                eprintln!("❌ Failed to spawn daemon process: {e}");
                 std::process::exit(1);
             }
         }
@@ -171,22 +148,22 @@ async fn main() -> Result<()> {
     if let Err(e) = check_and_prevent_duplicate(&socket_path).await {
         let exit_code = match e {
             DaemonError::AlreadyRunning { pid } => {
-                eprintln!("ERROR: VOICEVOX daemon is already running (PID: {})", pid);
+                eprintln!("❌ VOICEVOX daemon is already running (PID: {})", pid);
                 eprintln!("   Use 'voicevox-daemon --stop' to stop it.");
                 exit_daemon::ALREADY_RUNNING
             }
             DaemonError::SocketPermissionDenied { path } => {
-                eprintln!("ERROR: Permission denied: Socket file is owned by another user");
+                eprintln!("❌ Permission denied: Socket file is owned by another user");
                 eprintln!("   Socket path: {}", path.display());
                 eprintln!("   Please remove the file manually and try again.");
                 exit_daemon::PERMISSION_DENIED
             }
             DaemonError::NoModelsAvailable => {
-                eprintln!("ERROR: {}", e);
+                eprintln!("❌ {}", e);
                 exit_daemon::NO_MODELS
             }
             _ => {
-                eprintln!("ERROR: {}", e);
+                eprintln!("❌ {}", e);
                 exit_daemon::FAILURE
             }
         };
@@ -202,10 +179,10 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
-    println!("Stopping VOICEVOX daemon...");
+    println!("🛑 Stopping VOICEVOX daemon...");
 
     if UnixStream::connect(socket_path).await.is_err() {
-        println!("Daemon is not running");
+        println!("❌ Daemon is not running");
         println!("   Socket: {}", socket_path.display());
         return Ok(());
     }
@@ -213,14 +190,14 @@ async fn handle_stop_daemon(socket_path: &PathBuf) -> Result<()> {
     let pids = match voicevox_cli::daemon::process::find_daemon_processes() {
         Ok(pids) => pids,
         Err(e) => {
-            println!("Failed to find daemon process: {e}");
+            println!("❌ Failed to find daemon process: {e}");
             println!("   Try manual: pkill -f -u $(id -u) voicevox-daemon");
             return Ok(());
         }
     };
 
     if pids.is_empty() {
-        println!("No daemon process found");
+        println!("❌ No daemon process found");
         return Ok(());
     }
 
@@ -239,30 +216,30 @@ async fn stop_daemon_process(pid: u32, socket_path: &PathBuf) {
 
     match kill_result {
         Ok(status) if status.success() => {
-            println!("Daemon stopped (PID: {pid})");
+            println!("✅ Daemon stopped (PID: {pid})");
 
             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
             if UnixStream::connect(socket_path).await.is_err() {
-                println!("Socket cleanup confirmed");
+                println!("✅ Socket cleanup confirmed");
             } else {
-                println!("WARNING: Daemon may still be running");
+                println!("⚠️  Daemon may still be running");
             }
         }
         _ => {
-            println!("ERROR: Failed to stop daemon (PID: {pid})");
+            println!("❌ Failed to stop daemon (PID: {pid})");
             println!("   Try: kill -9 {pid}");
         }
     }
 }
 
 async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
-    println!("VOICEVOX Daemon Status");
+    println!("📊 VOICEVOX Daemon Status");
     println!("========================");
 
     match UnixStream::connect(socket_path).await {
         Ok(_) => {
-            println!("Status: Running and responsive");
+            println!("Status: ✅ Running and responsive");
             println!("Socket: {}", socket_path.display());
 
             if let Ok(pids) = voicevox_cli::daemon::process::find_daemon_processes() {
@@ -286,7 +263,7 @@ async fn handle_status_daemon(socket_path: &PathBuf) -> Result<()> {
             }
         }
         Err(_) => {
-            println!("Status: Not running");
+            println!("Status: ❌ Not running");
             println!("Socket: {}", socket_path.display());
         }
     }

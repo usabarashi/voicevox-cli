@@ -12,10 +12,7 @@ use voicevox_cli::paths::get_socket_path;
     about = "VOICEVOX MCP Server for AI assistants",
     version
 )]
-struct Args {
-    #[arg(short, long)]
-    version: bool,
-}
+struct Args {}
 
 async fn ensure_daemon_running() -> DaemonResult<()> {
     let socket_path = get_socket_path();
@@ -138,12 +135,7 @@ async fn wait_for_daemon_ready(socket_path: &std::path::Path) -> DaemonResult<()
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
-
-    if args.version {
-        println!("voicevox-mcp-server {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
-    }
+    let _args = Args::parse();
 
     if let Err(e) = ensure_daemon_running().await {
         match e {

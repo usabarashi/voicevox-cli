@@ -10,7 +10,6 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::core::{CoreSynthesis, VoicevoxCore};
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
-use std::borrow::Cow;
 
 pub struct DaemonState {
     core: VoicevoxCore,
@@ -28,7 +27,7 @@ impl DaemonState {
         *style_to_model_map.lock().await = mapping;
         let all_speakers = Arc::new(Mutex::new(speakers));
         println!(
-            "  Discovered {} style mappings",
+            "  ✓ Discovered {} style mappings",
             style_to_model_map.lock().await.len()
         );
 
@@ -67,54 +66,41 @@ impl DaemonState {
                 if let Err(e) = self.core.load_specific_model(&model_id.to_string()) {
                     eprintln!("Failed to load model {model_id}: {e}");
                     return OwnedResponse::Error {
-                        message: Cow::Owned(format!(
-                            "Failed to load model {model_id} for synthesis: {e}"
-                        )),
+                        message: format!("Failed to load model {model_id} for synthesis: {e}"),
                     };
                 }
 
-                let synthesis_result = self.core.synthesize(&text, style_id);
+                println!("  ✓ Loaded model {model_id} for synthesis");
 
-                // Find and unload the actual model file
-                if let Ok(available_models) = crate::voice::scan_available_models() {
-                    if let Some(model_file) =
-                        available_models.iter().find(|m| m.model_id == model_id)
-                    {
-                        let path_str = match model_file.file_path.to_str() {
-                            Some(s) => s,
-                            None => {
-                                eprintln!(
-                                    "  ERROR: Model path contains invalid UTF-8: {:?}",
-                                    model_file.file_path
-                                );
-                                return OwnedResponse::Error {
-                                    message: format!(
-                                        "Model path contains invalid UTF-8: {:?}",
-                                        model_file.file_path
-                                    )
-                                    .into(),
-                                };
-                            }
-                        };
-                        match self.core.unload_voice_model_by_path(path_str) {
-                            Ok(_) => {}
-                            Err(e) => eprintln!("  ERROR: Failed to unload model {model_id}: {e}"),
+                let synthesis_result = self.core.synthesize(&text, style_id);
+                if let Ok(models_dir) = crate::paths::find_models_dir() {
+                    let model_path = models_dir.join(format!("{model_id}.vvm"));
+                    let path_str = match model_path.to_str() {
+                        Some(s) => s,
+                        None => {
+                            eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", model_path);
+                            return OwnedResponse::Error {
+                                message: format!(
+                                    "Model path contains invalid UTF-8: {:?}",
+                                    model_path
+                                ),
+                            };
                         }
-                    } else {
-                        eprintln!("  ERROR: Model {model_id} not found in available models");
+                    };
+                    match self.core.unload_voice_model_by_path(path_str) {
+                        Ok(_) => println!("  ✓ Unloaded model {model_id} after synthesis"),
+                        Err(e) => eprintln!("  ✗ Failed to unload model {model_id}: {e}"),
                     }
                 } else {
-                    eprintln!("  ERROR: Failed to scan available models for unload");
+                    eprintln!("  ✗ Failed to find models directory for unload");
                 }
 
                 match synthesis_result {
-                    Ok(wav_data) => OwnedResponse::SynthesizeResult {
-                        wav_data: Cow::Owned(wav_data),
-                    },
+                    Ok(wav_data) => OwnedResponse::SynthesizeResult { wav_data },
                     Err(e) => {
                         eprintln!("Synthesis failed: {e}");
                         OwnedResponse::Error {
-                            message: Cow::Owned(format!("Synthesis failed: {e}")),
+                            message: format!("Synthesis failed: {e}"),
                         }
                     }
                 }
@@ -124,7 +110,7 @@ impl DaemonState {
                 let all_speakers = self.all_speakers.lock().await.clone();
                 let style_to_model = self.style_to_model_map.lock().await.clone();
                 OwnedResponse::SpeakersListWithModels {
-                    speakers: Cow::Owned(all_speakers),
+                    speakers: all_speakers,
                     style_to_model,
                 }
             }
@@ -139,8 +125,11 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
             let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
 
             match framed_reader.next().await {
-                Some(Ok(data)) => match bincode::deserialize::<DaemonRequest>(&data) {
-                    Ok(req) => req,
+                Some(Ok(data)) => match bincode::serde::decode_from_slice::<DaemonRequest, _>(
+                    &data,
+                    bincode::config::standard(),
+                ) {
+                    Ok((req, _)) => req,
                     Err(e) => {
                         println!("Failed to deserialize request: {e}");
                         break;
@@ -159,7 +148,7 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
             let (_reader, writer) = stream.split();
             let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
 
-            match bincode::serialize(&response) {
+            match bincode::serde::encode_to_vec(&response, bincode::config::standard()) {
                 Ok(response_data) => {
                     if let Err(e) = framed_writer.send(response_data.into()).await {
                         println!("Failed to send response: {e}");

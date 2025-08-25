@@ -4,7 +4,7 @@ use voicevox_core::{
     AccelerationMode,
 };
 
-use crate::paths::find_openjtalk_dict;
+use crate::paths::{find_models_dir, find_onnxruntime, find_openjtalk_dict};
 use crate::voice::Speaker;
 
 pub trait CoreSynthesis {
@@ -27,9 +27,17 @@ pub struct VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn new() -> Result<Self> {
-        let onnxruntime = Self::init_onnx_runtime()?;
+        let onnxruntime = if let Ok(ort_path) = find_onnxruntime() {
+            Onnxruntime::load_once()
+                .filename(ort_path)
+                .perform()
+        } else {
+            Onnxruntime::load_once()
+                .perform()
+        }.map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}\nPlease run 'voicevox-setup' to download required resources."))?;
 
         let dict_path = find_openjtalk_dict()?;
+
         let open_jtalk = OpenJtalk::new(
             dict_path
                 .to_str()
@@ -45,28 +53,6 @@ impl VoicevoxCore {
             .map_err(|e| anyhow!("Failed to create synthesizer: {e}"))?;
 
         Ok(VoicevoxCore { synthesizer })
-    }
-
-    fn init_onnx_runtime() -> Result<&'static Onnxruntime> {
-        Onnxruntime::load_once()
-            .perform()
-            .map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}"))
-    }
-
-    pub fn check_onnx_runtime() -> Result<()> {
-        match crate::paths::find_onnxruntime_lib() {
-            Ok(lib_path) => match Self::init_onnx_runtime() {
-                Ok(_) => Ok(()),
-                Err(e) => Err(anyhow!(
-                    "ONNX Runtime found at {} but initialization failed: {}",
-                    lib_path.display(),
-                    e
-                )),
-            },
-            Err(_) => Err(anyhow!(
-                "ONNX Runtime library not found. Run voicevox-setup to install."
-            )),
-        }
     }
 }
 
@@ -140,32 +126,17 @@ impl CoreSynthesis for VoicevoxCore {
 
 impl VoicevoxCore {
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
-        use crate::voice::scan_available_models;
+        let models_dir = find_models_dir()?;
+        let model_path = models_dir.join(format!("{model_name}.vvm"));
 
-        let model_id: u32 = model_name
-            .parse()
-            .map_err(|_| anyhow!("Invalid model name: {model_name}"))?;
+        if !model_path.exists() {
+            return Err(anyhow!(
+                "Model not found: {model_name}.vvm at {}",
+                models_dir.display()
+            ));
+        }
 
-        // Find the actual model file path using the scanning function
-        let available_models =
-            scan_available_models().map_err(|e| anyhow!("Failed to scan models: {e}"))?;
-
-        let model_file = available_models
-            .iter()
-            .find(|m| m.model_id == model_id)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Model {} not found. Available models: {}",
-                    model_id,
-                    available_models
-                        .iter()
-                        .map(|m| m.model_id.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            })?;
-
-        let model = VoiceModelFile::open(&model_file.file_path)
+        let model = VoiceModelFile::open(&model_path)
             .map_err(|e| anyhow!("Failed to open model {model_name}: {e}"))?;
 
         self.synthesizer

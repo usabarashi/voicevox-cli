@@ -1,15 +1,19 @@
 # VOICEVOX CLI
 
+[![Dependency Status](https://img.shields.io/badge/deps-automated-green)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/dependabot.yml)
+[![CI Status](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml)
+[![Last Update](https://img.shields.io/badge/updated-monthly-blue)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/workflows/update-flake.yml)
+
 Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 
 ## Features
 
-- **Zero Configuration**: Install and use immediately
-- **26+ Voice Characters**: Automatic detection of available voice models
-- **Instant Response**: Fast voice synthesis after initial setup
-- **Silent Operation**: Works like macOS `say` command
-- **Lightweight**: Small download size, easy installation
-- **Interactive Setup**: Guided setup with license acceptance on first use
+- **🚀 Zero Configuration**: Install and use immediately
+- **🎭 26+ Voice Characters**: Automatic detection of available voice models
+- **⚡ Instant Response**: Fast voice synthesis after initial setup
+- **🔇 Silent Operation**: Works like macOS `say` command
+- **💾 Lightweight**: Small download size, easy installation
+- **👤 Interactive Setup**: Guided setup with license acceptance on first use
 
 ## Quick Start
 
@@ -53,7 +57,7 @@ For manual setup or model reinstallation:
 
 ```bash
 # Download voice models manually
-voicevox-setup
+voicevox-setup-models
 ```
 
 ## Usage
@@ -99,7 +103,7 @@ voicevox-daemon --socket-path /custom/path/daemon.sock --start  # Custom socket
 
 Voice characters (26+) are automatically detected from downloaded models:
 - **ずんだもん** - Cheerful and energetic character
-- **四国めたん** - Sweet and gentle character  
+- **四国めたん** - Sweet and gentle character
 - **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
 
 ### Voice Discovery
@@ -120,20 +124,6 @@ voicevox-say --status             # Check installation status
 - **Network**: Required for initial voice model download
 
 **Important**: This version is designed exclusively for Apple Silicon Macs with Nix package manager. NixOS, Linux, Intel Mac, and Windows are not supported.
-
-## Environment Variables
-
-Customize component locations with environment variables:
-
-- `VOICEVOX_MODELS_DIR` - Custom path for voice model files (default: `~/.local/share/voicevox/models`)
-- `VOICEVOX_OPENJTALK_DICT` - Custom path for OpenJTalk dictionary (default: `~/.local/share/voicevox/openjtalk_dict`)
-- `VOICEVOX_ONNXRUNTIME_DIR` - Custom path for ONNX Runtime library (default: `~/.local/share/voicevox/onnxruntime`)
-
-Example:
-```bash
-export VOICEVOX_MODELS_DIR="/custom/path/to/models"
-voicevox-say "カスタムパスの音声モデルを使用"
-```
 
 ## MCP Server (AI Assistant Integration)
 
@@ -162,7 +152,7 @@ Available tools:
 **Download/Model Issues**:
 ```bash
 voicevox-say --status              # Check installation status
-voicevox-setup              # Reinstall voice models
+voicevox-setup-models              # Reinstall voice models
 ```
 
 **Voice Synthesis Issues**:
@@ -175,10 +165,10 @@ voicevox-daemon --restart          # Restart daemon
 This project includes multiple components with different licenses. See [LICENSE](LICENSE) for complete details.
 
 **Quick Summary for Users:**
-- Commercial and non-commercial use of generated audio allowed
-- **Required**: Credit "VOICEVOX:[Character Name]" in your work (e.g., "VOICEVOX:ずんだもん")
-- No redistribution of VOICEVOX software without permission
-- Individual character license terms apply (displayed during setup)
+- ✅ Commercial and non-commercial use of generated audio allowed
+- ⚠️ **Required**: Credit "VOICEVOX:[Character Name]" in your work (e.g., "VOICEVOX:ずんだもん")
+- ❌ No redistribution of VOICEVOX software without permission
+- 📋 Individual character license terms apply (displayed during setup)
 
 **Important**: You'll need to accept license terms for all voice characters during first-run setup.
 

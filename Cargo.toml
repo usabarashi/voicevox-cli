@@ -30,34 +30,34 @@ clap = { version = "4.5", features = ["derive", "env", "unicode", "wrap_help"] }
 
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
-bincode = "1.3"
+bincode = { version = "2.0", features = ["serde"] }
 bytes = "1.5"
 lazy_static = "1.4"
 tempfile = "3.8"
 memmap2 = "0.9"
-toml = "0.8"
-dirs = "5.0"
+toml = "0.9"
+dirs = "6.0"
 
 # MCP Server dependencies
 jsonrpc-lite = "0.6"
 serde_bytes = "0.11"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.29", features = ["signal", "socket", "uio", "fs"] }
+nix = { version = "0.30", features = ["signal", "socket", "uio", "fs"] }
 
-rodio = { version = "0.19", features = ["wav", "symphonia-all"] }
+rodio = { version = "0.21", features = ["wav", "symphonia-all"] }
 
-tokio = { version = "1.40", features = ["full", "tracing"] }
+tokio = { version = "1.47", features = ["full", "tracing"] }
 tokio-util = { version = "0.7", features = ["codec", "io-util"] }
 futures-util = { version = "0.3", features = ["sink", "io"] }
 
-voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", tag = "0.16.1", features = ["load-onnxruntime"], default-features = false }
+voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", rev = "711d8b4b464ea9b1161db093e4a1feed763b9611", features = ["load-onnxruntime"], default-features = false }
 
 libc = "0.2"
 
-rayon = { version = "1.10", optional = true }
+rayon = { version = "1.11", optional = true }
 smallvec = { version = "1.13", features = ["serde"], optional = true }
-compact_str = { version = "0.8", features = ["serde"], optional = true }
+compact_str = { version = "0.9", features = ["serde"], optional = true }
 mimalloc = { version = "0.1", default-features = false, optional = true }
 
 [features]
@@ -66,9 +66,6 @@ simd = ["rayon"]
 fast-strings = ["compact_str"]
 small-vectors = ["smallvec"]
 performance = ["simd", "fast-strings", "small-vectors", "mimalloc"]
-# ONNX Runtime features (passed through to voicevox_core)
-link-onnxruntime = []
-load-onnxruntime = []
 
 [profile.release]
 lto = "fat"

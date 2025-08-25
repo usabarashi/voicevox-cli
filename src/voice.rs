@@ -234,7 +234,7 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
     (!available_models.is_empty())
         .then_some(())
         .ok_or_else(|| anyhow!(
-            "No voice models available. Please run 'voicevox-setup' to download and configure voice models or use --speaker-id for direct ID specification."
+            "No voice models available. Please download models first or use --speaker-id for direct ID specification."
         ))?;
 
     voice_input
@@ -262,6 +262,21 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
         })
 }
 
+pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
+    if let Ok(available_models) = scan_available_models() {
+        available_models
+            .iter()
+            .find(|model| {
+                model.model_id == voice_id
+                    || (voice_id >= model.model_id * 10 && voice_id < (model.model_id + 1) * 10)
+            })
+            .map(|model| model.model_id)
+            .or_else(|| available_models.first().map(|model| model.model_id))
+    } else {
+        None
+    }
+}
+
 /// Build style-to-model mapping by scanning all available models dynamically
 pub async fn build_style_to_model_map_async(
     core: &crate::core::VoicevoxCore,
@@ -270,9 +285,7 @@ pub async fn build_style_to_model_map_async(
     use std::collections::{HashMap, HashSet};
 
     let mut style_map = HashMap::new();
-    println!("  Scanning voice models directory...");
     let models_dir = crate::paths::find_models_dir()?;
-    println!("    Models directory: {}", models_dir.display());
 
     let initial_speakers = core.get_speakers().unwrap_or_default();
     let initial_style_ids: HashSet<u32> = initial_speakers
@@ -280,21 +293,27 @@ pub async fn build_style_to_model_map_async(
         .flat_map(|s| s.styles.iter().map(|style| style.id))
         .collect();
 
-    let available_models = scan_available_models()?;
-    println!("    Found {} voice model files", available_models.len());
+    let mut model_files: Vec<_> = std::fs::read_dir(&models_dir)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("vvm"))
+        .collect();
+    model_files.sort();
 
     let mut cumulative_style_ids = initial_style_ids.clone();
 
-    for model in &available_models {
-        let model_id = model.model_id;
-        let path = &model.file_path;
-
-        if let Some(filename) = path.file_name() {
-            println!("    Processing: {}", filename.to_string_lossy());
-        }
+    for path in &model_files {
+        let model_id = match path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            Some(id) => id,
+            None => continue,
+        };
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("      ERROR: Failed to load model {model_id}: {e}");
+            eprintln!("  ✗ Failed to load model {model_id} for mapping: {e}");
             continue;
         }
 
@@ -304,12 +323,12 @@ pub async fn build_style_to_model_map_async(
                 let path_str = match path.to_str() {
                     Some(s) => s,
                     None => {
-                        eprintln!("      ERROR: Model path contains invalid UTF-8: {:?}", path);
+                        eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
                         continue;
                     }
                 };
                 if let Err(e) = core.unload_voice_model_by_path(path_str) {
-                    eprintln!("      ERROR: Failed to unload model {model_id} after error: {e}");
+                    eprintln!("  ✗ Failed to unload model {model_id} after error: {e}");
                 }
                 continue;
             }
@@ -328,22 +347,29 @@ pub async fn build_style_to_model_map_async(
         let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("      ERROR: Model path contains invalid UTF-8: {:?}", path);
+                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
         if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("      ERROR: Failed to unload model {model_id} after mapping: {e}");
+            eprintln!("  ✗ Failed to unload model {model_id} after mapping: {e}");
         }
     }
 
     let mut all_speakers = Vec::new();
 
-    for model in &available_models {
-        let model_id = model.model_id;
+    for path in &model_files {
+        let model_id = match path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            Some(id) => id,
+            None => continue,
+        };
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("      ERROR: Failed to reload model {model_id} for speakers: {e}");
+            eprintln!("  ✗ Failed to reload model {model_id} for speakers: {e}");
         }
     }
 
@@ -351,19 +377,16 @@ pub async fn build_style_to_model_map_async(
         all_speakers = speakers;
     }
 
-    for model in &available_models {
-        let path_str = match model.file_path.to_str() {
+    for path in &model_files {
+        let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!(
-                    "      ERROR: Model path contains invalid UTF-8: {:?}",
-                    model.file_path
-                );
+                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
         if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("      ERROR: Failed to unload model after speaker collection: {e}");
+            eprintln!("  ✗ Failed to unload model after speaker collection: {e}");
         }
     }
 

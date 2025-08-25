@@ -7,12 +7,18 @@ use tokio::process::Command;
 use tokio::time::timeout;
 use tokio_util::codec::{Framed, FramedRead, FramedWrite, LengthDelimitedCodec};
 
+const DAEMON_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
+const DAEMON_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+const DAEMON_STARTUP_MAX_RETRIES: u32 = 20;
+const DAEMON_STARTUP_INITIAL_DELAY: Duration = Duration::from_millis(500);
+const DAEMON_STARTUP_MAX_DELAY: Duration = Duration::from_secs(4);
+const DAEMON_STARTUP_GRACE_PERIOD: Duration = Duration::from_millis(1000);
+const DAEMON_FINAL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const DAEMON_STARTUP_TOTAL_TIME_ESTIMATE: u32 = 80;
+
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
 use crate::voice::Speaker;
-use std::borrow::Cow;
-#[allow(unused_imports)]
-use std::os::unix::process::CommandExt;
 
 pub fn find_daemon_binary() -> Result<PathBuf, crate::daemon::DaemonError> {
     if let Ok(current_exe) = std::env::current_exe() {
@@ -43,19 +49,19 @@ pub async fn daemon_mode(
     quiet: bool,
     socket_path: &PathBuf,
 ) -> Result<()> {
-    let mut stream = timeout(Duration::from_secs(5), UnixStream::connect(socket_path))
+    let mut stream = timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(socket_path))
         .await
         .map_err(|_| anyhow!("Daemon connection timeout"))?
         .map_err(|e| anyhow!("Failed to connect to daemon: {e}"))?;
 
     let request = OwnedRequest::Synthesize {
-        text: Cow::Owned(text.to_string()),
+        text: text.to_string(),
         style_id,
         options,
     };
 
-    let request_data =
-        bincode::serialize(&request).map_err(|e| anyhow!("Failed to serialize request: {e}"))?;
+    let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())
+        .map_err(|e| anyhow!("Failed to serialize request: {e}"))?;
 
     {
         let (_reader, writer) = stream.split();
@@ -70,15 +76,17 @@ pub async fn daemon_mode(
         let (reader, _writer) = stream.split();
         let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
 
-        timeout(Duration::from_secs(30), framed_reader.next())
+        timeout(DAEMON_RESPONSE_TIMEOUT, framed_reader.next())
             .await
             .map_err(|_| anyhow!("Daemon response timeout"))?
             .ok_or_else(|| anyhow!("Connection closed by daemon"))?
             .map_err(|e| anyhow!("Failed to receive response: {e}"))?
     };
 
-    let response: OwnedResponse = bincode::deserialize(&response_frame)
-        .map_err(|e| anyhow!("Failed to deserialize response: {e}"))?;
+    let response: OwnedResponse =
+        bincode::serde::decode_from_slice(&response_frame, bincode::config::standard())
+            .map_err(|e| anyhow!("Failed to deserialize response: {e}"))?
+            .0;
 
     match response {
         OwnedResponse::SynthesizeResult { wav_data } => {
@@ -107,17 +115,18 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
     let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
 
     let request = DaemonRequest::ListSpeakers;
-    let request_data = bincode::serialize(&request)?;
+    let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())?;
     framed_writer.send(request_data.into()).await?;
 
     if let Some(response_frame) = framed_reader.next().await {
         let response_frame = response_frame?;
-        let response: OwnedResponse = bincode::deserialize(&response_frame)?;
+        let response: OwnedResponse =
+            bincode::serde::decode_from_slice(&response_frame, bincode::config::standard())?.0;
 
         match response {
             OwnedResponse::SpeakersList { speakers } => {
                 println!("All available speakers and styles from daemon:");
-                for speaker in speakers.as_ref() {
+                for speaker in &speakers {
                     println!("  {}", speaker.name);
                     for style in &speaker.styles {
                         println!("    {} (Style ID: {})", style.name, style.id);
@@ -134,7 +143,7 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
                 style_to_model,
             } => {
                 println!("All available speakers and styles from daemon:");
-                for speaker in speakers.as_ref() {
+                for speaker in &speakers {
                     println!("  {}", speaker.name);
                     for style in &speaker.styles {
                         let model_id = style_to_model
@@ -166,53 +175,45 @@ pub async fn list_speakers_daemon(socket_path: &PathBuf) -> Result<()> {
 }
 
 async fn start_daemon_automatically() -> Result<()> {
-    println!("Starting VOICEVOX daemon...");
     let socket_path = get_socket_path();
-
-    if UnixStream::connect(&socket_path).await.is_ok() {
-        println!("Daemon already running");
-        return Ok(());
-    }
-
     let daemon_path = find_daemon_binary()?;
 
-    let mut child = {
-        let mut cmd = Command::new(&daemon_path);
-        cmd.args(["--start", "--detach", "--show-startup"]);
+    let output = Command::new(&daemon_path)
+        .args(["--start", "--detach"])
+        .output()
+        .await;
 
-        #[cfg(unix)]
-        cmd.process_group(0); // Create independent process group
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                let max_retries = DAEMON_STARTUP_MAX_RETRIES;
+                let mut retry_delay = DAEMON_STARTUP_INITIAL_DELAY;
 
-        cmd.spawn()
-            .map_err(|e| anyhow!("Failed to start daemon: {e}"))?
-    };
+                for attempt in 0..max_retries {
+                    match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(&socket_path))
+                        .await
+                    {
+                        Ok(Ok(_)) => return Ok(()),
+                        Ok(Err(_)) | Err(_) if attempt < max_retries - 1 => {
+                            tokio::time::sleep(retry_delay).await;
+                            retry_delay = (retry_delay * 2).min(DAEMON_STARTUP_MAX_DELAY);
+                        }
+                        Ok(Err(_)) | Err(_) => {}
+                    }
+                }
 
-    println!("Spawned daemon with PID: {:?}", child.id());
-
-    // Wait for daemon to be ready
-    let max_retries = 20;
-    let mut retry_delay = Duration::from_millis(200);
-
-    for attempt in 0..max_retries {
-        match UnixStream::connect(&socket_path).await {
-            Ok(_) => {
-                // Daemon is ready, let it continue running in background
-                return Ok(());
+                Err(anyhow!(
+                    "Daemon not responding after {} attempts (~{}s total)",
+                    max_retries,
+                    DAEMON_STARTUP_TOTAL_TIME_ESTIMATE
+                ))
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(anyhow!("Daemon failed to start: {}", stderr.trim()))
             }
-            Err(_) if attempt < max_retries - 1 => {
-                tokio::time::sleep(retry_delay).await;
-                retry_delay = (retry_delay * 2).min(Duration::from_secs(1));
-            }
-            Err(_) => {}
         }
+        Err(e) => Err(anyhow!("Failed to execute daemon: {e}")),
     }
-
-    // If daemon didn't start properly, try to kill the process
-    let _ = child.kill().await;
-    Err(anyhow!(
-        "Daemon not responding after {} attempts",
-        max_retries
-    ))
 }
 
 pub struct DaemonClient {
@@ -284,14 +285,25 @@ impl DaemonClient {
     /// using `new()` with appropriate user prompts.
     pub async fn new_with_auto_start() -> Result<Self> {
         let socket_path = get_socket_path();
-        match UnixStream::connect(&socket_path).await {
-            Ok(stream) => Ok(Self { stream }),
-            Err(_) => {
+        match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(&socket_path)).await {
+            Ok(Ok(stream)) => Ok(Self { stream }),
+            Ok(Err(_)) | Err(_) => {
                 crate::voice::has_available_models()
                     .then_some(())
-                    .ok_or(crate::daemon::DaemonError::NoModelsAvailable)?;
+                    .ok_or_else(|| anyhow!(
+                        "No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory."
+                    ))?;
                 start_daemon_automatically().await?;
-                let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+
+                tokio::time::sleep(DAEMON_STARTUP_GRACE_PERIOD).await;
+
+                let stream = timeout(
+                    DAEMON_FINAL_CONNECTION_TIMEOUT,
+                    UnixStream::connect(&socket_path),
+                )
+                .await
+                .map_err(|_| anyhow!("Timeout connecting to daemon"))?
+                .map_err(|e| {
                     anyhow!(
                         "Daemon started but failed to connect at {}: {e}",
                         socket_path.display()
@@ -306,12 +318,13 @@ impl DaemonClient {
         &mut self,
         request: OwnedRequest,
     ) -> Result<OwnedResponse> {
-        let request_data = bincode::serialize(&request)?;
+        let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())?;
         let mut framed = Framed::new(&mut self.stream, LengthDelimitedCodec::new());
         framed.send(request_data.into()).await?;
         if let Some(response_frame) = framed.next().await {
             let response_data = response_frame?;
-            let response: OwnedResponse = bincode::deserialize(&response_data)?;
+            let response: OwnedResponse =
+                bincode::serde::decode_from_slice(&response_data, bincode::config::standard())?.0;
             Ok(response)
         } else {
             Err(anyhow!("No response from daemon"))
@@ -325,14 +338,14 @@ impl DaemonClient {
         options: OwnedSynthesizeOptions,
     ) -> Result<Vec<u8>> {
         let request = OwnedRequest::Synthesize {
-            text: Cow::Owned(text.to_string()),
+            text: text.to_string(),
             style_id,
             options,
         };
 
         let response = self.send_request_and_receive_response(request).await?;
         match response {
-            OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data.into_owned()),
+            OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data),
             OwnedResponse::Error { message } => Err(anyhow!("Synthesis error: {message}")),
             _ => Err(anyhow!("Unexpected response type")),
         }
@@ -343,8 +356,8 @@ impl DaemonClient {
 
         let response = self.send_request_and_receive_response(request).await?;
         match response {
-            OwnedResponse::SpeakersList { speakers } => Ok(speakers.into_owned()),
-            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers.into_owned()),
+            OwnedResponse::SpeakersList { speakers } => Ok(speakers),
+            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
             OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
             _ => Err(anyhow!("Unexpected response type")),
         }

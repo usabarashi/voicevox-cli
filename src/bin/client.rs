@@ -3,7 +3,10 @@ use clap::{Arg, Command};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use voicevox_cli::client::{get_input_text, list_speakers_daemon, DaemonClient};
+use voicevox_cli::client::{
+    ensure_models_available, get_input_text, list_speakers_daemon, play_audio_from_memory,
+    DaemonClient,
+};
 use voicevox_cli::core::{CoreSynthesis, VoicevoxCore};
 use voicevox_cli::ipc::OwnedSynthesizeOptions;
 use voicevox_cli::paths::get_socket_path;
@@ -36,39 +39,68 @@ async fn try_daemon_with_retry(
     _socket_path: &Path,
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
-        return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
+        if !quiet {
+            println!("🎭 Voice models not found. Setting up VOICEVOX...");
+        }
+        ensure_models_available().await?;
     }
 
     match DaemonClient::new_with_auto_start().await {
-        Ok(mut client) => match client.synthesize(text, style_id, options).await {
-            Ok(wav_data) => {
-                if let Some(output_file) = output_file {
-                    std::fs::write(output_file, &wav_data)?;
-                }
+        Ok(mut client) => {
+            let wav_data = client.synthesize(text, style_id, options).await?;
 
-                if !quiet && output_file.is_none() {
-                    if let Err(e) = voicevox_cli::client::audio::play_audio_from_memory(&wav_data) {
-                        eprintln!("Error: Audio playback failed: {e}");
-                        return Err(e);
-                    }
-                }
-
-                Ok(())
+            if let Some(output_file) = output_file {
+                std::fs::write(output_file, &wav_data)?;
             }
-            Err(e) => Err(e),
-        },
+
+            if !quiet && output_file.is_none() {
+                if let Err(e) = play_audio_from_memory(&wav_data) {
+                    eprintln!("Error: Audio playback failed: {e}");
+                    return Err(e);
+                }
+            }
+
+            Ok(())
+        }
         Err(e) => {
             if !quiet {
-                match e.downcast_ref::<voicevox_cli::daemon::DaemonError>() {
-                    Some(voicevox_cli::daemon::DaemonError::NoModelsAvailable) => {}
-                    _ => {
-                        eprintln!("Failed to connect to daemon: {}", e);
-                    }
-                }
+                eprintln!("Failed to connect to daemon: {}", e);
             }
             Err(e)
         }
     }
+}
+
+async fn standalone_mode(
+    text: &str,
+    style_id: u32,
+    output_file: Option<&String>,
+    quiet: bool,
+) -> Result<()> {
+    if voicevox_cli::paths::find_models_dir().is_err() {
+        if !quiet {
+            println!("🎭 Voice models not found. Setting up VOICEVOX...");
+        }
+        ensure_models_available().await?;
+    }
+
+    let core = VoicevoxCore::new()?;
+    let model_id = voicevox_cli::voice::get_model_for_voice_id(style_id)
+        .ok_or_else(|| anyhow!("No model found for style ID {style_id}"))?;
+    core.load_specific_model(&model_id.to_string())?;
+
+    let wav_data = core.synthesize(text, style_id)?;
+
+    match output_file {
+        Some(file_path) => std::fs::write(file_path, &wav_data)?,
+        None if !quiet => play_audio_from_memory(&wav_data).map_err(|e| {
+            eprintln!("Error: Audio playback failed: {e}");
+            e
+        })?,
+        _ => {}
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -155,6 +187,12 @@ async fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("standalone")
+                .help("Force standalone mode (don't use daemon)")
+                .long("standalone")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("socket-path")
                 .help("Specify custom Unix socket path")
                 .long("socket-path")
@@ -171,13 +209,15 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("list-models") {
+        println!("Scanning for available voice models...");
         let models = scan_available_models().unwrap_or_else(|e| {
             eprintln!("Error scanning models: {e}");
             std::process::exit(1);
         });
 
         if models.is_empty() {
-            return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
+            println!("No voice models found. Please start voicevox-daemon to download voice models automatically.");
+            return Ok(());
         }
 
         println!("Available voice models:");
@@ -198,34 +238,47 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("status") {
-        use voicevox_cli::paths::check_all_components;
-
-        let components = check_all_components();
-        let errors: Vec<_> = components
-            .iter()
-            .filter_map(|c| c.status.as_ref().err())
-            .collect();
         println!("VOICEVOX CLI Installation Status");
         println!("=====================================");
+
         println!("Application: v{}", env!("CARGO_PKG_VERSION"));
 
-        for component in &components {
-            match &component.status {
-                Ok(msg) => println!("{}: [OK] {}", component.name, msg),
-                Err(e) => println!("{}: [ERROR] {}", component.name, e),
+        match scan_available_models() {
+            Ok(current_models) => {
+                println!("Voice Models: {} files installed", current_models.len());
+                for model in &current_models {
+                    let model_info = match std::fs::metadata(&model.file_path) {
+                        Ok(metadata) => {
+                            let size_kb = metadata.len() / 1024;
+                            let filename = model
+                                .file_path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy();
+                            format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
+                        }
+                        Err(_) => {
+                            format!("  Model {} ({})", model.model_id, model.file_path.display())
+                        }
+                    };
+                    println!("{model_info}");
+                }
+
+                use voicevox_cli::paths::find_openjtalk_dict;
+                match find_openjtalk_dict() {
+                    Ok(dict_path) => {
+                        println!("Dictionary: {} ✅", dict_path.display());
+                    }
+                    Err(_) => {
+                        println!("Dictionary: Not found ❌");
+                        println!("  Install with: voicevox-setup-models");
+                    }
+                }
             }
-            for detail in &component.details {
-                println!("{}", detail);
+            Err(e) => {
+                eprintln!("Error scanning models: {e}");
             }
         }
-
-        if !errors.is_empty() {
-            println!("\n[!] Some components are missing. Run 'voicevox-setup' to install them.");
-            return Err(anyhow!("Installation incomplete"));
-        } else {
-            println!("\n[✓] All components are properly installed.");
-        }
-
         return Ok(());
     }
 
@@ -235,17 +288,14 @@ async fn main() -> Result<()> {
             .map(PathBuf::from)
             .unwrap_or_else(get_socket_path);
 
-        if list_speakers_daemon(&socket_path).await.is_ok() {
+        if !matches.get_flag("standalone") && list_speakers_daemon(&socket_path).await.is_ok() {
             return Ok(());
         }
 
-        let models = scan_available_models()?;
-        if models.is_empty() {
-            return Err(voicevox_cli::daemon::DaemonError::NoModelsAvailable.into());
-        }
-
+        println!("Initializing VOICEVOX Core...");
         let core = VoicevoxCore::new()?;
 
+        let models = scan_available_models()?;
         for model in &models {
             if let Err(e) = core.load_specific_model(&model.model_id.to_string()) {
                 println!("Warning: Failed to load model {}: {e}", model.model_id);
@@ -290,20 +340,38 @@ async fn main() -> Result<()> {
     let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
     let quiet = matches.get_flag("quiet");
     let output_file = matches.get_one::<String>("output-file");
+    let force_standalone = matches.get_flag("standalone");
 
     if !(0.5..=2.0).contains(&rate) {
         return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
     }
 
-    let options = OwnedSynthesizeOptions {
-        rate,
-        ..Default::default()
-    };
+    let options = OwnedSynthesizeOptions { rate };
 
-    let socket_path = matches
-        .get_one::<String>("socket-path")
-        .map(PathBuf::from)
-        .unwrap_or_else(get_socket_path);
+    if !force_standalone {
+        let socket_path = matches
+            .get_one::<String>("socket-path")
+            .map(PathBuf::from)
+            .unwrap_or_else(get_socket_path);
 
-    try_daemon_with_retry(&text, style_id, options, output_file, quiet, &socket_path).await
+        if try_daemon_with_retry(
+            &text,
+            style_id,
+            options.clone(),
+            output_file,
+            quiet,
+            &socket_path,
+        )
+        .await
+        .is_ok()
+        {
+            return Ok(());
+        }
+
+        if !quiet {
+            println!("🔄 Daemon unavailable, using standalone mode...");
+        }
+    }
+
+    standalone_mode(&text, style_id, output_file, quiet).await
 }

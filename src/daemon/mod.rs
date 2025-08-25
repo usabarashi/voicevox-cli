@@ -25,7 +25,7 @@ pub enum DaemonError {
     #[error("Failed to connect to daemon: {0}")]
     ConnectionFailed(#[from] io::Error),
 
-    #[error("No VOICEVOX models found. Run voicevox-setup to install.")]
+    #[error("No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory.")]
     NoModelsAvailable,
 
     #[error("Failed to find daemon binary")]

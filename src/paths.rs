@@ -75,11 +75,6 @@ pub fn find_component_path(
     Err(component.error_message())
 }
 
-#[cfg(target_os = "macos")]
-const ONNXRUNTIME_LIB_NAME: &str = "libvoicevox_onnxruntime.dylib";
-#[cfg(target_os = "linux")]
-const ONNXRUNTIME_LIB_NAME: &str = "libvoicevox_onnxruntime.so";
-
 /// Get the default VOICEVOX data directory path
 pub fn get_default_voicevox_dir() -> PathBuf {
     let xdg_data_home = std::env::var("XDG_DATA_HOME")
@@ -153,6 +148,32 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
     }
 }
 
+fn find_onnx_library(lib_dir: &std::path::Path) -> Option<PathBuf> {
+    if lib_dir.exists() && lib_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(lib_dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_file() {
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+                    // Check if filename matches the pattern
+                    #[cfg(target_os = "macos")]
+                    let matches = file_name.starts_with("libvoicevox_onnxruntime")
+                        && file_name.ends_with(".dylib");
+                    #[cfg(target_os = "linux")]
+                    let matches = file_name.starts_with("libvoicevox_onnxruntime")
+                        && file_name.ends_with(".so");
+
+                    if matches {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn find_dict_subdirectory(dict_base: &std::path::Path) -> Option<PathBuf> {
     if dict_base.exists() && dict_base.is_dir() {
         if let Ok(entries) = std::fs::read_dir(dict_base) {
@@ -207,12 +228,28 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
 }
 
 pub fn find_onnxruntime_lib() -> Result<PathBuf> {
-    find_component_path(
-        ComponentType::OnnxRuntime,
-        Some("VOICEVOX_ONNXRUNTIME_DIR"),
-        "onnxruntime/lib",
-        Some(ONNXRUNTIME_LIB_NAME),
-    )
+    // 1. Environment variable (highest priority)
+    if let Ok(path) = std::env::var("VOICEVOX_ONNXRUNTIME_DIR") {
+        let lib_dir = PathBuf::from(path).join("lib");
+        if let Some(lib_file) = find_onnx_library(&lib_dir) {
+            return Ok(lib_file);
+        }
+    }
+
+    // 2. XDG-compliant path (standard user installation)
+    let xdg_data_home = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".local/share"));
+
+    let lib_dir = xdg_data_home
+        .join("voicevox")
+        .join("onnxruntime")
+        .join("lib");
+    if let Some(lib_file) = find_onnx_library(&lib_dir) {
+        return Ok(lib_file);
+    }
+
+    Err(ComponentType::OnnxRuntime.error_message())
 }
 
 #[derive(Debug)]

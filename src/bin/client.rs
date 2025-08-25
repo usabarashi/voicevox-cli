@@ -40,7 +40,7 @@ async fn try_daemon_with_retry(
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
-            println!("🎭 Voice models not found. Setting up VOICEVOX...");
+            println!("Voice models not found. Setting up VOICEVOX...");
         }
         ensure_models_available().await?;
     }
@@ -79,7 +79,7 @@ async fn standalone_mode(
 ) -> Result<()> {
     if voicevox_cli::paths::find_models_dir().is_err() {
         if !quiet {
-            println!("🎭 Voice models not found. Setting up VOICEVOX...");
+            println!("Voice models not found. Setting up VOICEVOX...");
         }
         ensure_models_available().await?;
     }
@@ -267,10 +267,10 @@ async fn main() -> Result<()> {
                 use voicevox_cli::paths::find_openjtalk_dict;
                 match find_openjtalk_dict() {
                     Ok(dict_path) => {
-                        println!("Dictionary: {} ✅", dict_path.display());
+                        println!("Dictionary: {}", dict_path.display());
                     }
                     Err(_) => {
-                        println!("Dictionary: Not found ❌");
+                        println!("Dictionary: Not found");
                         println!("  Install with: voicevox-setup-models");
                     }
                 }
@@ -369,7 +369,7 @@ async fn main() -> Result<()> {
         }
 
         if !quiet {
-            println!("🔄 Daemon unavailable, using standalone mode...");
+            println!("Daemon unavailable, using standalone mode...");
         }
     }
 

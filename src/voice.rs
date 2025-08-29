@@ -55,7 +55,7 @@ pub struct Style {
     pub style_type: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AvailableModel {
     pub model_id: u32,
     pub file_path: PathBuf,

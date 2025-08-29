@@ -15,6 +15,7 @@ pub struct DaemonState {
     core: VoicevoxCore,
     style_to_model_map: Arc<Mutex<HashMap<u32, u32>>>,
     all_speakers: Arc<Mutex<Vec<crate::voice::Speaker>>>,
+    available_models: Arc<Mutex<Vec<crate::voice::AvailableModel>>>,
 }
 
 impl DaemonState {
@@ -23,10 +24,11 @@ impl DaemonState {
         let style_to_model_map = Arc::new(Mutex::new(HashMap::new()));
 
         println!("Building dynamic style-to-model mapping...");
-        let (mapping, speakers, _models) =
+        let (mapping, speakers, models) =
             crate::voice::build_style_to_model_map_async(&core).await?;
         *style_to_model_map.lock().await = mapping;
         let all_speakers = Arc::new(Mutex::new(speakers));
+        let available_models = Arc::new(Mutex::new(models));
         println!(
             "  ✓ Discovered {} style mappings",
             style_to_model_map.lock().await.len()
@@ -38,6 +40,7 @@ impl DaemonState {
             core,
             style_to_model_map,
             all_speakers,
+            available_models,
         })
     }
 
@@ -114,6 +117,11 @@ impl DaemonState {
                     speakers: all_speakers,
                     style_to_model,
                 }
+            }
+
+            OwnedRequest::ListModels => {
+                let models = self.available_models.lock().await.clone();
+                OwnedResponse::ModelsList { models }
             }
         }
     }

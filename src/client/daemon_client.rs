@@ -18,7 +18,7 @@ const DAEMON_STARTUP_TOTAL_TIME_ESTIMATE: u32 = 80;
 
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
-use crate::voice::Speaker;
+use crate::voice::{AvailableModel, Speaker};
 
 pub fn find_daemon_binary() -> Result<PathBuf, crate::daemon::DaemonError> {
     if let Ok(current_exe) = std::env::current_exe() {
@@ -389,6 +389,17 @@ impl DaemonClient {
             OwnedResponse::SpeakersList { speakers } => Ok(speakers),
             OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
             OwnedResponse::Error { message } => Err(anyhow!("List speakers error: {message}")),
+            _ => Err(anyhow!("Unexpected response type")),
+        }
+    }
+
+    pub async fn list_models(&mut self) -> Result<Vec<AvailableModel>> {
+        let request = OwnedRequest::ListModels;
+
+        let response = self.send_request_and_receive_response(request).await?;
+        match response {
+            OwnedResponse::ModelsList { models } => Ok(models),
+            OwnedResponse::Error { message } => Err(anyhow!("List models error: {message}")),
             _ => Err(anyhow!("Unexpected response type")),
         }
     }

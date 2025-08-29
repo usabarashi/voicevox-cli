@@ -169,31 +169,31 @@ async fn main() -> Result<()> {
     }
 
     if matches.get_flag("list-models") {
-        println!("Scanning for available voice models...");
-        let models = scan_available_models().unwrap_or_else(|e| {
-            eprintln!("Error scanning models: {e}");
-            std::process::exit(1);
-        });
+        match DaemonClient::new_with_auto_start().await {
+            Ok(mut client) => {
+                let models = client.list_models().await?;
+                if models.is_empty() {
+                    println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
+                } else {
+                    println!("Available voice models:");
+                    for model in &models {
+                        println!("  Model {} ({})", model.model_id, model.file_path.display());
+                        println!(
+                            "    Usage: --model {} or --speaker-id <STYLE_ID>",
+                            model.model_id
+                        );
+                    }
 
-        if models.is_empty() {
-            println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
-            return Ok(());
+                    println!("\nTips:");
+                    println!("  - Use --model N to load model N.vvm");
+                    println!("  - Use --speaker-id for direct style ID specification");
+                    println!("  - Use --list-speakers for detailed speaker information");
+                }
+            }
+            Err(_) => {
+                println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
+            }
         }
-
-        println!("Available voice models:");
-        for model in &models {
-            println!("  Model {} ({})", model.model_id, model.file_path.display());
-            println!(
-                "    Usage: --model {} or --speaker-id <STYLE_ID>",
-                model.model_id
-            );
-        }
-
-        println!("\nTips:");
-        println!("  - Use --model N to load model N.vvm");
-        println!("  - Use --speaker-id for direct style ID specification");
-        println!("  - Use --list-speakers for detailed speaker information");
-
         return Ok(());
     }
 
@@ -269,7 +269,31 @@ async fn main() -> Result<()> {
             .map(PathBuf::from)
             .unwrap_or_else(get_socket_path);
 
-        list_speakers_daemon(&socket_path).await?;
+        // Try to connect to daemon first
+        if list_speakers_daemon(&socket_path).await.is_ok() {
+            return Ok(());
+        }
+
+        // If daemon connection fails, try to start daemon automatically
+        match DaemonClient::new_with_auto_start().await {
+            Ok(mut client) => {
+                let speakers = client.list_speakers().await?;
+                println!("All available speakers and styles:");
+                for speaker in &speakers {
+                    println!("  {}", speaker.name);
+                    for style in &speaker.styles {
+                        println!("    {} (Style ID: {})", style.name, style.id);
+                        if let Some(style_type) = &style.style_type {
+                            println!("        Type: {style_type}");
+                        }
+                    }
+                    println!();
+                }
+            }
+            Err(_) => {
+                println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
+            }
+        }
         return Ok(());
     }
 

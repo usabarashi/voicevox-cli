@@ -285,6 +285,20 @@ pub async fn build_style_to_model_map_async(
     Vec<Speaker>,
     Vec<AvailableModel>,
 )> {
+    build_style_to_model_map_async_with_progress(core, |_, _, _| {}).await
+}
+
+pub async fn build_style_to_model_map_async_with_progress<F>(
+    core: &crate::core::VoicevoxCore,
+    mut progress_callback: F,
+) -> Result<(
+    std::collections::HashMap<u32, u32>,
+    Vec<Speaker>,
+    Vec<AvailableModel>,
+)>
+where
+    F: FnMut(usize, usize, &str),
+{
     use crate::core::CoreSynthesis;
     use std::collections::{HashMap, HashSet};
 
@@ -304,9 +318,10 @@ pub async fn build_style_to_model_map_async(
         .collect();
     model_files.sort();
 
+    let total_models = model_files.len();
     let mut cumulative_style_ids = initial_style_ids.clone();
 
-    for path in &model_files {
+    for (index, path) in model_files.iter().enumerate() {
         let model_id = match path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -315,6 +330,13 @@ pub async fn build_style_to_model_map_async(
             Some(id) => id,
             None => continue,
         };
+
+        let model_filename = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown.vvm");
+
+        progress_callback(index + 1, total_models, model_filename);
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
             eprintln!("  ✗ Failed to load model {model_id} for mapping: {e}");

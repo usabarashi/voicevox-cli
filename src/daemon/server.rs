@@ -25,7 +25,13 @@ impl DaemonState {
 
         println!("Building dynamic style-to-model mapping...");
         let (mapping, speakers, models) =
-            crate::voice::build_style_to_model_map_async(&core).await?;
+            crate::voice::build_style_to_model_map_async_with_progress(
+                &core,
+                |current, total, filename| {
+                    println!("  Loading model {} ({}/{})", filename, current, total);
+                },
+            )
+            .await?;
         *style_to_model_map.lock().await = mapping;
         let all_speakers = Arc::new(Mutex::new(speakers));
         let available_models = Arc::new(Mutex::new(models));

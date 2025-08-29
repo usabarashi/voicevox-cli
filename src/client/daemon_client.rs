@@ -197,7 +197,7 @@ async fn start_daemon_automatically() -> Result<()> {
         models_dir.display()
     );
 
-    println!("  Building voice model mappings...");
+    println!("  Building voice model mappings (this may take a moment)...");
 
     print!("  Starting daemon process");
     std::io::stdout().flush().unwrap();

@@ -200,7 +200,7 @@ async fn start_daemon_automatically() -> Result<()> {
     println!("  Building voice model mappings (this may take a moment)...");
 
     print!("  Starting daemon process");
-    std::io::stdout().flush().unwrap();
+    std::io::stdout().flush()?;
 
     let output = Command::new(&daemon_path)
         .args(["--start", "--detach"])
@@ -224,7 +224,7 @@ async fn start_daemon_automatically() -> Result<()> {
                         }
                         Ok(Err(_)) | Err(_) if attempt < max_retries - 1 => {
                             print!(".");
-                            std::io::stdout().flush().unwrap();
+                            std::io::stdout().flush()?;
                             tokio::time::sleep(retry_delay).await;
                             retry_delay = (retry_delay * 2).min(DAEMON_STARTUP_MAX_DELAY);
                         }

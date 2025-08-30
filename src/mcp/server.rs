@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde_json::Value;
+use std::fs;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::mcp::handlers;
@@ -7,6 +8,31 @@ use crate::mcp::tools::get_tool_definitions;
 use crate::mcp::types::*;
 
 const MCP_VERSION: &str = "2025-03-26";
+const INSTRUCTIONS_FILE: &str = "INSTRUCTIONS.md";
+
+fn load_instructions() -> Option<String> {
+    // Try to read from executable directory first
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let instructions_path = exe_dir.join(INSTRUCTIONS_FILE);
+            match fs::read_to_string(&instructions_path) {
+                Ok(content) => return Some(content),
+                Err(e) => {
+                    eprintln!("Could not load instructions from {:?}: {}", instructions_path, e);
+                }
+            }
+        }
+    }
+    
+    // Fallback: current directory (for development)
+    match fs::read_to_string(INSTRUCTIONS_FILE) {
+        Ok(content) => Some(content),
+        Err(e) => {
+            eprintln!("Could not load instructions from current directory {}: {}", INSTRUCTIONS_FILE, e);
+            None
+        }
+    }
+}
 
 pub async fn run_mcp_server() -> Result<()> {
     let stdin = tokio::io::stdin();
@@ -90,6 +116,7 @@ async fn handle_request(request: Value) -> Option<JsonRpcResponse> {
                 capabilities: ServerCapabilities {
                     tools: serde_json::Map::new(),
                 },
+                instructions: load_instructions(),
             };
 
             match serde_json::to_value(result) {

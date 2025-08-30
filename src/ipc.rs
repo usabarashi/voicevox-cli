@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::voice::Speaker;
+use crate::voice::{AvailableModel, Speaker};
 
 /// Request messages sent from client to daemon
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -13,6 +13,7 @@ pub enum DaemonRequest {
         options: SynthesizeOptions,
     },
     ListSpeakers,
+    ListModels,
 }
 
 /// Synthesis options for voice synthesis requests
@@ -41,6 +42,9 @@ pub enum DaemonResponse {
     SpeakersListWithModels {
         speakers: Vec<Speaker>,
         style_to_model: HashMap<u32, u32>,
+    },
+    ModelsList {
+        models: Vec<AvailableModel>,
     },
     Error {
         message: String,

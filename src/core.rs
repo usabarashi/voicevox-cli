@@ -34,7 +34,7 @@ impl VoicevoxCore {
         } else {
             Onnxruntime::load_once()
                 .perform()
-        }.map_err(|e| anyhow!("Failed to initialize ONNX Runtime: {e}\nPlease run 'voicevox-setup' to download required resources."))?;
+        }.map_err(|_| anyhow!("Failed to initialize ONNX Runtime. Please run 'voicevox-setup' to download required resources."))?;
 
         let dict_path = find_openjtalk_dict()?;
 

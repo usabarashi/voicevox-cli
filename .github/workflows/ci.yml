@@ -67,8 +67,7 @@ jobs:
         run: |
           echo "Checking scripts..."
           echo "Checking for required scripts..."
-          test -f scripts/voicevox-setup-models.sh || (echo "Missing voicevox-setup-models.sh" && exit 1)
-          test -f scripts/voicevox-auto-setup.sh || (echo "Missing voicevox-auto-setup.sh" && exit 1)
+          test -f scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
 
           echo "Validating all scripts..."
           for script in scripts/*.sh; do

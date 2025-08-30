@@ -339,7 +339,7 @@ where
         progress_callback(index + 1, total_models, model_filename);
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("  ✗ Failed to load model {model_id} for mapping: {e}");
+            eprintln!("Failed to load model {model_id} for mapping: {e}");
             continue;
         }
 
@@ -349,12 +349,12 @@ where
                 let path_str = match path.to_str() {
                     Some(s) => s,
                     None => {
-                        eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                        eprintln!("Model path contains invalid UTF-8: {:?}", path);
                         continue;
                     }
                 };
                 if let Err(e) = core.unload_voice_model_by_path(path_str) {
-                    eprintln!("  ✗ Failed to unload model {model_id} after error: {e}");
+                    eprintln!("Failed to unload model {model_id} after error: {e}");
                 }
                 continue;
             }
@@ -373,12 +373,12 @@ where
         let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                eprintln!("Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
         if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("  ✗ Failed to unload model {model_id} after mapping: {e}");
+            eprintln!("Failed to unload model {model_id} after mapping: {e}");
         }
     }
 
@@ -395,7 +395,7 @@ where
         };
 
         if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("  ✗ Failed to reload model {model_id} for speakers: {e}");
+            eprintln!("Failed to reload model {model_id} for speakers: {e}");
         }
     }
 
@@ -407,12 +407,12 @@ where
         let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", path);
+                eprintln!("Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
         if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("  ✗ Failed to unload model after speaker collection: {e}");
+            eprintln!("Failed to unload model after speaker collection: {e}");
         }
     }
 

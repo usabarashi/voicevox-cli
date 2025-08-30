@@ -36,7 +36,7 @@ impl DaemonState {
         let all_speakers = Arc::new(Mutex::new(speakers));
         let available_models = Arc::new(Mutex::new(models));
         println!(
-            "  ✓ Discovered {} style mappings",
+            "Discovered {} style mappings",
             style_to_model_map.lock().await.len()
         );
 
@@ -80,7 +80,7 @@ impl DaemonState {
                     };
                 }
 
-                println!("  ✓ Loaded model {model_id} for synthesis");
+                println!("Loaded model {model_id} for synthesis");
 
                 let synthesis_result = self.core.synthesize(&text, style_id);
                 let available_models = self.available_models.lock().await;
@@ -89,7 +89,7 @@ impl DaemonState {
                         Some(s) => s,
                         None => {
                             eprintln!(
-                                "  ✗ Model path contains invalid UTF-8: {:?}",
+                                "Model path contains invalid UTF-8: {:?}",
                                 model.file_path
                             );
                             return OwnedResponse::Error {
@@ -101,11 +101,11 @@ impl DaemonState {
                         }
                     };
                     match self.core.unload_voice_model_by_path(path_str) {
-                        Ok(_) => println!("  ✓ Unloaded model {model_id} after synthesis"),
-                        Err(e) => eprintln!("  ✗ Failed to unload model {model_id}: {e}"),
+                        Ok(_) => println!("Unloaded model {model_id} after synthesis"),
+                        Err(e) => eprintln!("Failed to unload model {model_id}: {e}"),
                     }
                 } else {
-                    eprintln!("  ✗ Model {model_id} not found in available models");
+                    eprintln!("Model {model_id} not found in available models");
                 }
 
                 match synthesis_result {

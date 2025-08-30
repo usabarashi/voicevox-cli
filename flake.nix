@@ -177,6 +177,9 @@
             # Install setup script (renamed from voicevox-setup-models.sh)
             install -m755 ${./scripts/voicevox-setup.sh} $out/bin/voicevox-setup
             
+            # Install INSTRUCTIONS.md for MCP server
+            install -m644 ${./INSTRUCTIONS.md} $out/bin/INSTRUCTIONS.md
+            
             # Note: All resources (ONNX, dict, models) will be downloaded at runtime
           '';
 

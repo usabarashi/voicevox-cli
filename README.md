@@ -131,33 +131,11 @@ voicevox-say --status             # Check installation status
 
 ## MCP Server (AI Assistant Integration)
 
-Enable AI assistants to use VOICEVOX for Japanese speech synthesis:
+Enable AI assistants to use VOICEVOX for Japanese speech synthesis.
 
 ```bash
-# Start MCP server
-voicevox-mcp-server  # Communicates via stdin/stdout
+voicevox-mcp-server  # Start MCP server
 ```
-
-Available tools:
-- `text_to_speech`: Convert Japanese text to speech (TTS)
-- `list_voice_styles`: List available voice styles
-
-### Custom Instructions
-
-Set custom instructions for AI assistants using the `VOICEVOX_MCP_INSTRUCTIONS` environment variable:
-
-```bash
-# Use custom instructions file
-export VOICEVOX_MCP_INSTRUCTIONS=/path/to/custom/instructions.md
-voicevox-mcp-server
-```
-
-Instructions are loaded in this priority order:
-1. File specified by `VOICEVOX_MCP_INSTRUCTIONS` environment variable
-2. `INSTRUCTIONS.md` in the executable directory
-3. `INSTRUCTIONS.md` in the current directory
-
-See [INSTRUCTIONS.md](INSTRUCTIONS.md) for the default instruction format and examples.
 
 [See detailed MCP documentation](docs/mcp-usage.md)
 

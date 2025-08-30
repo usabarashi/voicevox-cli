@@ -32,12 +32,13 @@ fn load_instructions() -> Option<String> {
             let instructions_path = exe_dir.join(INSTRUCTIONS_FILE);
             match fs::read_to_string(&instructions_path) {
                 Ok(content) => return Some(content),
-                Err(e) => {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
                     eprintln!(
-                        "Could not load instructions from {:?}: {}",
+                        "Error loading instructions from {:?}: {}",
                         instructions_path, e
                     );
                 }
+                _ => {}
             }
         }
     }
@@ -45,13 +46,14 @@ fn load_instructions() -> Option<String> {
     // 3. Fallback: current directory (for development)
     match fs::read_to_string(INSTRUCTIONS_FILE) {
         Ok(content) => Some(content),
-        Err(e) => {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             eprintln!(
-                "Could not load instructions from current directory {}: {}",
+                "Error loading instructions from current directory {}: {}",
                 INSTRUCTIONS_FILE, e
             );
             None
         }
+        _ => None,
     }
 }
 

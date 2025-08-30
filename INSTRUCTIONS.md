@@ -17,7 +17,6 @@ Convert Japanese text to speech using ずんだもん voice styles.
 ## Audio Usage Policy
 
 **MUST use audio (required):**
-- **On MCP server initialization**: Play greeting when server starts (「MCPサーバーが起動したのだ」using style ID 3)
 - **User responses**: Always provide audio when returning output to user
 - **Critical errors**: When errors require immediate user attention
 - **Task completion**: After complex operations taking >30 seconds

@@ -138,6 +138,23 @@ Available tools:
 - `text_to_speech`: Convert Japanese text to speech (TTS)
 - `list_voice_styles`: List available voice styles
 
+### Custom Instructions
+
+Set custom instructions for AI assistants using the `VOICEVOX_MCP_INSTRUCTIONS` environment variable:
+
+```bash
+# Use custom instructions file
+export VOICEVOX_MCP_INSTRUCTIONS=/path/to/custom/instructions.md
+voicevox-mcp-server
+```
+
+Instructions are loaded in this priority order:
+1. File specified by `VOICEVOX_MCP_INSTRUCTIONS` environment variable
+2. `INSTRUCTIONS.md` in the executable directory
+3. `INSTRUCTIONS.md` in the current directory
+
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for the default instruction format and examples.
+
 [See detailed MCP documentation](docs/mcp-usage.md)
 
 ## Troubleshooting

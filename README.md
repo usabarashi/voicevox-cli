@@ -151,7 +151,7 @@ voicevox-mcp-server  # Start MCP server
 **Download/Model Issues**:
 ```bash
 voicevox-say --status              # Check installation status
-voicevox-setup                     # Reinstall voice models
+voicevox-setup                     # Reinstall all resources
 ```
 
 **Voice Synthesis Issues**:

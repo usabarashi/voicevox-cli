@@ -83,16 +83,19 @@ impl DaemonState {
                 println!("  ✓ Loaded model {model_id} for synthesis");
 
                 let synthesis_result = self.core.synthesize(&text, style_id);
-                if let Ok(models_dir) = crate::paths::find_models_dir() {
-                    let model_path = models_dir.join(format!("{model_id}.vvm"));
-                    let path_str = match model_path.to_str() {
+                let available_models = self.available_models.lock().await;
+                if let Some(model) = available_models.iter().find(|m| m.model_id == model_id) {
+                    let path_str = match model.file_path.to_str() {
                         Some(s) => s,
                         None => {
-                            eprintln!("  ✗ Model path contains invalid UTF-8: {:?}", model_path);
+                            eprintln!(
+                                "  ✗ Model path contains invalid UTF-8: {:?}",
+                                model.file_path
+                            );
                             return OwnedResponse::Error {
                                 message: format!(
                                     "Model path contains invalid UTF-8: {:?}",
-                                    model_path
+                                    model.file_path
                                 ),
                             };
                         }
@@ -102,7 +105,7 @@ impl DaemonState {
                         Err(e) => eprintln!("  ✗ Failed to unload model {model_id}: {e}"),
                     }
                 } else {
-                    eprintln!("  ✗ Failed to find models directory for unload");
+                    eprintln!("  ✗ Model {model_id} not found in available models");
                 }
 
                 match synthesis_result {

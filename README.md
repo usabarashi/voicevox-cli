@@ -1,8 +1,10 @@
 # VOICEVOX CLI
 
-[![Dependency Status](https://img.shields.io/badge/deps-automated-green)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/dependabot.yml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-black)](https://github.com/usabarashi/voicevox-cli/blob/main/LICENSE)
+[![VOICEVOX Core](https://img.shields.io/github/v/release/VOICEVOX/voicevox_core?color=blueviolet&label=voicevox-core)](https://github.com/VOICEVOX/voicevox_core/releases/latest)
+[![Rust Version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fusabarashi%2Fvoicevox-cli%2Fmain%2Frust-toolchain.toml&query=%24.toolchain.channel&color=D34516&label=rust)](https://github.com/rust-lang/rust/releases)
+[![Nixpkgs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fusabarashi%2Fvoicevox-cli%2Fmain%2Fflake.lock&query=%24.nodes.nixpkgs.locked.rev&color=5277C3&label=nixpkgs)](https://github.com/NixOS/nixpkgs)
 [![CI Status](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml)
-[![Last Update](https://img.shields.io/badge/updated-monthly-blue)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/workflows/update-flake.yml)
 
 Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 

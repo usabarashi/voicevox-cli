@@ -18,17 +18,23 @@ fn load_instructions() -> Option<String> {
             match fs::read_to_string(&instructions_path) {
                 Ok(content) => return Some(content),
                 Err(e) => {
-                    eprintln!("Could not load instructions from {:?}: {}", instructions_path, e);
+                    eprintln!(
+                        "Could not load instructions from {:?}: {}",
+                        instructions_path, e
+                    );
                 }
             }
         }
     }
-    
+
     // Fallback: current directory (for development)
     match fs::read_to_string(INSTRUCTIONS_FILE) {
         Ok(content) => Some(content),
         Err(e) => {
-            eprintln!("Could not load instructions from current directory {}: {}", INSTRUCTIONS_FILE, e);
+            eprintln!(
+                "Could not load instructions from current directory {}: {}",
+                INSTRUCTIONS_FILE, e
+            );
             None
         }
     }

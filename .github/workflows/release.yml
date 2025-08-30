@@ -93,6 +93,7 @@ jobs:
             ### Installation
             ```bash
             tar -xzf voicevox-cli-${{ steps.create_tag.outputs.TAG_NAME }}-aarch64-darwin.tar.gz
+            ./voicevox-setup
             ./voicevox-say "こんにちは"
             ```
 
@@ -101,7 +102,7 @@ jobs:
             # Verify checksum
             shasum -a 256 -c voicevox-cli-${{ steps.create_tag.outputs.TAG_NAME }}-aarch64-darwin.tar.gz.sha256
             ```
-            
+
             ### Release Information
             - **Build Time**: ${{ steps.create_tag.outputs.TAG_NAME }}
             - **Commit**: ${{ github.sha }}

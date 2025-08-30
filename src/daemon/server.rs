@@ -88,10 +88,7 @@ impl DaemonState {
                     let path_str = match model.file_path.to_str() {
                         Some(s) => s,
                         None => {
-                            eprintln!(
-                                "Model path contains invalid UTF-8: {:?}",
-                                model.file_path
-                            );
+                            eprintln!("Model path contains invalid UTF-8: {:?}", model.file_path);
                             return OwnedResponse::Error {
                                 message: format!(
                                     "Model path contains invalid UTF-8: {:?}",

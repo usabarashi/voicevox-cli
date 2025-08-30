@@ -8,10 +8,25 @@ use crate::mcp::tools::get_tool_definitions;
 use crate::mcp::types::*;
 
 const MCP_VERSION: &str = "2025-03-26";
+const INSTRUCTIONS_ENV_VAR: &str = "VOICEVOX_MCP_INSTRUCTIONS";
 const INSTRUCTIONS_FILE: &str = "INSTRUCTIONS.md";
 
 fn load_instructions() -> Option<String> {
-    // Try to read from executable directory first
+    // 1. Try environment variable first (highest priority)
+    if let Ok(custom_path) = std::env::var(INSTRUCTIONS_ENV_VAR) {
+        let path = std::path::Path::new(&custom_path);
+        match fs::read_to_string(path) {
+            Ok(content) => return Some(content),
+            Err(e) => {
+                eprintln!(
+                    "Could not load instructions from environment variable {:?}: {}",
+                    path, e
+                );
+            }
+        }
+    }
+
+    // 2. Try executable directory (for distributed binaries)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             let instructions_path = exe_dir.join(INSTRUCTIONS_FILE);
@@ -27,7 +42,7 @@ fn load_instructions() -> Option<String> {
         }
     }
 
-    // Fallback: current directory (for development)
+    // 3. Fallback: current directory (for development)
     match fs::read_to_string(INSTRUCTIONS_FILE) {
         Ok(content) => Some(content),
         Err(e) => {

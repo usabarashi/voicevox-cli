@@ -18,17 +18,17 @@ Key design principles:
 ## Implementation Details
 
 ### Binary Modules (`src/bin/`)
-- `client.rs`: Main CLI interface (`voicevox-say`)
-- `daemon.rs`: Background daemon server
-- `mcp_server.rs`: MCP protocol server
+- `client.rs`: Main CLI interface implementing `voicevox-say` command
+- `daemon.rs`: Background server handling VOICEVOX Core operations
+- `mcp_server.rs`: MCP protocol server for AI assistant integration
 
 ### Core Modules (`src/`)
-- `client/`: Client logic, audio playback, model management
-- `daemon/`: Server implementation, request handling
-- `core/`: VOICEVOX Core FFI bindings
-- `ipc/`: Inter-process communication protocol
-- `synthesis/`: Streaming synthesis for long text
-- `mcp/`: MCP tools and handlers
+- `client/`: Client-side logic including audio playback and model management
+- `daemon/`: Server implementation with request handling and lifecycle management
+- `core/`: VOICEVOX Core FFI bindings and voice synthesis interface
+- `ipc/`: Inter-process communication protocol for Unix socket messaging
+- `synthesis/`: Streaming synthesis engine for processing long text segments
+- `mcp/`: MCP protocol tools and request handlers
 
 ### Daemon Auto-Start Mechanism
 1. Client attempts Unix socket connection
@@ -38,19 +38,35 @@ Key design principles:
 5. Provides user feedback during startup process
 
 ### Synthesis Modes
-- **Direct mode**: Single request to daemon, audio playback via client
-- **Streaming mode**: Text segmentation, concurrent synthesis and playback
-- **MCP mode**: Two paths - streaming (default) or daemon-based synthesis
+- **Direct mode**: Single synthesis request sent to daemon, audio played through client
+- **Streaming mode**: Long text segmented and processed with concurrent synthesis and playback  
+- **MCP mode**: Dual-path operation supporting both streaming (default) and daemon-based synthesis
 
-## Commands
+## Command Interface
 
 ```bash
-voicevox-say "テキスト"              # Text-to-speech with auto-daemon
-voicevox-daemon --start             # Manual daemon startup
-voicevox-mcp-server                 # MCP server for AI integration
+voicevox-say "テキスト"              # Text-to-speech with automatic daemon startup
+voicevox-daemon --start             # Manual daemon startup for persistent operation
+voicevox-mcp-server                 # MCP protocol server for AI assistant integration
 ```
 
-## MCP Tools
+## MCP Integration
 
-- `text_to_speech`: Synthesize with style ID, rate, streaming mode
-- `list_voice_styles`: Query available speakers with filtering
+### Available Tools
+- `text_to_speech`: Convert Japanese text to speech with configurable voice style, rate, and streaming
+- `list_voice_styles`: Query available voice styles with optional filtering by speaker or style name
+
+### Instruction System
+The MCP server dynamically loads behavior instructions to guide AI assistant interactions:
+
+1. **Environment variable**: `VOICEVOX_MCP_INSTRUCTIONS` pointing to custom file
+2. **Executable directory**: `INSTRUCTIONS.md` bundled with binary
+3. **Current directory**: `INSTRUCTIONS.md` for development
+
+**Configuration example:**
+```bash
+export VOICEVOX_MCP_INSTRUCTIONS=/path/to/custom/instructions.md
+voicevox-mcp-server
+```
+
+Server operates normally without instruction files. Default behavior defined in [INSTRUCTIONS.md](INSTRUCTIONS.md).

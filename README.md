@@ -1,19 +1,20 @@
 # VOICEVOX CLI
 
-[![Dependency Status](https://img.shields.io/badge/deps-automated-green)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/dependabot.yml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-black)](https://github.com/usabarashi/voicevox-cli/blob/main/LICENSE)
+[![VOICEVOX Core](https://img.shields.io/github/v/release/VOICEVOX/voicevox_core?color=blueviolet&label=voicevox-core)](https://github.com/VOICEVOX/voicevox_core/releases/latest)
+[![Rust Version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fusabarashi%2Fvoicevox-cli%2Fmain%2Frust-toolchain.toml&query=%24.toolchain.channel&color=D34516&label=rust)](https://github.com/rust-lang/rust/releases)
+[![Nixpkgs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fusabarashi%2Fvoicevox-cli%2Fmain%2Fflake.lock&query=%24.nodes.nixpkgs.locked.rev&color=5277C3&label=nixpkgs)](https://github.com/NixOS/nixpkgs)
 [![CI Status](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml)
-[![Last Update](https://img.shields.io/badge/updated-monthly-blue)](https://github.com/usabarashi/voicevox-cli/blob/main/.github/workflows/update-flake.yml)
 
-Zero-configuration Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
+Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 
 ## Features
 
-- **Zero Configuration**: Install and use immediately
+- **Easy Setup**: Install with Nix, then run `voicevox-setup` for resources
 - **26+ Voice Characters**: Automatic detection of available voice models
 - **Instant Response**: Fast voice synthesis after initial setup
 - **Silent Operation**: Works like macOS `say` command
 - **Lightweight**: Small download size, easy installation
-- **Interactive Setup**: Guided setup with license acceptance on first use
 
 ## Quick Start
 
@@ -26,11 +27,14 @@ nix shell github:usabarashi/voicevox-cli
 # Or install permanently
 nix profile install github:usabarashi/voicevox-cli
 
-# First usage (triggers interactive setup)
+# Setup required resources first
+voicevox-setup  # Download all required resources
+
+# Then use voice synthesis
 voicevox-say "こんにちは、ずんだもんなのだ"
 ```
 
-**Note**: First use will prompt for license acceptance and download voice models (~200MB).
+**Note**: `voicevox-setup` downloads required resources. `voicevox-say` requires setup to be completed first.
 
 ## Installation
 
@@ -51,13 +55,13 @@ nix run . -- "テストメッセージなのだ"
 
 **Note**: Voice models are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once. This project uses Nix's `nixos-unstable` channel for package dependencies, but is designed exclusively for macOS Apple Silicon (not NixOS).
 
-### Manual Model Setup
+### Manual Resource Setup
 
-For manual setup or model reinstallation:
+For manual setup or resource reinstallation:
 
 ```bash
-# Download voice models manually
-voicevox-setup-models
+# Download all required resources manually
+voicevox-setup
 ```
 
 ## Usage
@@ -127,33 +131,11 @@ voicevox-say --status             # Check installation status
 
 ## MCP Server (AI Assistant Integration)
 
-Enable AI assistants to use VOICEVOX for Japanese speech synthesis:
+Enable AI assistants to use VOICEVOX for Japanese speech synthesis.
 
 ```bash
-# Start MCP server
-voicevox-mcp-server  # Communicates via stdin/stdout
+voicevox-mcp-server  # Start MCP server
 ```
-
-Available tools:
-- `text_to_speech`: Convert Japanese text to speech (TTS)
-- `list_voice_styles`: List available voice styles
-
-### Custom Instructions
-
-Set custom instructions for AI assistants using the `VOICEVOX_MCP_INSTRUCTIONS` environment variable:
-
-```bash
-# Use custom instructions file
-export VOICEVOX_MCP_INSTRUCTIONS=/path/to/custom/instructions.md
-voicevox-mcp-server
-```
-
-Instructions are loaded in this priority order:
-1. File specified by `VOICEVOX_MCP_INSTRUCTIONS` environment variable
-2. `INSTRUCTIONS.md` in the executable directory
-3. `INSTRUCTIONS.md` in the current directory
-
-See [INSTRUCTIONS.md](INSTRUCTIONS.md) for the default instruction format and examples.
 
 [See detailed MCP documentation](docs/mcp-usage.md)
 
@@ -161,15 +143,15 @@ See [INSTRUCTIONS.md](INSTRUCTIONS.md) for the default instruction format and ex
 
 ### Common Issues
 
-**License Setup**:
-- Use arrow keys or Space to scroll through license terms
-- Press 'q' to exit the license viewer
-- Type 'y' and press Enter to accept terms
+**Resource Setup**:
+- Run `voicevox-setup` to download required resources
+- Wait for download completion
+- Resources include voice models, ONNX Runtime, and OpenJTalk dictionary
 
 **Download/Model Issues**:
 ```bash
 voicevox-say --status              # Check installation status
-voicevox-setup-models              # Reinstall voice models
+voicevox-setup                     # Reinstall all resources
 ```
 
 **Voice Synthesis Issues**:

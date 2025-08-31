@@ -13,7 +13,7 @@ pub struct StreamingSynthesizer {
 impl StreamingSynthesizer {
     pub async fn new() -> Result<Self> {
         let daemon_client = DaemonClient::connect_with_retry().await?;
-        let config = Config::load().unwrap_or_default();
+        let config = Config::default();
         let text_splitter = TextSplitter::from_config(&config.text_splitter);
         Ok(Self {
             daemon_client,

@@ -7,6 +7,11 @@ if [[ "${1:-}" == "--build-phase" ]]; then
   BUILD_PHASE=true
 fi
 
+# Helper function to run commands in nix develop environment
+run_in_nix() {
+  nix develop --accept-flake-config --command "$@"
+}
+
 echo "Running Complete CI Pipeline..."
 echo "=================================="
 
@@ -26,8 +31,8 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
   cargo --version
 else
   # Outside build, use nix develop
-  nix develop --accept-flake-config --command rustc --version
-  nix develop --accept-flake-config --command cargo --version
+  run_in_nix rustc --version
+  run_in_nix cargo --version
 fi
 
 echo ""
@@ -36,21 +41,18 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
   # Check formatting and show diff if needed
   if ! cargo fmt --check; then
     echo "Code formatting errors detected. Run 'cargo fmt' to fix."
-    echo ""
-    echo "Hint: The most common issue is missing newline at end of file."
-    echo "You can fix this by running: cargo fmt"
     exit 1
   fi
 else
-  nix develop --accept-flake-config --command cargo fmt --check
+  run_in_nix cargo fmt --check
 fi
 
 echo ""
 echo "Running clippy analysis..."
 if [[ "$BUILD_PHASE" == "true" ]]; then
-  cargo clippy --all-targets --all-features -- -D warnings || (echo "Clippy warnings detected. Fix them before building." && exit 1)
+  cargo clippy --all-targets --all-features -- -D warnings
 else
-  nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
+  run_in_nix cargo clippy --all-targets --all-features -- -D warnings
 fi
 
 echo ""
@@ -63,7 +65,7 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
   SCRIPT_DIR="scripts"
 else
   # Use PROJECT_DIR if set by Nix, otherwise get from ci.sh location
-  if [[ -n "$PROJECT_DIR" ]]; then
+  if [[ -n "${PROJECT_DIR:-}" ]]; then
     SCRIPT_DIR="$PROJECT_DIR/scripts"
   else
     SCRIPT_DIR="$(dirname "$0")"
@@ -101,11 +103,11 @@ if [[ "$BUILD_PHASE" == "true" ]]; then
   # Skip during build phase - cargo-audit might not be available
   echo "Skipping security audit during build phase"
 else
-  if ! nix develop --accept-flake-config --command cargo audit --version >/dev/null 2>&1; then
+  if ! run_in_nix cargo audit --version >/dev/null 2>&1; then
     echo "Installing cargo-audit..."
-    nix develop --accept-flake-config --command cargo install cargo-audit
+    run_in_nix cargo install cargo-audit
   fi
-  nix develop --accept-flake-config --command cargo audit
+  run_in_nix cargo audit
 fi
 
 # Build verification - skip during build phase to avoid circular dependency
@@ -119,36 +121,31 @@ fi
 if [[ "$BUILD_PHASE" == "false" ]]; then
   echo ""
   echo "Verifying build artifacts..."
-  if [[ -d result/bin ]]; then
-    ls -la result/bin/
-    echo "Build artifacts verified"
-  else
+  if [[ ! -d result/bin ]]; then
     echo "Build artifacts not found"
     exit 1
   fi
 
+  echo "Build artifact contents:"
+  ls -lah result/bin/
+  
   echo ""
-  echo "Verifying build artifacts..."
-  ls -la result/bin/
+  echo "Binary verification:"
   file result/bin/voicevox-say
   file result/bin/voicevox-daemon
-  test -x result/bin/voicevox-setup-models
-  echo "All binaries built successfully"
-
+  file result/bin/voicevox-mcp-server
+  
   echo ""
   echo "Testing functionality..."
-  result/bin/voicevox-say --help || echo "Help command test"
-  result/bin/voicevox-daemon --help || echo "Help command test"
-  result/bin/voicevox-say --version || echo "Version command not available"
-
+  result/bin/voicevox-say --help >/dev/null
+  result/bin/voicevox-daemon --help >/dev/null
+  echo "Help commands work correctly"
+  
   echo ""
-  echo "Package verification..."
-  echo "Binary sizes:"
-  ls -lah result/bin/
+  echo "Package verification:"
   echo "Static linking verification:"
   otool -L result/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
-  echo "Total package size:"
-  du -sh result/
+  echo "Total package size: $(du -sh result/ | cut -f1)"
 fi
 
 echo ""

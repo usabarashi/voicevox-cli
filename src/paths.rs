@@ -25,11 +25,6 @@ pub fn get_default_voicevox_dir() -> PathBuf {
         })
 }
 
-/// Get the default models directory path
-pub fn get_default_models_dir() -> PathBuf {
-    get_default_voicevox_dir().join(MODELS_SUBDIR)
-}
-
 pub fn get_socket_path() -> PathBuf {
     let env_socket_paths = [
         ("VOICEVOX_SOCKET_PATH", ""),

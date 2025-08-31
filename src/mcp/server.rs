@@ -12,49 +12,87 @@ const INSTRUCTIONS_ENV_VAR: &str = "VOICEVOX_MCP_INSTRUCTIONS";
 const INSTRUCTIONS_FILE: &str = "INSTRUCTIONS.md";
 
 fn load_instructions() -> Option<String> {
-    // 1. Try environment variable first (highest priority)
-    if let Ok(custom_path) = std::env::var(INSTRUCTIONS_ENV_VAR) {
-        let path = std::path::Path::new(&custom_path);
+    use std::path::{Path, PathBuf};
+
+    fn try_load(path: &Path, description: &str) -> Option<String> {
+        eprintln!(
+            "Trying instructions from {}: {}",
+            description,
+            path.display()
+        );
         match fs::read_to_string(path) {
-            Ok(content) => return Some(content),
+            Ok(content) => {
+                eprintln!("Loaded instructions from: {}", path.display());
+                Some(content)
+            }
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                eprintln!("Error loading instructions from {}: {}", path.display(), e);
+                None
+            }
+            _ => None,
+        }
+    }
+
+    // 1. Environment variable: VOICEVOX_MCP_INSTRUCTIONS (highest priority)
+    if let Ok(custom_path) = std::env::var(INSTRUCTIONS_ENV_VAR) {
+        let path = Path::new(&custom_path);
+        eprintln!(
+            "Trying instructions from environment variable: {}",
+            path.display()
+        );
+        match fs::read_to_string(path) {
+            Ok(content) => {
+                eprintln!("Loaded instructions from: {}", path.display());
+                return Some(content);
+            }
             Err(e) => {
-                eprintln!(
-                    "Could not load instructions from environment variable {:?}: {}",
-                    path, e
-                );
+                eprintln!("Could not load instructions from {}: {}", path.display(), e);
             }
         }
     }
 
-    // 2. Try executable directory (for distributed binaries)
+    // 2. XDG user config: $XDG_CONFIG_HOME/voicevox/INSTRUCTIONS.md (user-specific settings)
+    let xdg_config_var = std::env::var("XDG_CONFIG_HOME");
+    if let Ok(ref xdg_config) = xdg_config_var {
+        let path = PathBuf::from(xdg_config)
+            .join("voicevox")
+            .join(INSTRUCTIONS_FILE);
+        if let Some(content) = try_load(&path, "XDG_CONFIG_HOME") {
+            return Some(content);
+        }
+    }
+
+    // 3. Config fallback: ~/.config/voicevox/INSTRUCTIONS.md (only when XDG_CONFIG_HOME is not set)
+    if xdg_config_var.is_err() {
+        if let Ok(home) = std::env::var("HOME") {
+            let path = PathBuf::from(home)
+                .join(".config")
+                .join("voicevox")
+                .join(INSTRUCTIONS_FILE);
+            if let Some(content) = try_load(&path, "~/.config") {
+                return Some(content);
+            }
+        }
+    }
+
+    // 4. Executable directory: INSTRUCTIONS.md bundled with the binary (distribution default)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            let instructions_path = exe_dir.join(INSTRUCTIONS_FILE);
-            match fs::read_to_string(&instructions_path) {
-                Ok(content) => return Some(content),
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                    eprintln!(
-                        "Error loading instructions from {:?}: {}",
-                        instructions_path, e
-                    );
-                }
-                _ => {}
+            let path = exe_dir.join(INSTRUCTIONS_FILE);
+            if let Some(content) = try_load(&path, "executable directory") {
+                return Some(content);
             }
         }
     }
 
-    // 3. Fallback: current directory (for development)
-    match fs::read_to_string(INSTRUCTIONS_FILE) {
-        Ok(content) => Some(content),
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-            eprintln!(
-                "Error loading instructions from current directory {}: {}",
-                INSTRUCTIONS_FILE, e
-            );
-            None
-        }
-        _ => None,
+    // 5. Current directory: INSTRUCTIONS.md in working directory (development use)
+    let path = PathBuf::from(INSTRUCTIONS_FILE);
+    if let Some(content) = try_load(&path, "current directory") {
+        return Some(content);
     }
+
+    eprintln!("No INSTRUCTIONS.md found in any location");
+    None
 }
 
 pub async fn run_mcp_server() -> Result<()> {

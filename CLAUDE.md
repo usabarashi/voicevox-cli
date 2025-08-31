@@ -74,14 +74,14 @@ The MCP server dynamically loads behavior instructions to guide AI assistant int
 export VOICEVOX_MCP_INSTRUCTIONS=/path/to/custom/instructions.md
 voicevox-mcp-server
 
-# Method 2: XDG user configuration
-mkdir -p ~/.config/voicevox
-cp custom-instructions.md ~/.config/voicevox/INSTRUCTIONS.md
-voicevox-mcp-server
-
-# Method 3: XDG_CONFIG_HOME (if set)
+# Method 2: XDG_CONFIG_HOME (if set)
 mkdir -p $XDG_CONFIG_HOME/voicevox
 cp custom-instructions.md $XDG_CONFIG_HOME/voicevox/INSTRUCTIONS.md
+voicevox-mcp-server
+
+# Method 3: XDG user configuration
+mkdir -p ~/.config/voicevox
+cp custom-instructions.md ~/.config/voicevox/INSTRUCTIONS.md
 voicevox-mcp-server
 ```
 

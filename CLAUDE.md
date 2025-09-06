@@ -62,10 +62,10 @@ The MCP server dynamically loads behavior instructions to guide AI assistant int
 **Loading Priority (XDG Base Directory compliant):**
 
 1. **Environment variable**: `VOICEVOX_MCP_INSTRUCTIONS` (highest priority)
-2. **XDG user config**: `$XDG_CONFIG_HOME/voicevox/INSTRUCTIONS.md` (user-specific settings)
-3. **Config fallback**: `~/.config/voicevox/INSTRUCTIONS.md` (when XDG_CONFIG_HOME is not set)
-4. **Executable directory**: `INSTRUCTIONS.md` bundled with the binary (distribution default)
-5. **Current directory**: `INSTRUCTIONS.md` in working directory (development use)
+2. **XDG user config**: `$XDG_CONFIG_HOME/voicevox/VOICEVOX.md` (user-specific settings)
+3. **Config fallback**: `~/.config/voicevox/VOICEVOX.md` (when XDG_CONFIG_HOME is not set)
+4. **Executable directory**: `VOICEVOX.md` bundled with the binary (distribution default)
+5. **Current directory**: `VOICEVOX.md` in working directory (development use)
 
 **Configuration examples:**
 
@@ -76,13 +76,13 @@ voicevox-mcp-server
 
 # Method 2: XDG_CONFIG_HOME (if set)
 mkdir -p $XDG_CONFIG_HOME/voicevox
-cp custom-instructions.md $XDG_CONFIG_HOME/voicevox/INSTRUCTIONS.md
+cp custom-instructions.md $XDG_CONFIG_HOME/voicevox/VOICEVOX.md
 voicevox-mcp-server
 
 # Method 3: XDG user configuration
 mkdir -p ~/.config/voicevox
-cp custom-instructions.md ~/.config/voicevox/INSTRUCTIONS.md
+cp custom-instructions.md ~/.config/voicevox/VOICEVOX.md
 voicevox-mcp-server
 ```
 
-Server operates normally without instruction files. Default behavior defined in [INSTRUCTIONS.md](INSTRUCTIONS.md).
+Server operates normally without instruction files. Default behavior defined in [VOICEVOX.md](VOICEVOX.md).

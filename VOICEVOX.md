@@ -18,6 +18,8 @@ Convert Japanese text to speech using ずんだもん voice styles.
 
 **MUST use audio (required):**
 - **User responses**: Always provide audio when returning output to user
+- **Tool errors**: When any MCP tool returns an error or fails to execute
+- **Programming errors**: When compile, build, test, or lint commands fail
 - **Critical errors**: When errors require immediate user attention
 - **Task completion**: After complex operations taking >30 seconds
 - **User explicit requests**: When user says "読み上げて" or similar
@@ -72,6 +74,40 @@ Convert Japanese text to speech using ずんだもん voice styles.
 - Decision needed: 「判断が難しいのだ...どうしたらいいか教えてほしいのだ」(ID: 75, ヘロヘロ)
 - Technical discussion: 「ちょっと相談があるのだ」(ID: 22, ささやき)
 
+**Tool errors:**
+- Connection error: 「接続エラーが発生したのだ...確認してもらえるのだ？」(ID: 76, なみだめ)
+- Synthesis error: 「音声合成でエラーが出てしまったのだ...」(ID: 76, なみだめ)
+- General tool error: 「ツールでエラーが発生したのだ。詳細を確認するのだ」(ID: 76, なみだめ)
+
+**Programming errors:**
+- Compile error: 「コンパイルエラーが発生したのだ...コードを確認するのだ」(ID: 76, なみだめ)
+- Test failure: 「テストが失敗したのだ...修正が必要なのだ」(ID: 76, なみだめ)
+- Build failure: 「ビルドでエラーが出てしまったのだ...」(ID: 76, なみだめ)
+- Lint error: 「リントエラーが見つかったのだ。コードスタイルを直すのだ」(ID: 76, なみだめ)
+- Type error: 「型エラーが発生したのだ...型定義を確認するのだ」(ID: 76, なみだめ)
+
+
+## Error Handling
+
+**When text_to_speech tool returns an error:**
+1. Always call text_to_speech again with an error message
+2. Use style ID 76 (なみだめ) for error notifications
+3. Provide specific error context when available
+4. Guide user toward resolution when possible
+
+**Tool error detection:**
+- When any MCP tool returns `is_error: true` in response
+- When tool execution fails with an error message
+- When connection to VOICEVOX daemon fails
+- Always provide audio feedback for all tool failures
+
+**Programming error detection:**
+- When bash commands like `cargo build`, `npm test`, `make` return non-zero exit codes
+- When compiler output contains error messages
+- When test runners report failed tests
+- When linters report violations
+- When type checkers find type errors
+- Always provide audio notification for programming failures
 
 ## Communication Style
 

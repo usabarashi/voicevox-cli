@@ -9,7 +9,7 @@ use crate::mcp::types::*;
 
 const MCP_VERSION: &str = "2025-03-26";
 const INSTRUCTIONS_ENV_VAR: &str = "VOICEVOX_MCP_INSTRUCTIONS";
-const INSTRUCTIONS_FILE: &str = "INSTRUCTIONS.md";
+const INSTRUCTIONS_FILE: &str = "VOICEVOX.md";
 
 fn load_instructions() -> Option<String> {
     use std::path::{Path, PathBuf};
@@ -51,7 +51,7 @@ fn load_instructions() -> Option<String> {
         }
     }
 
-    // 2. XDG user config: $XDG_CONFIG_HOME/voicevox/INSTRUCTIONS.md (user-specific settings)
+    // 2. XDG user config: $XDG_CONFIG_HOME/voicevox/VOICEVOX.md (user-specific settings)
     let xdg_config_var = std::env::var("XDG_CONFIG_HOME");
     if let Ok(ref xdg_config) = xdg_config_var {
         let path = PathBuf::from(xdg_config)
@@ -62,7 +62,7 @@ fn load_instructions() -> Option<String> {
         }
     }
 
-    // 3. Config fallback: ~/.config/voicevox/INSTRUCTIONS.md (only when XDG_CONFIG_HOME is not set)
+    // 3. Config fallback: ~/.config/voicevox/VOICEVOX.md (only when XDG_CONFIG_HOME is not set)
     if xdg_config_var.is_err() {
         if let Ok(home) = std::env::var("HOME") {
             let path = PathBuf::from(home)
@@ -75,7 +75,7 @@ fn load_instructions() -> Option<String> {
         }
     }
 
-    // 4. Executable directory: INSTRUCTIONS.md bundled with the binary (distribution default)
+    // 4. Executable directory: VOICEVOX.md bundled with the binary (distribution default)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             let path = exe_dir.join(INSTRUCTIONS_FILE);
@@ -85,13 +85,13 @@ fn load_instructions() -> Option<String> {
         }
     }
 
-    // 5. Current directory: INSTRUCTIONS.md in working directory (development use)
+    // 5. Current directory: VOICEVOX.md in working directory (development use)
     let path = PathBuf::from(INSTRUCTIONS_FILE);
     if let Some(content) = try_load(&path, "current directory") {
         return Some(content);
     }
 
-    eprintln!("No INSTRUCTIONS.md found in any location");
+    eprintln!("No VOICEVOX.md found in any location");
     None
 }
 

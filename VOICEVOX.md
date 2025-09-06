@@ -1,117 +1,71 @@
-# VOICEVOX MCP Server Instructions
+# VOICEVOX MCP Instructions
 
 Convert Japanese text to speech using ずんだもん voice styles.
 
 ## Tools
 
 ### text_to_speech
-- `text` (required): Japanese text to synthesize
-- `style_id` (required): Voice style ID (see list_voice_styles)
-- `rate` (optional): Speech rate 0.5-2.0, default 1.0
-- `streaming` (optional): Enable streaming, default true
+- `text`: Japanese text (15-50 chars recommended, 100+ may have compatibility issues)
+- `style_id`: Voice style ID (see list_voice_styles)
+- `rate`: Speech rate 0.5-2.0 (default 1.0)
+- `streaming`: Enable streaming (default true)
 
 ### list_voice_styles
-- `speaker_name` (optional): Filter by speaker name
-- `style_name` (optional): Filter by style name
-
-## Audio Usage Policy
-
-**MUST use audio (required):**
-- **User responses**: Always provide audio when returning output to user
-- **Tool errors**: When any MCP tool returns an error or fails to execute
-- **Programming errors**: When compile, build, test, or lint commands fail
-- **Critical errors**: When errors require immediate user attention
-- **Task completion**: After complex operations taking >30 seconds
-- **User explicit requests**: When user says "読み上げて" or similar
-- **Important confirmations**: Before potentially destructive operations
-
-**SHOULD use audio (recommended):**
-- **Significant milestones**: Important progress in multi-step workflows
-- **Successful problem resolution**: When fixing reported issues
-- **Long operation updates**: Status during builds, tests, downloads
-- **Context transitions**: Moving between major workflow phases
-- **Achievement celebrations**: Completing challenging tasks
-
-**When to avoid audio:**
-- Routine edits, searches, small tasks
-- Repetitive similar events within short time
-- Information already clearly visible in text output
-- During rapid iteration cycles
-- When user is clearly in focused coding mode
-
-**Context-aware guidelines:**
-- Prioritize user workflow pace and context
-- Use audio for significant events that deserve attention
-- Match voice style to situation (see Voice Styles section)
-- Be proactive but not intrusive
+- `speaker_name`: Filter by speaker name (optional)
+- `style_name`: Filter by style name (optional)
 
 ## Voice Styles
 
-- **ID: 3 (ノーマル)**: Default professional communication
-- **ID: 1 (あまあま)**: Celebrating achievements
-- **ID: 22 (ささやき)**: Technical discussions
-- **ID: 76 (なみだめ)**: Error situations, seeking help
-- **ID: 75 (ヘロヘロ)**: Complex problems needing guidance
+- **ID: 3 (ノーマル)**: Default communication
+- **ID: 1 (あまあま)**: Success, achievements, celebrations
+- **ID: 22 (ささやき)**: Technical discussions, quiet updates
+- **ID: 76 (なみだめ)**: Errors, problems, seeking help
+- **ID: 75 (ヘロヘロ)**: Complex problems, need guidance
 
-**Detailed Examples:**
+## Audio Rules (Priority Order)
 
-**Task completion:**
-- Simple task: 「タスクが完了したのだ」(ID: 3, ノーマル)
-- Complex achievement: 「やったのだ！難しいタスクを解決できたのだ！」(ID: 1, あまあま)
-- Build success: 「ビルドが成功したのだ」(ID: 3, ノーマル)
+### Always use audio
+- User responses → ID: 3
+- Exit codes != 0 → ID: 76 + 「エラーなのだ」
+- Error keywords (error/failed/exception) → ID: 76 + 「問題なのだ」
+- User request "読み上げて" → ID: 3
 
-**Error situations:**
-- Recoverable error: 「エラーが出てしまったのだ...でも大丈夫、対処してみるのだ」(ID: 76, なみだめ)
-- Need user help: 「困ったのだ...一緒に見てもらえるのだ？」(ID: 76, なみだめ)
-- Critical error: 「重要なエラーが発生したのだ！確認が必要なのだ」(ID: 76, なみだめ)
+### Use for important moments
+- Task completion (>30s) → ID: 1「完了したのだ」 or ID: 3
+- Major milestones → ID: 1「進展があったのだ」
+- Problem resolution → ID: 1「解決できたのだ」
+- First error in sequence → ID: 76
 
-**Progress updates:**
-- Long operation start: 「時間のかかる処理を始めるのだ...」(ID: 22, ささやき)
-- Progress milestone: 「順調に進んでいるのだ」(ID: 3, ノーマル)
-- Operation complete: 「処理が完了したのだ」(ID: 3, ノーマル)
+### Rate limits
+- Minimum 3 seconds between calls
+- Skip identical messages within 10 seconds
+- Max 3 audio per minute for routine tasks
 
-**Guidance requests:**
-- Decision needed: 「判断が難しいのだ...どうしたらいいか教えてほしいのだ」(ID: 75, ヘロヘロ)
-- Technical discussion: 「ちょっと相談があるのだ」(ID: 22, ささやき)
+### Avoid audio
+- Routine edits, searches, small tasks
+- Rapid iteration cycles
+- Information already visible in text
 
-**Tool errors:**
-- Connection error: 「接続エラーが発生したのだ...確認してもらえるのだ？」(ID: 76, なみだめ)
-- Synthesis error: 「音声合成でエラーが出てしまったのだ...」(ID: 76, なみだめ)
-- General tool error: 「ツールでエラーが発生したのだ。詳細を確認するのだ」(ID: 76, なみだめ)
+## Text Guidelines
 
-**Programming errors:**
-- Compile error: 「コンパイルエラーが発生したのだ...コードを確認するのだ」(ID: 76, なみだめ)
-- Test failure: 「テストが失敗したのだ...修正が必要なのだ」(ID: 76, なみだめ)
-- Build failure: 「ビルドでエラーが出てしまったのだ...」(ID: 76, なみだめ)
-- Lint error: 「リントエラーが見つかったのだ。コードスタイルを直すのだ」(ID: 76, なみだめ)
-- Type error: 「型エラーが発生したのだ...型定義を確認するのだ」(ID: 76, なみだめ)
+**Optimal compatibility:**
+- **15-50 characters**: All clients work well (~1-2s)
+- **50-80 characters**: Most clients handle fine (~2-3s)
+- **100+ characters**: Some clients may timeout - split into multiple calls
 
+**Communication style:**
+- Always use「のだ」speech pattern
+- Keep messages natural but concise
+- Split at sentence boundaries when needed
 
 ## Error Handling
 
-**When text_to_speech tool returns an error:**
-1. Always call text_to_speech again with an error message
-2. Use style ID 76 (なみだめ) for error notifications
-3. Provide specific error context when available
-4. Guide user toward resolution when possible
+- If text_to_speech fails: Continue silently, no retry
+- For detected errors: Use ID: 76, keep reasonably short
+- Complex errors: Split into multiple calls if needed
 
-**Tool error detection:**
-- When any MCP tool returns `is_error: true` in response
-- When tool execution fails with an error message
-- When connection to VOICEVOX daemon fails
-- Always provide audio feedback for all tool failures
+## Fallback Behavior
 
-**Programming error detection:**
-- When bash commands like `cargo build`, `npm test`, `make` return non-zero exit codes
-- When compiler output contains error messages
-- When test runners report failed tests
-- When linters report violations
-- When type checkers find type errors
-- Always provide audio notification for programming failures
-
-## Communication Style
-
-- Build partnership, not dominance
-- Seek user expertise when genuinely needed
-- Resolve independently when possible
-- Use「のだ」speech pattern consistently
+- If style_id unavailable: Use ID: 3 (default)
+- If synthesis fails: Continue without audio
+- If daemon unavailable: Skip audio, don't block operations

@@ -5,28 +5,28 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: "text_to_speech".to_string(),
-            description: "Convert Japanese text to speech (TTS) and play on server".to_string(),
+            description: "Convert Japanese text to speech with VOICEVOX. Splits long messages automatically for client compatibility.".to_string(),
             input_schema: ToolInputSchema {
                 schema_type: "object".to_string(),
                 properties: json!({
                     "text": {
                         "type": "string",
-                        "description": "Japanese text to synthesize"
+                        "description": "Japanese text (15-50 chars optimal, 100+ may need splitting)"
                     },
                     "style_id": {
                         "type": "integer",
-                        "description": "Voice style ID (e.g., 3 for Zundamon Normal)"
+                        "description": "3=normal, 1=happy, 22=whisper, 76=sad, 75=confused"
                     },
                     "rate": {
                         "type": "number",
-                        "description": "Speech rate (0.5-2.0)",
+                        "description": "Speed (0.5-2.0, default 1.0)",
                         "minimum": 0.5,
                         "maximum": 2.0,
                         "default": 1.0
                     },
                     "streaming": {
                         "type": "boolean",
-                        "description": "Enable streaming playback for lower latency",
+                        "description": "Lower latency mode",
                         "default": true
                     }
                 })
@@ -38,7 +38,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "list_voice_styles".to_string(),
-            description: "List available voice styles with optional filtering".to_string(),
+            description: "Get available VOICEVOX voice styles for text_to_speech. Use this before synthesizing speech to discover available style_ids and their characteristics. Filter by speaker_name or style_name (e.g., 'ノーマル', 'ささやき', 'なみだめ') to find appropriate voices. Returns style_id, speaker name, and style type for each voice. Call this when users ask about available voices or when you need to select an appropriate voice style based on context.".to_string(),
             input_schema: ToolInputSchema {
                 schema_type: "object".to_string(),
                 properties: json!({

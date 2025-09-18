@@ -3,8 +3,6 @@
         "serena": {
             "command": "uvx",
             "args": [
-                "--cache-dir",
-                "./.project-home/.cache/uv",
                 "--from",
                 "git+https://github.com/oraios/serena",
                 "serena",

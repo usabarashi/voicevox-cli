@@ -24,7 +24,7 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     fenix = {
       url = "github:nix-community/fenix";
@@ -169,9 +169,6 @@
           meta = packageMeta;
         };
 
-        # Import Serena configuration
-        serenaConfig = import ./nix/serena.nix { inherit pkgs rustToolchain; };
-
       in
       {
         packages = {
@@ -215,23 +212,19 @@
         devShells.default = pkgs.mkShell {
           CARGO_HOME = "./.project-home/.cargo";
 
-          buildInputs =
-            with pkgs;
-            [
-              # Use fenix-provided rust toolchain that matches rust-toolchain.toml
-              rustToolchain.defaultToolchain
-              rustToolchain.rust-analyzer
-              cargo-audit
+          buildInputs = with pkgs; [
+            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
+            rustToolchain.defaultToolchain
+            rustToolchain.rust-analyzer
+            cargo-audit
 
-              # Build tools
-              pkg-config
-              cmake
+            # Build tools
+            pkg-config
+            cmake
 
-              # MCP - Serena packages imported from config
-            ]
-            ++ serenaConfig.packages
-            ++ [
-            ];
+            # UV for Python package management (for Serena MCP)
+            uv
+          ];
 
           shellHook = ''
             # Create project-home directory for CARGO_HOME
@@ -244,11 +237,9 @@
             echo "  cargo run --bin voicevox-say       - Run client"
             echo "  nix build                          - Build with Nix"
             echo "  nix run                            - Run voicevox-say directly"
-            echo "  serena-index                       - Create Serena index for the project"
-            echo "  serena-mcp-wrapper                 - Start Serena MCP server"
-            echo "  serena-memory                      - Manage project memories"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
+            echo "MCP servers are configured in .mcp.json"
           '';
         };
 

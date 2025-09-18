@@ -1,12 +1,29 @@
 {
     "mcpServers": {
         "serena": {
-            "command": "nix",
+            "command": "uvx",
             "args": [
-                "develop",
-                "-c",
-                "serena-mcp-wrapper"
-            ]
+                "--cache-dir",
+                "./.project-home/.cache/uv",
+                "--from",
+                "git+https://github.com/oraios/serena",
+                "serena",
+                "start-mcp-server",
+                "--context",
+                "ide-assistant",
+                "--enable-web-dashboard",
+                "false",
+                "--project",
+                "."
+            ],
+            "env": {
+                "HOME": "./.project-home",
+                "XDG_DATA_HOME": "./.project-home/.local/share",
+                "XDG_CACHE_HOME": "./.project-home/.cache",
+                "UV_CACHE_DIR": "./.project-home/.cache/uv",
+                "UV_TOOL_DIR": "./.project-home/.local/uv/tools",
+                "CARGO_HOME": "./.project-home/.cargo"
+            }
         }
     }
 }

@@ -114,10 +114,26 @@ pub struct ToolsListResult {
 /// See the official MCP cancellation specification:
 /// <https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/cancellation>
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CancelRequestId {
+    String(String),
+    Number(i64),
+}
+
+impl CancelRequestId {
+    fn as_lookup_key(&self) -> String {
+        match self {
+            CancelRequestId::String(value) => value.clone(),
+            CancelRequestId::Number(value) => value.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CancelledParams {
     /// The ID of the request to cancel. Must match the `id` field of the original request.
     #[serde(rename = "requestId")]
-    pub request_id: String,
+    pub request_id: CancelRequestId,
     /// Optional human-readable reason for the cancellation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -442,13 +458,39 @@ async fn handle_notification_initialized(_params: Option<Value>) {
 async fn handle_notification_cancelled(params: Option<Value>, active_requests: &ActiveRequests) {
     if let Some(params) = params {
         if let Ok(cancelled_params) = serde_json::from_value::<CancelledParams>(params) {
+            let request_id = cancelled_params.request_id.as_lookup_key();
             let cancelled = active_requests
-                .cancel(
-                    &cancelled_params.request_id,
-                    cancelled_params.reason.clone(),
-                )
+                .cancel(&request_id, cancelled_params.reason.clone())
                 .await;
             let _ = cancelled;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn deserialize_cancelled_params_with_numeric_id() {
+        let params = json!({
+            "requestId": 42,
+        });
+
+        let parsed = serde_json::from_value::<CancelledParams>(params)
+            .expect("numeric requestId should deserialize");
+        assert_eq!(parsed.request_id.as_lookup_key(), "42");
+    }
+
+    #[test]
+    fn deserialize_cancelled_params_with_string_id() {
+        let params = json!({
+            "requestId": "abc",
+        });
+
+        let parsed = serde_json::from_value::<CancelledParams>(params)
+            .expect("string requestId should deserialize");
+        assert_eq!(parsed.request_id.as_lookup_key(), "abc");
     }
 }

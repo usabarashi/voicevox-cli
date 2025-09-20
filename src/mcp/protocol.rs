@@ -133,21 +133,10 @@ pub struct CancelledParams {
 /// 4. Executable directory: `VOICEVOX.md` bundled with the binary (distribution default)
 /// 5. Current directory: `VOICEVOX.md` in working directory (development use)
 fn load_instructions() -> Option<String> {
-    fn try_load(path: &Path, description: &str) -> Option<String> {
-        eprintln!(
-            "Trying instructions from {}: {}",
-            description,
-            path.display()
-        );
+    fn try_load(path: &Path, _description: &str) -> Option<String> {
         match fs::read_to_string(path) {
-            Ok(content) => {
-                eprintln!("Loaded instructions from: {}", path.display());
-                Some(content)
-            }
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                eprintln!("Error loading instructions from {}: {}", path.display(), e);
-                None
-            }
+            Ok(content) => Some(content),
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => None,
             _ => None,
         }
     }
@@ -155,18 +144,8 @@ fn load_instructions() -> Option<String> {
     // 1. Environment variable: VOICEVOX_MCP_INSTRUCTIONS (highest priority)
     if let Ok(custom_path) = std::env::var(INSTRUCTIONS_ENV_VAR) {
         let path = Path::new(&custom_path);
-        eprintln!(
-            "Trying instructions from environment variable: {}",
-            path.display()
-        );
-        match fs::read_to_string(path) {
-            Ok(content) => {
-                eprintln!("Loaded instructions from: {}", path.display());
-                return Some(content);
-            }
-            Err(e) => {
-                eprintln!("Could not load instructions from {}: {}", path.display(), e);
-            }
+        if let Ok(content) = fs::read_to_string(path) {
+            return Some(content);
         }
     }
 
@@ -210,7 +189,6 @@ fn load_instructions() -> Option<String> {
         return Some(content);
     }
 
-    eprintln!("No VOICEVOX.md found in any location");
     None
 }
 
@@ -462,35 +440,15 @@ async fn handle_notification_initialized(_params: Option<Value>) {
 /// - `params`: Cancellation parameters containing request ID and optional reason
 /// - `active_requests`: Request management for sending cancellation signals
 async fn handle_notification_cancelled(params: Option<Value>, active_requests: &ActiveRequests) {
-    eprintln!("DEBUG: Received cancellation notification");
     if let Some(params) = params {
-        eprintln!("DEBUG: Cancellation params: {:?}", params);
         if let Ok(cancelled_params) = serde_json::from_value::<CancelledParams>(params) {
-            eprintln!(
-                "DEBUG: Parsed cancellation for request ID: {}",
-                cancelled_params.request_id
-            );
             let cancelled = active_requests
                 .cancel(
                     &cancelled_params.request_id,
                     cancelled_params.reason.clone(),
                 )
                 .await;
-            if cancelled {
-                eprintln!(
-                    "DEBUG: Successfully sent cancellation signal for request: {}",
-                    cancelled_params.request_id
-                );
-            } else {
-                eprintln!(
-                    "Warning: Received cancellation for unknown request ID: {}",
-                    cancelled_params.request_id
-                );
-            }
-        } else {
-            eprintln!("DEBUG: Failed to parse cancellation params");
+            let _ = cancelled;
         }
-    } else {
-        eprintln!("DEBUG: No cancellation params provided");
     }
 }

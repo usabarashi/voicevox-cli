@@ -104,18 +104,11 @@ impl ActiveRequests {
         let mut channels = self.abort_channels.lock().await;
         let count = channels.len();
 
-        eprintln!(
-            "DEBUG: Cancelling {} active requests due to: {}",
-            count, reason
-        );
-
         // Send cancellation signal to all active requests
-        for (request_id, sender) in channels.drain() {
-            eprintln!("DEBUG: Cancelling request: {}", request_id);
+        for (_request_id, sender) in channels.drain() {
             let _ = sender.send(reason.to_string());
         }
 
-        eprintln!("DEBUG: Cancelled {} requests", count);
         count
     }
 

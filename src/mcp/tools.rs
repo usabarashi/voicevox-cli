@@ -213,33 +213,37 @@ async fn handle_streaming_synthesis_cancellable(
 ) -> Result<ToolCallResult> {
     let stream = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to create audio output stream")?;
-
     let sink = Arc::new(Sink::connect_new(stream.mixer()));
 
     let mut synthesizer = StreamingSynthesizer::new()
         .await
         .context("Failed to create streaming synthesizer")?;
 
-    synthesizer
-        .synthesize_streaming(&params.text, params.style_id, params.rate, &sink)
-        .await
-        .context("Streaming synthesis failed")?;
+    let text = params.text.clone();
+    let sink_clone = Arc::clone(&sink);
 
-    // Cancellable playback with timeout protection
-    const AUDIO_TIMEOUT_SECONDS: u64 = 30;
+    let synthesis_and_playback_fut = async move {
+        synthesizer
+            .synthesize_streaming(&text, params.style_id, params.rate, &sink_clone)
+            .await
+            .context("Streaming synthesis failed")?;
+
+        let res: Result<(), tokio::task::JoinError> = tokio::task::spawn_blocking(move || {
+            sink_clone.sleep_until_end();
+        })
+        .await;
+        res.context("Audio playback task failed")?;
+        Ok(()) as Result<()>
+    };
 
     if let Some(mut cancel_rx) = cancel_rx {
-        let sink_clone = Arc::clone(&sink);
+        tokio::pin!(synthesis_and_playback_fut);
         tokio::select! {
-            result = tokio::task::spawn_blocking(move || {
-                sink_clone.sleep_until_end();
-            }) => {
-                result.context("Audio playback task failed")?;
+            res = &mut synthesis_and_playback_fut => {
+                res?;
             }
             reason = &mut cancel_rx => {
-                // Cancel received, stop audio by dropping sink
-                drop(sink);
-                drop(stream);
+                sink.stop();
                 return Ok(ToolCallResult {
                     content: vec![ToolContent {
                         content_type: "text".to_string(),
@@ -248,41 +252,10 @@ async fn handle_streaming_synthesis_cancellable(
                     is_error: Some(false),
                 });
             }
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(AUDIO_TIMEOUT_SECONDS)) => {
-                drop(sink);
-                drop(stream);
-                return Ok(ToolCallResult {
-                    content: vec![ToolContent {
-                        content_type: "text".to_string(),
-                        text: format!("Audio playback timed out after {} seconds (safety limit)", AUDIO_TIMEOUT_SECONDS),
-                    }],
-                    is_error: Some(false),
-                });
-            }
         }
     } else {
-        let sink_clone = Arc::clone(&sink);
-        tokio::select! {
-            result = tokio::task::spawn_blocking(move || {
-                sink_clone.sleep_until_end();
-            }) => {
-                result.context("Audio playback task failed")?;
-            }
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(AUDIO_TIMEOUT_SECONDS)) => {
-                drop(sink);
-                drop(stream);
-                return Ok(ToolCallResult {
-                    content: vec![ToolContent {
-                        content_type: "text".to_string(),
-                        text: format!("Audio playback timed out after {} seconds (safety limit)", AUDIO_TIMEOUT_SECONDS),
-                    }],
-                    is_error: Some(false),
-                });
-            }
-        }
+        synthesis_and_playback_fut.await?;
     }
-
-    drop(stream);
 
     Ok(ToolCallResult {
         content: vec![ToolContent {

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
 
 use crate::mcp::protocol::{JsonRpcResponse, INVALID_REQUEST, PARSE_ERROR};
 use crate::mcp::requests::ActiveRequests;
@@ -11,7 +12,10 @@ pub async fn run_mcp_server() -> Result<()> {
     let reader = BufReader::new(stdin);
     let mut lines = reader.lines();
 
-    let active_requests = ActiveRequests::new();
+    // Create response channel for async tool execution
+    let (response_tx, mut response_rx) = mpsc::unbounded_channel::<JsonRpcResponse>();
+    let active_requests = ActiveRequests::new(response_tx);
+
     let mut shutdown = tokio::spawn(async {
         let _ = tokio::signal::ctrl_c().await;
     });
@@ -22,6 +26,9 @@ pub async fn run_mcp_server() -> Result<()> {
                 if !process_line(line_result?, &active_requests, &mut stdout).await {
                     break;
                 }
+            }
+            Some(response) = response_rx.recv() => {
+                send_response(&response, &mut stdout).await;
             }
             _ = &mut shutdown => break,
         }

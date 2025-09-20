@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
@@ -213,7 +214,7 @@ async fn handle_streaming_synthesis_cancellable(
     let stream = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to create audio output stream")?;
 
-    let sink = Sink::connect_new(stream.mixer());
+    let sink = Arc::new(Sink::connect_new(stream.mixer()));
 
     let mut synthesizer = StreamingSynthesizer::new()
         .await
@@ -226,10 +227,13 @@ async fn handle_streaming_synthesis_cancellable(
 
     // Cancellable playback
     if let Some(mut cancel_rx) = cancel_rx {
+        let sink_clone = Arc::clone(&sink);
         tokio::select! {
-            _ = async { sink.sleep_until_end(); } => { }
+            result = tokio::task::spawn_blocking(move || { sink_clone.sleep_until_end(); }) => {
+                result.context("Audio playback task failed")?;
+            }
             reason = &mut cancel_rx => {
-                // Cancel received, drop sink to stop audio
+                // Cancel received, stop audio by dropping sink
                 drop(sink);
                 drop(stream);
                 return Ok(ToolCallResult {
@@ -242,7 +246,12 @@ async fn handle_streaming_synthesis_cancellable(
             }
         }
     } else {
-        sink.sleep_until_end();
+        let sink_clone = Arc::clone(&sink);
+        tokio::task::spawn_blocking(move || {
+            sink_clone.sleep_until_end();
+        })
+        .await
+        .context("Audio playback task failed")?;
     }
 
     drop(stream);

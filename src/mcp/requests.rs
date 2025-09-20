@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::mcp::protocol::{JsonRpcResponse, INTERNAL_ERROR};
 use crate::mcp::tools::{self, ToolCallResult, ToolContent};
@@ -25,18 +25,14 @@ use crate::mcp::tools::{self, ToolCallResult, ToolContent};
 #[derive(Debug, Clone)]
 pub struct ActiveRequests {
     abort_channels: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
-}
-
-impl Default for ActiveRequests {
-    fn default() -> Self {
-        Self::new()
-    }
+    response_sender: mpsc::UnboundedSender<JsonRpcResponse>,
 }
 
 impl ActiveRequests {
-    pub fn new() -> Self {
+    pub fn new(response_sender: mpsc::UnboundedSender<JsonRpcResponse>) -> Self {
         Self {
             abort_channels: Arc::new(Mutex::new(HashMap::new())),
+            response_sender,
         }
     }
 
@@ -161,10 +157,8 @@ impl ActiveRequests {
                     }
                 };
 
-                // Send response to stdout
-                if let Ok(response_str) = serde_json::to_string(&response) {
-                    println!("{}", response_str);
-                }
+                // Send response via channel
+                let _ = active_requests.response_sender.send(response);
             })
         });
     }

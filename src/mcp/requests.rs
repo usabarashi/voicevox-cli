@@ -87,6 +87,38 @@ impl ActiveRequests {
         self.abort_channels.lock().await.remove(request_id);
     }
 
+    /// Cancel all active requests with the provided reason.
+    ///
+    /// This method is called when the MCP client disconnects or the server
+    /// is shutting down. It iterates through all active requests and sends
+    /// cancellation signals to prevent orphaned audio playback processes.
+    ///
+    /// ## Parameters
+    ///
+    /// - `reason`: Human-readable reason for mass cancellation
+    ///
+    /// ## Returns
+    ///
+    /// The number of requests that were cancelled
+    pub async fn cancel_all_requests(&self, reason: &str) -> usize {
+        let mut channels = self.abort_channels.lock().await;
+        let count = channels.len();
+
+        eprintln!(
+            "DEBUG: Cancelling {} active requests due to: {}",
+            count, reason
+        );
+
+        // Send cancellation signal to all active requests
+        for (request_id, sender) in channels.drain() {
+            eprintln!("DEBUG: Cancelling request: {}", request_id);
+            let _ = sender.send(reason.to_string());
+        }
+
+        eprintln!("DEBUG: Cancelled {} requests", count);
+        count
+    }
+
     /// Spawns an asynchronous execution for the requested MCP tool call with cancellation support.
     ///
     /// Creates a oneshot channel for cancellation signaling, registers the request

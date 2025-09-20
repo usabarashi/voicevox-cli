@@ -24,16 +24,24 @@ pub async fn run_mcp_server() -> Result<()> {
         tokio::select! {
             line_result = lines.next_line() => {
                 if !process_line(line_result?, &active_requests, &mut stdout).await {
+                    eprintln!("DEBUG: Client disconnected, cancelling all active requests");
+                    // Cancel all active requests when client disconnects
+                    active_requests.cancel_all_requests("Client disconnected").await;
                     break;
                 }
             }
             Some(response) = response_rx.recv() => {
                 send_response(&response, &mut stdout).await;
             }
-            _ = &mut shutdown => break,
+            _ = &mut shutdown => {
+                eprintln!("DEBUG: Shutdown signal received, cancelling all active requests");
+                active_requests.cancel_all_requests("Server shutdown").await;
+                break;
+            }
         }
     }
 
+    eprintln!("DEBUG: MCP server shutting down");
     Ok(())
 }
 

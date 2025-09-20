@@ -227,15 +227,23 @@ async fn handle_streaming_synthesis_cancellable(
 
     // Cancellable playback
     if let Some(mut cancel_rx) = cancel_rx {
+        eprintln!("DEBUG: Starting cancellable audio playback");
         let sink_clone = Arc::clone(&sink);
         tokio::select! {
-            result = tokio::task::spawn_blocking(move || { sink_clone.sleep_until_end(); }) => {
+            result = tokio::task::spawn_blocking(move || {
+                eprintln!("DEBUG: Audio playback starting");
+                sink_clone.sleep_until_end();
+                eprintln!("DEBUG: Audio playback completed normally");
+            }) => {
                 result.context("Audio playback task failed")?;
+                eprintln!("DEBUG: Audio playback task finished successfully");
             }
             reason = &mut cancel_rx => {
+                eprintln!("DEBUG: Cancellation signal received: {:?}", reason);
                 // Cancel received, stop audio by dropping sink
                 drop(sink);
                 drop(stream);
+                eprintln!("DEBUG: Audio resources dropped, returning cancellation result");
                 return Ok(ToolCallResult {
                     content: vec![ToolContent {
                         content_type: "text".to_string(),

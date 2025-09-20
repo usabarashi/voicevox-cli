@@ -462,17 +462,35 @@ async fn handle_notification_initialized(_params: Option<Value>) {
 /// - `params`: Cancellation parameters containing request ID and optional reason
 /// - `active_requests`: Request management for sending cancellation signals
 async fn handle_notification_cancelled(params: Option<Value>, active_requests: &ActiveRequests) {
+    eprintln!("DEBUG: Received cancellation notification");
     if let Some(params) = params {
+        eprintln!("DEBUG: Cancellation params: {:?}", params);
         if let Ok(cancelled_params) = serde_json::from_value::<CancelledParams>(params) {
+            eprintln!(
+                "DEBUG: Parsed cancellation for request ID: {}",
+                cancelled_params.request_id
+            );
             let cancelled = active_requests
-                .cancel(&cancelled_params.request_id, cancelled_params.reason)
+                .cancel(
+                    &cancelled_params.request_id,
+                    cancelled_params.reason.clone(),
+                )
                 .await;
-            if !cancelled {
+            if cancelled {
+                eprintln!(
+                    "DEBUG: Successfully sent cancellation signal for request: {}",
+                    cancelled_params.request_id
+                );
+            } else {
                 eprintln!(
                     "Warning: Received cancellation for unknown request ID: {}",
                     cancelled_params.request_id
                 );
             }
+        } else {
+            eprintln!("DEBUG: Failed to parse cancellation params");
         }
+    } else {
+        eprintln!("DEBUG: No cancellation params provided");
     }
 }

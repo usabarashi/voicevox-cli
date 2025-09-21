@@ -5,7 +5,10 @@ use serde_json::{json, Value};
 use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
-use crate::client::{audio::{create_temp_wav_file, play_audio_from_memory}, DaemonClient};
+use crate::client::{
+    audio::{create_temp_wav_file, play_audio_from_memory},
+    DaemonClient,
+};
 use crate::synthesis::StreamingSynthesizer;
 
 // Tool Definition Types
@@ -367,24 +370,26 @@ async fn play_low_latency_with_cancel(
     sink.append(source);
     sink.play();
 
-    let sink_clone = Arc::clone(&sink);
-
-    let mut playback_task = tokio::task::spawn_blocking(move || -> Result<()> {
-        sink_clone.sleep_until_end();
-        drop(sink_clone);
-        drop(stream);
-        Ok(())
+    let playback_task = tokio::task::spawn_blocking({
+        let sink_for_task = Arc::clone(&sink);
+        move || -> Result<()> {
+            sink_for_task.sleep_until_end();
+            Ok(())
+        }
     });
+    tokio::pin!(playback_task);
 
     tokio::select! {
         res = &mut playback_task => {
             res.context("Audio playback task failed")??;
+            drop(stream);
             Ok(PlaybackOutcome::Completed)
         }
         reason = cancel_rx => {
             let reason = reason.unwrap_or_default();
             sink.stop();
             let _ = playback_task.await;
+            drop(stream);
             Ok(PlaybackOutcome::Cancelled(reason))
         }
     }
@@ -406,7 +411,9 @@ async fn play_system_player_with_cancel(
         return Ok(outcome);
     }
 
-    Err(anyhow!("No audio player found. Install sox or use -o to save file"))
+    Err(anyhow!(
+        "No audio player found. Install sox or use -o to save file"
+    ))
 }
 async fn run_player_with_cancel(
     command: &str,
@@ -435,7 +442,6 @@ async fn run_player_with_cancel(
         }
     }
 }
-
 
 pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult> {
     let params: ListVoiceStylesParams =

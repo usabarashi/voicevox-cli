@@ -144,12 +144,11 @@ impl ActiveRequests {
         let tool_name = tool_name.to_string();
         let active_requests = self.clone();
 
+        let runtime_handle = tokio::runtime::Handle::current();
+
         tokio::task::spawn_blocking(move || {
             // Use current runtime handle instead of creating a new one
-            let handle =
-                tokio::runtime::Handle::try_current().expect("Cannot access Tokio runtime handle");
-
-            handle.block_on(async move {
+            runtime_handle.block_on(async move {
                 let result =
                     tools::execute_tool_request(&tool_name, arguments, Some(abort_rx)).await;
 

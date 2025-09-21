@@ -2,10 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
-use crate::client::{audio::play_audio_from_memory, DaemonClient};
+use crate::client::{audio::{create_temp_wav_file, play_audio_from_memory}, DaemonClient};
 use crate::synthesis::StreamingSynthesizer;
 
 // Tool Definition Types
@@ -203,7 +203,7 @@ pub async fn handle_text_to_speech_cancellable(
     if params.streaming {
         handle_streaming_synthesis_cancellable(params, cancel_rx).await
     } else {
-        handle_daemon_synthesis(params).await
+        handle_daemon_synthesis(params, cancel_rx).await
     }
 }
 
@@ -244,12 +244,18 @@ async fn handle_streaming_synthesis_cancellable(
             }
             reason = &mut cancel_rx => {
                 sink.stop();
+                let detail = reason.unwrap_or_default();
+                let message = if detail.is_empty() {
+                    "Audio playback cancelled by client".to_string()
+                } else {
+                    format!("Audio playback cancelled: {detail}")
+                };
                 return Ok(ToolCallResult {
                     content: vec![ToolContent {
                         content_type: "text".to_string(),
-                        text: format!("Audio playback cancelled: {}", reason.unwrap_or_default()),
+                        text: message,
                     }],
-                    is_error: Some(false),
+                    is_error: Some(true),
                 });
             }
         }
@@ -270,7 +276,10 @@ async fn handle_streaming_synthesis_cancellable(
     })
 }
 
-async fn handle_daemon_synthesis(params: SynthesizeParams) -> Result<ToolCallResult> {
+async fn handle_daemon_synthesis(
+    params: SynthesizeParams,
+    cancel_rx: Option<oneshot::Receiver<String>>,
+) -> Result<ToolCallResult> {
     // Try to connect with retries
     let mut client = match DaemonClient::connect_with_retry().await {
         Ok(client) => client,
@@ -292,21 +301,141 @@ async fn handle_daemon_synthesis(params: SynthesizeParams) -> Result<ToolCallRes
         .await
         .context("Synthesis failed")?;
 
-    play_audio_from_memory(&wav_data).context("Failed to play audio")?;
+    let audio_size = wav_data.len();
+    let text_len = params.text.len();
+    let style_id = params.style_id;
 
-    Ok(ToolCallResult {
-        content: vec![ToolContent {
-            content_type: "text".to_string(),
-            text: format!(
-                "Successfully synthesized {} characters using style ID {} (audio size: {} bytes)",
-                params.text.len(),
-                params.style_id,
-                wav_data.len()
-            ),
-        }],
-        is_error: Some(false),
-    })
+    match play_daemon_audio_with_cancellation(wav_data, cancel_rx).await? {
+        PlaybackOutcome::Completed => Ok(ToolCallResult {
+            content: vec![ToolContent {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Successfully synthesized {text_len} characters using style ID {style_id} (audio size: {audio_size} bytes)"
+                ),
+            }],
+            is_error: Some(false),
+        }),
+        PlaybackOutcome::Cancelled(reason) => {
+            let message = if reason.is_empty() {
+                "Audio playback cancelled by client".to_string()
+            } else {
+                format!("Audio playback cancelled: {reason}")
+            };
+
+            Ok(ToolCallResult {
+                content: vec![ToolContent {
+                    content_type: "text".to_string(),
+                    text: message,
+                }],
+                is_error: Some(true),
+            })
+        }
+    }
 }
+
+enum PlaybackOutcome {
+    Completed,
+    Cancelled(String),
+}
+
+async fn play_daemon_audio_with_cancellation(
+    wav_data: Vec<u8>,
+    cancel_rx: Option<oneshot::Receiver<String>>,
+) -> Result<PlaybackOutcome> {
+    if let Some(mut cancel_rx) = cancel_rx {
+        if env::var("VOICEVOX_LOW_LATENCY").is_ok() {
+            play_low_latency_with_cancel(wav_data, &mut cancel_rx).await
+        } else {
+            play_system_player_with_cancel(&wav_data, &mut cancel_rx).await
+        }
+    } else {
+        play_audio_from_memory(&wav_data).context("Failed to play audio")?;
+        Ok(PlaybackOutcome::Completed)
+    }
+}
+
+async fn play_low_latency_with_cancel(
+    wav_data: Vec<u8>,
+    cancel_rx: &mut oneshot::Receiver<String>,
+) -> Result<PlaybackOutcome> {
+    let stream = rodio::OutputStreamBuilder::open_default_stream()
+        .context("Failed to create audio output stream")?;
+    let sink = Arc::new(Sink::connect_new(stream.mixer()));
+
+    let cursor = std::io::Cursor::new(wav_data);
+    let source = rodio::Decoder::new(cursor).context("Failed to decode audio")?;
+    sink.append(source);
+    sink.play();
+
+    let sink_clone = Arc::clone(&sink);
+
+    let mut playback_task = tokio::task::spawn_blocking(move || -> Result<()> {
+        sink_clone.sleep_until_end();
+        drop(sink_clone);
+        drop(stream);
+        Ok(())
+    });
+
+    tokio::select! {
+        res = &mut playback_task => {
+            res.context("Audio playback task failed")??;
+            Ok(PlaybackOutcome::Completed)
+        }
+        reason = cancel_rx => {
+            let reason = reason.unwrap_or_default();
+            sink.stop();
+            let _ = playback_task.await;
+            Ok(PlaybackOutcome::Cancelled(reason))
+        }
+    }
+}
+
+async fn play_system_player_with_cancel(
+    wav_data: &[u8],
+    cancel_rx: &mut oneshot::Receiver<String>,
+) -> Result<PlaybackOutcome> {
+    // Hold the temp file open so external players can read it.
+    let temp_file = create_temp_wav_file(wav_data)?;
+    let temp_path = temp_file.path().to_owned();
+
+    if let Some(outcome) = run_player_with_cancel("afplay", &temp_path, cancel_rx).await? {
+        return Ok(outcome);
+    }
+
+    if let Some(outcome) = run_player_with_cancel("play", &temp_path, cancel_rx).await? {
+        return Ok(outcome);
+    }
+
+    Err(anyhow!("No audio player found. Install sox or use -o to save file"))
+}
+async fn run_player_with_cancel(
+    command: &str,
+    temp_path: &Path,
+    cancel_rx: &mut oneshot::Receiver<String>,
+) -> Result<Option<PlaybackOutcome>> {
+    let mut child = match tokio::process::Command::new(command).arg(temp_path).spawn() {
+        Ok(child) => child,
+        Err(_) => return Ok(None),
+    };
+
+    tokio::select! {
+        status = child.wait() => {
+            let status = status.with_context(|| format!("Failed to wait for {command}"))?;
+            if status.success() {
+                Ok(Some(PlaybackOutcome::Completed))
+            } else {
+                Ok(None)
+            }
+        }
+        reason = cancel_rx => {
+            let reason = reason.unwrap_or_default();
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            Ok(Some(PlaybackOutcome::Cancelled(reason)))
+        }
+    }
+}
+
 
 pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult> {
     let params: ListVoiceStylesParams =

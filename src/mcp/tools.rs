@@ -364,6 +364,7 @@ async fn play_low_latency_with_cancel(
     let stream = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to create audio output stream")?;
     let sink = Arc::new(Sink::connect_new(stream.mixer()));
+    let _stream_guard = stream;
 
     let cursor = std::io::Cursor::new(wav_data);
     let source = rodio::Decoder::new(cursor).context("Failed to decode audio")?;
@@ -382,14 +383,12 @@ async fn play_low_latency_with_cancel(
     tokio::select! {
         res = &mut playback_task => {
             res.context("Audio playback task failed")??;
-            drop(stream);
             Ok(PlaybackOutcome::Completed)
         }
         reason = cancel_rx => {
             let reason = reason.unwrap_or_default();
             sink.stop();
             let _ = playback_task.await;
-            drop(stream);
             Ok(PlaybackOutcome::Cancelled(reason))
         }
     }

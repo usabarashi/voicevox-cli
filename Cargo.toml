@@ -32,7 +32,7 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 bincode = { version = "2.0", features = ["serde"] }
 dirs = "6.0"
-tempfile = "3.10"
+tempfile = "3.23"
 
 # MCP Server dependencies
 jsonrpc-lite = "0.6"

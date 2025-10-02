@@ -9,7 +9,6 @@ pub mod daemon;
 pub mod ipc;
 pub mod mcp;
 pub mod paths;
-pub mod setup;
 pub mod synthesis;
 pub mod voice;
 

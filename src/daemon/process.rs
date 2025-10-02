@@ -18,10 +18,7 @@ async fn handle_existing_socket(socket_path: &PathBuf) -> DaemonResult<()> {
         Ok(_) => {
             let pid = match find_daemon_processes() {
                 Ok(pids) => pids.first().copied().unwrap_or(0),
-                Err(e) => {
-                    eprintln!("Warning: Failed to find daemon processes: {}", e);
-                    0
-                }
+                Err(_) => 0,
             };
             Err(DaemonError::AlreadyRunning { pid })
         }

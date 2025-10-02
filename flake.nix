@@ -1,22 +1,5 @@
 {
-  description = ''
-    VOICEVOX CLI for Apple Silicon Macs - Dynamic voice detection system
-
-    Zero-configuration Japanese text-to-speech with automatic voice model discovery.
-    Supports 26+ voice characters with dynamic detection and daemon-client architecture.
-
-    Platform: Apple Silicon (aarch64-darwin) only
-
-    License Information:
-    - CLI Tool: MIT License + Apache License 2.0
-    - VOICEVOX Core: MIT License (https://github.com/VOICEVOX/voicevox_core/blob/main/LICENSE)
-    - ONNX Runtime: MIT License (https://github.com/microsoft/onnxruntime/blob/main/LICENSE)
-
-    Usage Requirements:
-    - Credit VOICEVOX when using generated audio
-    - Follow individual voice library terms
-    - See official repositories for complete license details
-  '';
+  description = "VOICEVOX CLI";
 
   nixConfig = {
     substituters = [
@@ -41,7 +24,7 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     fenix = {
       url = "github:nix-community/fenix";
@@ -69,7 +52,6 @@
           url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/download-osx-arm64";
           sha256 = "sha256-OL5Hpyd0Mc+77PzUhtIIFmHjRQqLVaiITuHICg1QBJU=";
         };
-
 
         # Simple resources for voicevox-download binary
         voicevoxResources = pkgs.stdenv.mkDerivation {
@@ -139,6 +121,7 @@
           nativeBuildInputs = with pkgs; [
             # Use fenix-provided rust toolchain that matches rust-toolchain.toml
             rustToolchain.defaultToolchain
+            rustToolchain.rust-analyzer
 
             # Build tools
             pkg-config
@@ -155,7 +138,7 @@
             cacert
           ];
 
-          buildInputs = [];
+          buildInputs = [ ];
 
           # Build-time environment variables
           preBuild = ''
@@ -173,143 +156,18 @@
           postInstall = ''
             # Install download utility
             cp ${voicevoxResources}/bin/voicevox-download $out/bin/
-            
-            # Install setup script (renamed from voicevox-setup-models.sh)
+
+            # Install setup script
             install -m755 ${./scripts/voicevox-setup.sh} $out/bin/voicevox-setup
-            
-            # Install INSTRUCTIONS.md for MCP server
-            install -m644 ${./INSTRUCTIONS.md} $out/bin/INSTRUCTIONS.md
-            
+
+            # Install VOICEVOX.md for MCP server
+            install -m644 ${./VOICEVOX.md} $out/bin/VOICEVOX.md
+
             # Note: All resources (ONNX, dict, models) will be downloaded at runtime
           '';
 
           meta = packageMeta;
         };
-
-        licenseAcceptor = pkgs.runCommand "voicevox-auto-setup" { } ''
-          mkdir -p $out/bin
-          substitute ${./scripts/voicevox-auto-setup.sh} $out/bin/voicevox-auto-setup \
-            --replace "@@BASH_PATH@@" "${pkgs.bash}/bin/bash" \
-            --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
-            --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
-          chmod +x $out/bin/voicevox-auto-setup
-        '';
-
-        # Common Serena environment setup script
-        serenaEnvSetup = ''
-          # Get the directory where this script is invoked from
-          PROJECT_DIR="$(pwd)"
-
-          # Create fake home directory structure in project
-          export HOME="$PROJECT_DIR/.project-home"
-          export XDG_DATA_HOME="$HOME/.local/share"
-          export XDG_CACHE_HOME="$HOME/.cache"
-          export UV_CACHE_DIR="$HOME/.cache/uv"
-          export UV_TOOL_DIR="$HOME/.local/uv/tools"
-          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
-
-          # Create necessary directories
-          mkdir -p "$HOME/.serena/logs"
-          mkdir -p "$XDG_DATA_HOME/uv"
-          mkdir -p "$XDG_CACHE_HOME"
-        '';
-
-        # Serena index creation wrapper
-        serenaIndexWrapper = pkgs.writeShellScriptBin "serena-index" ''
-          ${serenaEnvSetup}
-
-          echo "Creating Serena index for project..."
-          echo "HOME: $HOME"
-          echo "Project: $PROJECT_DIR"
-
-          # Run serena index command with all paths pointing to project directory
-          exec ${pkgs.uv}/bin/uvx \
-              --cache-dir "$UV_CACHE_DIR" \
-              --from git+https://github.com/oraios/serena \
-              serena project index
-        '';
-
-        # Serena MCP server wrapper with project-local paths
-        serenaMcpWrapper = pkgs.writeShellScriptBin "serena-mcp-wrapper" ''
-          ${serenaEnvSetup}
-
-          echo "Starting Serena MCP server with project-local paths..."
-          echo "HOME: $HOME"
-          echo "Project: $PROJECT_DIR"
-
-          # Run serena with all paths pointing to project directory
-          exec ${pkgs.uv}/bin/uvx \
-              --cache-dir "$UV_CACHE_DIR" \
-              --from git+https://github.com/oraios/serena \
-              serena start-mcp-server \
-              --context ide-assistant \
-              --enable-web-dashboard false \
-              --project "$PROJECT_DIR"
-        '';
-
-        # Helper function to run uvx with Serena
-        runSerenaCommand = ''
-          exec ${pkgs.uv}/bin/uvx \
-              --cache-dir "$UV_CACHE_DIR" \
-              --from git+https://github.com/oraios/serena \
-              serena "$@"
-        '';
-
-        # Serena memory management wrapper
-        serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
-          set -euo pipefail
-
-          ${serenaEnvSetup}
-
-          # Handle memory commands
-          case "''${1:-}" in
-            write)
-              if [ "$#" -lt 3 ]; then
-                echo "Error: write command requires at least 2 arguments" >&2
-                echo "Usage: serena-memory write <memory-name> <content>" >&2
-                exit 1
-              fi
-              MEMORY_NAME="$2"
-              echo "Writing memory: $MEMORY_NAME"
-              # Shift twice to get all remaining args as content
-              shift 2
-              ${runSerenaCommand} memory write "$MEMORY_NAME" "$*"
-              ;;
-            read)
-              if [ "$#" -lt 2 ]; then
-                echo "Error: read command requires 1 argument" >&2
-                echo "Usage: serena-memory read <memory-name>" >&2
-                exit 1
-              fi
-              ${runSerenaCommand} memory read "$2"
-              ;;
-            list)
-              ${runSerenaCommand} memory list
-              ;;
-            delete)
-              if [ "$#" -lt 2 ]; then
-                echo "Error: delete command requires 1 argument" >&2
-                echo "Usage: serena-memory delete <memory-name>" >&2
-                exit 1
-              fi
-              echo "Deleting memory: $2"
-              ${runSerenaCommand} memory delete "$2"
-              ;;
-            *)
-              echo "Serena Memory Management"
-              echo ""
-              echo "Usage:"
-              echo "  serena-memory write <name> <content>  - Save a memory"
-              echo "  serena-memory read <name>             - Read a memory"
-              echo "  serena-memory list                    - List all memories"
-              echo "  serena-memory delete <name>           - Delete a memory"
-              echo ""
-              echo "Example:"
-              echo "  serena-memory write architecture 'This project uses daemon-client model'"
-              exit 1
-              ;;
-          esac
-        '';
 
       in
       {
@@ -357,36 +215,17 @@
           buildInputs = with pkgs; [
             # Use fenix-provided rust toolchain that matches rust-toolchain.toml
             rustToolchain.defaultToolchain
+            rustToolchain.rust-analyzer
             cargo-audit
 
             # Build tools
-            pkg-config
             cmake
+            pkg-config
 
-            # MCP
+            # for MCP
+            nixd
             uv
-            serenaIndexWrapper
-            serenaMcpWrapper
-            serenaMemoryWrapper
           ];
-
-          shellHook = ''
-            # Create project-home directory for CARGO_HOME
-            mkdir -p .project-home
-
-            echo "VOICEVOX CLI Development Environment (Apple Silicon)"
-            echo "Available commands:"
-            echo "  cargo build --bin voicevox-say     - Build client"
-            echo "  cargo build --bin voicevox-daemon  - Build daemon"
-            echo "  cargo run --bin voicevox-say       - Run client"
-            echo "  nix build                          - Build with Nix"
-            echo "  nix run                            - Run voicevox-say directly"
-            echo "  serena-index                       - Create Serena index for the project"
-            echo "  serena-mcp-wrapper                 - Start Serena MCP server"
-            echo "  serena-memory                      - Manage project memories"
-            echo ""
-            echo "Dynamic voice detection system - no hardcoded voice names"
-          '';
         };
 
         lib = {
@@ -397,26 +236,11 @@
       }
     )
     // {
-      # Example usage for other projects:
-      # {
-      #   inputs.voicevox-cli.url = "github:usabarashi/voicevox-cli";
-      #
-      #   # In your system or home-manager configuration:
-      #   environment.systemPackages = [
-      #     voicevox-cli.packages.aarch64-darwin.default
-      #   ];
-      # }
-
       overlays.default = final: prev: {
         voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;
       };
 
       overlays.voicevox-cli = self.overlays.default;
-
-      # Project metadata (not a standard flake output)
-      # This information is available via:
-      # - Individual package meta attributes
-      # - README.md and LICENSE files
     };
 }

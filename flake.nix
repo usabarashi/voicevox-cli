@@ -219,13 +219,28 @@
             cargo-audit
 
             # Build tools
-            cmake
             pkg-config
+            cmake
 
-            # for MCP
-            nixd
+            # UV for Python package management (for Serena MCP)
             uv
           ];
+
+          shellHook = ''
+            # Create project-home directory for CARGO_HOME
+            mkdir -p .project-home
+
+            echo "VOICEVOX CLI Development Environment (Apple Silicon)"
+            echo "Available commands:"
+            echo "  cargo build --bin voicevox-say     - Build client"
+            echo "  cargo build --bin voicevox-daemon  - Build daemon"
+            echo "  cargo run --bin voicevox-say       - Run client"
+            echo "  nix build                          - Build with Nix"
+            echo "  nix run                            - Run voicevox-say directly"
+            echo ""
+            echo "Dynamic voice detection system - no hardcoded voice names"
+            echo "MCP servers are configured in .mcp.json"
+          '';
         };
 
         lib = {
@@ -236,11 +251,26 @@
       }
     )
     // {
+      # Example usage for other projects:
+      # {
+      #   inputs.voicevox-cli.url = "github:usabarashi/voicevox-cli";
+      #
+      #   # In your system or home-manager configuration:
+      #   environment.systemPackages = [
+      #     voicevox-cli.packages.aarch64-darwin.default
+      #   ];
+      # }
+
       overlays.default = final: prev: {
         voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;
       };
 
       overlays.voicevox-cli = self.overlays.default;
+
+      # Project metadata (not a standard flake output)
+      # This information is available via:
+      # - Individual package meta attributes
+      # - README.md and LICENSE files
     };
 }

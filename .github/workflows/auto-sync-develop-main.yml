@@ -30,8 +30,7 @@ jobs:
             const compare = await github.rest.repos.compareCommitsWithBasehead({
               owner,
               repo,
-              base,
-              head
+              basehead: `${base}...${head}`
             });
 
             if (!compare.data.commits.length) {
@@ -63,7 +62,7 @@ jobs:
             }
 
             const mergedPrs = Array.from(prMap.values())
-              .sort((a, b) => a.merged_at.localeCompare(b.merged_at));
+              .sort((a, b) => new Date(a.merged_at) - new Date(b.merged_at));
 
             const lines = mergedPrs.length
               ? mergedPrs.map(pr => `- [#${pr.number}](${pr.url}) ${pr.title} (merged ${pr.merged_at.slice(0, 10)})`)

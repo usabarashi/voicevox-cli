@@ -30,8 +30,7 @@ jobs:
             const compare = await github.rest.repos.compareCommitsWithBasehead({
               owner,
               repo,
-              base,
-              head
+              basehead: `${base}...${head}`
             });
 
             if (!compare.data.commits.length) {

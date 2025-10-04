@@ -23,24 +23,11 @@ impl DaemonState {
         let core = VoicevoxCore::new()?;
         let style_to_model_map = Arc::new(Mutex::new(HashMap::new()));
 
-        println!("Building dynamic style-to-model mapping...");
         let (mapping, speakers, models) =
-            crate::voice::build_style_to_model_map_async_with_progress(
-                &core,
-                |current, total, filename| {
-                    println!("  Loading model {} ({}/{})", filename, current, total);
-                },
-            )
-            .await?;
+            crate::voice::build_style_to_model_map_async_with_progress(&core, |_, _, _| {}).await?;
         *style_to_model_map.lock().await = mapping;
         let all_speakers = Arc::new(Mutex::new(speakers));
         let available_models = Arc::new(Mutex::new(models));
-        println!(
-            "Discovered {} style mappings",
-            style_to_model_map.lock().await.len()
-        );
-
-        println!("Models will be loaded and unloaded per synthesis request.");
 
         Ok(DaemonState {
             core,
@@ -80,8 +67,6 @@ impl DaemonState {
                     };
                 }
 
-                println!("Loaded model {model_id} for synthesis");
-
                 let synthesis_result = self.core.synthesize(&text, style_id);
                 let available_models = self.available_models.lock().await;
                 if let Some(model) = available_models.iter().find(|m| m.model_id == model_id) {
@@ -98,7 +83,7 @@ impl DaemonState {
                         }
                     };
                     match self.core.unload_voice_model_by_path(path_str) {
-                        Ok(_) => println!("Unloaded model {model_id} after synthesis"),
+                        Ok(_) => {}
                         Err(e) => eprintln!("Failed to unload model {model_id}: {e}"),
                     }
                 } else {
@@ -107,12 +92,9 @@ impl DaemonState {
 
                 match synthesis_result {
                     Ok(wav_data) => OwnedResponse::SynthesizeResult { wav_data },
-                    Err(e) => {
-                        eprintln!("Synthesis failed: {e}");
-                        OwnedResponse::Error {
-                            message: format!("Synthesis failed: {e}"),
-                        }
-                    }
+                    Err(e) => OwnedResponse::Error {
+                        message: format!("Synthesis failed: {e}"),
+                    },
                 }
             }
 
@@ -145,8 +127,7 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
                     bincode::config::standard(),
                 ) {
                     Ok((req, _)) => req,
-                    Err(e) => {
-                        println!("Failed to deserialize request: {e}");
+                    Err(_) => {
                         break;
                     }
                 },
@@ -165,13 +146,11 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
 
             match bincode::serde::encode_to_vec(&response, bincode::config::standard()) {
                 Ok(response_data) => {
-                    if let Err(e) = framed_writer.send(response_data.into()).await {
-                        println!("Failed to send response: {e}");
+                    if framed_writer.send(response_data.into()).await.is_err() {
                         break;
                     }
                 }
-                Err(e) => {
-                    println!("Failed to serialize response: {e}");
+                Err(_) => {
                     break;
                 }
             }
@@ -203,18 +182,11 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
 
     let server = async {
         loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    let state_clone = Arc::clone(&state);
-                    tokio::spawn(async move {
-                        if let Err(e) = handle_client(stream, state_clone).await {
-                            println!("Client handler error: {e}");
-                        }
-                    });
-                }
-                Err(e) => {
-                    println!("Failed to accept connection: {e}");
-                }
+            if let Ok((stream, _)) = listener.accept().await {
+                let state_clone = Arc::clone(&state);
+                tokio::spawn(async move {
+                    let _ = handle_client(stream, state_clone).await;
+                });
             }
         }
     };

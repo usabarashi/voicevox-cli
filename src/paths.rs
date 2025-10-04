@@ -270,17 +270,13 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                         }
                     }
                 } else {
-                    let expected_patterns = if cfg!(target_os = "macos") {
+                    let _expected_patterns = if cfg!(target_os = "macos") {
                         "libonnxruntime.dylib or libvoicevox_onnxruntime.*.dylib"
                     } else if cfg!(target_os = "linux") {
                         "libonnxruntime.so or libvoicevox_onnxruntime.*.so"
                     } else {
                         "onnxruntime.dll, libonnxruntime.dll, or libvoicevox_onnxruntime.*.dll"
                     };
-                    eprintln!(
-                        "Warning: ORT_DYLIB_PATH points to unexpected filename: {}. Expected: {}",
-                        filename_str, expected_patterns
-                    );
                 }
             }
         }

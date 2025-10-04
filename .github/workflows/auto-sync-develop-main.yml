@@ -17,11 +17,13 @@ jobs:
   create-sync-pr:
     name: Create or Update Sync PR
     runs-on: ubuntu-latest
+    env:
+      SYNC_PR_TOKEN: ${{ secrets.SYNC_PR_TOKEN }}
     steps:
       - name: Create or update PR from develop to main
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ env.SYNC_PR_TOKEN != '' && env.SYNC_PR_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const base = 'main';
             const head = 'develop';

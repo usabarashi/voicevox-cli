@@ -58,7 +58,6 @@ pub fn get_socket_path() -> PathBuf {
 
     let candidates = [
         (dirs::state_dir(), false),
-        (dirs::data_local_dir(), false),
         (Some(get_default_voicevox_dir()), true),
     ];
 

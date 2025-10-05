@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -162,7 +162,12 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
 
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "Failed to create socket parent directory: {}",
+                parent.display()
+            )
+        })?;
     }
 
     if socket_path.exists() {

@@ -27,22 +27,8 @@ pub fn get_default_voicevox_dir() -> PathBuf {
 }
 
 pub fn get_socket_path() -> PathBuf {
-    let env_socket_paths = [
-        ("VOICEVOX_SOCKET_PATH", ""),
-        ("XDG_RUNTIME_DIR", SOCKET_FILENAME),
-        ("XDG_STATE_HOME", SOCKET_FILENAME),
-        ("HOME", &format!(".local/state/{SOCKET_FILENAME}")),
-    ];
-
-    for (env_var, suffix) in &env_socket_paths {
-        if let Ok(value) = std::env::var(env_var) {
-            let path = PathBuf::from(&value);
-            return if suffix.is_empty() {
-                path
-            } else {
-                path.join(suffix)
-            };
-        }
+    if let Ok(path) = std::env::var("VOICEVOX_SOCKET_PATH") {
+        return PathBuf::from(path);
     }
 
     let make_candidate = |base_dir: &Path, app_name_in_base: bool| -> PathBuf {
@@ -55,6 +41,19 @@ pub fn get_socket_path() -> PathBuf {
                 .join(SOCKET_FILENAME)
         }
     };
+
+    if let Ok(xdg_runtime) = std::env::var("XDG_RUNTIME_DIR") {
+        return make_candidate(Path::new(&xdg_runtime), false);
+    }
+
+    if let Ok(xdg_state) = std::env::var("XDG_STATE_HOME") {
+        return make_candidate(Path::new(&xdg_state), false);
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let base = Path::new(&home).join(".local/state");
+        return make_candidate(&base, false);
+    }
 
     let candidates = [
         (dirs::state_dir(), false),

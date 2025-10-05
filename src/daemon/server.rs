@@ -34,6 +34,13 @@ fn check_dir_security(path: &Path, tighten: bool) -> Result<()> {
         ));
     }
 
+    if !metadata.file_type().is_dir() {
+        return Err(anyhow::anyhow!(
+            "Socket path component is not a directory: {}",
+            path.display()
+        ));
+    }
+
     let uid = unsafe { geteuid() } as u32;
     let gid = unsafe { getegid() } as u32;
     if metadata.uid() != uid || metadata.gid() != gid {

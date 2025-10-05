@@ -45,12 +45,37 @@ pub fn get_socket_path() -> PathBuf {
         }
     }
 
-    let fallback_dir = dirs::state_dir()
-        .map(|dir| dir.join(APP_NAME).join(RUNTIME_SUBDIR))
-        .or_else(|| dirs::data_local_dir().map(|dir| dir.join(APP_NAME).join(RUNTIME_SUBDIR)))
-        .unwrap_or_else(|| get_default_voicevox_dir().join(RUNTIME_SUBDIR));
+    if let Some(state_dir) = dirs::state_dir() {
+        let legacy_socket = state_dir.join(SOCKET_FILENAME);
+        if legacy_socket.exists() {
+            return legacy_socket;
+        }
 
-    fallback_dir.join(SOCKET_FILENAME)
+        return state_dir
+            .join(APP_NAME)
+            .join(RUNTIME_SUBDIR)
+            .join(SOCKET_FILENAME);
+    }
+
+    if let Some(data_dir) = dirs::data_local_dir() {
+        let legacy_socket = data_dir.join(SOCKET_FILENAME);
+        if legacy_socket.exists() {
+            return legacy_socket;
+        }
+
+        return data_dir
+            .join(APP_NAME)
+            .join(RUNTIME_SUBDIR)
+            .join(SOCKET_FILENAME);
+    }
+
+    let default_root = get_default_voicevox_dir();
+    let legacy_socket = default_root.join(SOCKET_FILENAME);
+    if legacy_socket.exists() {
+        legacy_socket
+    } else {
+        default_root.join(RUNTIME_SUBDIR).join(SOCKET_FILENAME)
+    }
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

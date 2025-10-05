@@ -345,23 +345,25 @@ async fn play_daemon_audio_with_cancellation(
     wav_data: Vec<u8>,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<PlaybackOutcome> {
+    let shared_audio: Arc<[u8]> = wav_data.into();
+
     if let Some(mut cancel_rx) = cancel_rx {
-        match play_low_latency_with_cancel(wav_data.clone(), &mut cancel_rx).await {
+        match play_low_latency_with_cancel(Arc::clone(&shared_audio), &mut cancel_rx).await {
             Ok(outcome) => Ok(outcome),
-            Err(err) => play_system_player_with_cancel(&wav_data, &mut cancel_rx)
+            Err(rodio_err) => play_system_player_with_cancel(shared_audio.as_ref(), &mut cancel_rx)
                 .await
                 .map_err(|system_err| {
-                    err.context(format!("System audio fallback failed: {system_err}"))
+                    system_err.context(format!("Low-latency audio playback failed: {rodio_err}"))
                 }),
         }
     } else {
-        play_audio_from_memory(&wav_data).context("Failed to play audio")?;
+        play_audio_from_memory(shared_audio.as_ref()).context("Failed to play audio")?;
         Ok(PlaybackOutcome::Completed)
     }
 }
 
 async fn play_low_latency_with_cancel(
-    wav_data: Vec<u8>,
+    wav_data: Arc<[u8]>,
     cancel_rx: &mut oneshot::Receiver<String>,
 ) -> Result<PlaybackOutcome> {
     let stream = rodio::OutputStreamBuilder::open_default_stream()
@@ -369,7 +371,7 @@ async fn play_low_latency_with_cancel(
     let sink = Arc::new(Sink::connect_new(stream.mixer()));
     let _stream_guard = stream;
 
-    let cursor = std::io::Cursor::new(wav_data);
+    let cursor = std::io::Cursor::new(Arc::clone(&wav_data));
     let source = rodio::Decoder::new(cursor).context("Failed to decode audio")?;
     sink.append(source);
     sink.play();

@@ -345,9 +345,8 @@ async fn play_daemon_audio_with_cancellation(
     wav_data: Vec<u8>,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<PlaybackOutcome> {
-    let shared_audio: Arc<[u8]> = wav_data.into();
-
     if let Some(mut cancel_rx) = cancel_rx {
+        let shared_audio: Arc<[u8]> = wav_data.into();
         match play_low_latency_with_cancel(Arc::clone(&shared_audio), &mut cancel_rx).await {
             Ok(outcome) => Ok(outcome),
             Err(rodio_err) => play_system_player_with_cancel(shared_audio.as_ref(), &mut cancel_rx)
@@ -355,7 +354,7 @@ async fn play_daemon_audio_with_cancellation(
                 .map_err(|system_err| map_system_fallback_error(system_err, rodio_err)),
         }
     } else {
-        play_audio_from_memory(shared_audio.as_ref()).context("Failed to play audio")?;
+        play_audio_from_memory(&wav_data).context("Failed to play audio")?;
         Ok(PlaybackOutcome::Completed)
     }
 }

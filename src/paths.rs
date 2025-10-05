@@ -31,8 +31,8 @@ pub fn get_socket_path() -> PathBuf {
         return PathBuf::from(path);
     }
 
-    let make_candidate = |base_dir: &Path, app_name_in_base: bool| -> PathBuf {
-        if app_name_in_base {
+    let make_candidate = |base_dir: &Path, base_includes_app_name: bool| -> PathBuf {
+        if base_includes_app_name {
             base_dir.join(RUNTIME_SUBDIR).join(SOCKET_FILENAME)
         } else {
             base_dir
@@ -62,9 +62,9 @@ pub fn get_socket_path() -> PathBuf {
 
     let mut creation_path = None;
 
-    for (dir_opt, app_name_in_base) in candidates {
+    for (dir_opt, base_includes_app_name) in candidates {
         if let Some(base_dir) = dir_opt {
-            let candidate = make_candidate(base_dir.as_ref(), app_name_in_base);
+            let candidate = make_candidate(base_dir.as_ref(), base_includes_app_name);
             if candidate.exists() {
                 return candidate;
             }

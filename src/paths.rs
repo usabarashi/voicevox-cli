@@ -56,15 +56,13 @@ pub fn get_socket_path() -> PathBuf {
         }
     };
 
-    let default_dir = get_default_voicevox_dir();
-    let mut constructed = make_candidate(default_dir.as_ref(), true);
-    let mut constructed_overridden = false;
-
     let candidates = [
         (dirs::state_dir(), false),
         (dirs::data_local_dir(), false),
-        (Some(default_dir), true),
+        (Some(get_default_voicevox_dir()), true),
     ];
+
+    let mut creation_path = None;
 
     for (dir_opt, app_name_in_base) in candidates {
         if let Some(base_dir) = dir_opt {
@@ -73,14 +71,13 @@ pub fn get_socket_path() -> PathBuf {
                 return candidate;
             }
 
-            if !constructed_overridden {
-                constructed = candidate;
-                constructed_overridden = true;
+            if creation_path.is_none() {
+                creation_path = Some(candidate);
             }
         }
     }
 
-    constructed
+    creation_path.expect("get_default_voicevox_dir should always provide a path")
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

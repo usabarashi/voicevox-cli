@@ -355,7 +355,7 @@ async fn play_daemon_audio_with_cancellation(
                 .map_err(|system_err| map_system_fallback_error(system_err, rodio_err)),
         }
     } else {
-        play_audio_from_memory(&shared_audio).context("Failed to play audio")?;
+        play_audio_from_memory(shared_audio.as_ref()).context("Failed to play audio")?;
         Ok(PlaybackOutcome::Completed)
     }
 }

@@ -1,27 +1,24 @@
 use anyhow::{anyhow, Context, Result};
 use std::io::Write;
 use std::process::Command;
-use std::sync::Arc;
 use tempfile::{Builder, NamedTempFile};
 
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
-    let shared = Arc::<[u8]>::from(wav_data);
-
-    play_audio_via_rodio(Arc::clone(&shared)).or_else(|rodio_err| {
-        play_audio_via_system(&shared)
+    play_audio_via_rodio(wav_data).or_else(|rodio_err| {
+        play_audio_via_system(wav_data)
             .map_err(|system_err| map_system_fallback_error(system_err, rodio_err))
     })
 }
 
-fn play_audio_via_rodio(wav_data: Arc<[u8]>) -> Result<()> {
+fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
     use rodio::{Decoder, Sink};
     use std::io::Cursor;
 
     let stream = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to create audio output stream")?;
-    // rodio::Sink::append requires `Source + Send + 'static`. By sharing an Arc<[u8]> we avoid
-    // re-allocating while still providing an owned buffer with `'static` lifetime semantics.
-    let cursor = Cursor::new(Arc::clone(&wav_data));
+    // rodio::Sink::append requires `Source + Send + 'static`; we clone only after the stream is
+    // available so early failures can fall back without extra allocation.
+    let cursor = Cursor::new(wav_data.to_vec());
     let source = Decoder::new(cursor).context("Failed to decode audio")?;
     let sink = Sink::connect_new(stream.mixer());
     sink.append(source);
@@ -69,11 +66,11 @@ pub(crate) fn create_temp_wav_file(wav_data: &[u8]) -> Result<NamedTempFile> {
     Ok(temp)
 }
 
-/// Augments a system-player playback error with the preceding low-latency failure so callers
-/// can see both causes when diagnosing audio issues.
+/// Attaches the low-latency failure (with its full error chain) to a system-player failure so both
+/// contexts appear when diagnosing audio issues.
 pub(crate) fn map_system_fallback_error(
     system_err: anyhow::Error,
     rodio_err: anyhow::Error,
 ) -> anyhow::Error {
-    system_err.context(format!("Low-latency audio playback failed: {rodio_err}"))
+    system_err.context(format!("Low-latency audio playback failed: {rodio_err:#}"))
 }

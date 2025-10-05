@@ -5,9 +5,8 @@ use tempfile::{Builder, NamedTempFile};
 
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
     play_audio_via_rodio(wav_data).or_else(|rodio_err| {
-        play_audio_via_system(wav_data).map_err(|system_err| {
-            system_err.context(format!("Low-latency audio playback failed: {rodio_err}"))
-        })
+        play_audio_via_system(wav_data)
+            .map_err(|system_err| map_system_fallback_error(system_err, rodio_err))
     })
 }
 
@@ -17,8 +16,7 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
 
     let stream = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to create audio output stream")?;
-    let wav_data_owned = wav_data.to_vec();
-    let cursor = Cursor::new(wav_data_owned);
+    let cursor = Cursor::new(wav_data.to_vec());
     let source = Decoder::new(cursor).context("Failed to decode audio")?;
     let sink = Sink::connect_new(stream.mixer());
     sink.append(source);
@@ -64,4 +62,11 @@ pub(crate) fn create_temp_wav_file(wav_data: &[u8]) -> Result<NamedTempFile> {
         .context("Failed to flush temporary audio file")?;
 
     Ok(temp)
+}
+
+pub(crate) fn map_system_fallback_error(
+    system_err: anyhow::Error,
+    rodio_err: anyhow::Error,
+) -> anyhow::Error {
+    system_err.context(format!("Low-latency audio playback failed: {rodio_err}"))
 }

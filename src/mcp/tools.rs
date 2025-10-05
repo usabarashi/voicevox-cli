@@ -6,7 +6,7 @@ use std::{path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
 use crate::client::{
-    audio::{create_temp_wav_file, play_audio_from_memory},
+    audio::{create_temp_wav_file, map_system_fallback_error, play_audio_from_memory},
     DaemonClient,
 };
 use crate::synthesis::StreamingSynthesizer;
@@ -352,9 +352,7 @@ async fn play_daemon_audio_with_cancellation(
             Ok(outcome) => Ok(outcome),
             Err(rodio_err) => play_system_player_with_cancel(shared_audio.as_ref(), &mut cancel_rx)
                 .await
-                .map_err(|system_err| {
-                    system_err.context(format!("Low-latency audio playback failed: {rodio_err}"))
-                }),
+                .map_err(|system_err| map_system_fallback_error(system_err, rodio_err)),
         }
     } else {
         play_audio_from_memory(shared_audio.as_ref()).context("Failed to play audio")?;

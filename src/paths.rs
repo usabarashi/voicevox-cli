@@ -61,12 +61,16 @@ pub fn get_socket_path() -> PathBuf {
         }
     };
 
-    if let Some(state_dir) = dirs::state_dir() {
-        return resolve_socket_path(state_dir, false);
-    }
+    let candidates = [
+        (dirs::state_dir(), false),
+        (dirs::data_local_dir(), false),
+        (Some(get_default_voicevox_dir()), true),
+    ];
 
-    if let Some(data_dir) = dirs::data_local_dir() {
-        return resolve_socket_path(data_dir, false);
+    for (dir_opt, app_name_in_base) in candidates {
+        if let Some(dir) = dir_opt {
+            return resolve_socket_path(dir, app_name_in_base);
+        }
     }
 
     resolve_socket_path(get_default_voicevox_dir(), true)

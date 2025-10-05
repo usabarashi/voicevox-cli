@@ -1,0 +1,13 @@
+{
+  "branches": [
+    {
+      "branch": "main",
+      "release-type": "rust",
+      "changelog-path": "CHANGELOG.md",
+      "draft": false
+    }
+  ],
+  "packages": {
+    ".": {}
+  }
+}

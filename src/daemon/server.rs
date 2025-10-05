@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
+#[cfg(unix)]
+use libc::{getegid, geteuid};
 use std::collections::HashMap;
+#[cfg(unix)]
+use std::env;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
@@ -16,9 +20,6 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 
 #[cfg(unix)]
 fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
-    use libc::{getegid, geteuid};
-    use std::env;
-
     let mut current = PathBuf::from(dir);
 
     let boundary_candidates = [
@@ -37,8 +38,8 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
 
     let boundary = boundary.ok_or_else(|| {
         anyhow::anyhow!(
-            "Socket directory {:?} resides outside of approved bases",
-            dir
+            "Socket directory resides outside of approved bases: {}",
+            dir.display()
         )
     })?;
 

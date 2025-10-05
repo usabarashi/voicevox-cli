@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 VOICEVOX CLI - Command-line text-to-speech tool using VOICEVOX Core.
 

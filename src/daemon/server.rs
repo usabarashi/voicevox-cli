@@ -35,17 +35,24 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
     }
 
     while let Some(path) = current {
-        let metadata = fs::metadata(path).with_context(|| {
+        let metadata = fs::symlink_metadata(path).with_context(|| {
             format!(
                 "Failed to inspect socket directory permissions: {}",
                 path.display()
             )
         })?;
 
+        if metadata.file_type().is_symlink() {
+            return Err(anyhow::anyhow!(
+                "Socket path traverses a symlink: {}",
+                path.display()
+            ));
+        }
+
         let mut permissions = metadata.permissions();
         let mode = permissions.mode();
         if mode & 0o077 != 0 {
-            permissions.set_mode(0o700);
+            permissions.set_mode(mode & !0o077);
             fs::set_permissions(path, permissions).with_context(|| {
                 format!(
                     "Failed to tighten socket directory permissions: {}",

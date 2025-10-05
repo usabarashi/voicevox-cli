@@ -2,13 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
-use crate::client::{
-    audio::{create_temp_wav_file, map_system_fallback_error, play_audio_from_memory},
-    DaemonClient,
-};
+use crate::client::{audio::play_audio_from_memory, DaemonClient};
 use crate::synthesis::StreamingSynthesizer;
 
 // Tool Definition Types
@@ -347,12 +344,9 @@ async fn play_daemon_audio_with_cancellation(
 ) -> Result<PlaybackOutcome> {
     if let Some(mut cancel_rx) = cancel_rx {
         let shared_audio: Arc<[u8]> = wav_data.into();
-        match play_low_latency_with_cancel(Arc::clone(&shared_audio), &mut cancel_rx).await {
-            Ok(outcome) => Ok(outcome),
-            Err(rodio_err) => play_system_player_with_cancel(shared_audio.as_ref(), &mut cancel_rx)
-                .await
-                .map_err(|system_err| map_system_fallback_error(system_err, rodio_err)),
-        }
+        play_low_latency_with_cancel(shared_audio, &mut cancel_rx)
+            .await
+            .context("Low-latency audio playback failed")
     } else {
         play_audio_from_memory(&wav_data).context("Failed to play audio")?;
         Ok(PlaybackOutcome::Completed)
@@ -392,54 +386,6 @@ async fn play_low_latency_with_cancel(
             sink.stop();
             let _ = playback_task.await;
             Ok(PlaybackOutcome::Cancelled(reason))
-        }
-    }
-}
-
-async fn play_system_player_with_cancel(
-    wav_data: &[u8],
-    cancel_rx: &mut oneshot::Receiver<String>,
-) -> Result<PlaybackOutcome> {
-    // Hold the temp file open so external players can read it.
-    let temp_file = create_temp_wav_file(wav_data)?;
-    let temp_path = temp_file.path().to_owned();
-
-    if let Some(outcome) = run_player_with_cancel("afplay", &temp_path, cancel_rx).await? {
-        return Ok(outcome);
-    }
-
-    if let Some(outcome) = run_player_with_cancel("play", &temp_path, cancel_rx).await? {
-        return Ok(outcome);
-    }
-
-    Err(anyhow!(
-        "No audio player found. Install sox or use -o to save file"
-    ))
-}
-async fn run_player_with_cancel(
-    command: &str,
-    temp_path: &Path,
-    cancel_rx: &mut oneshot::Receiver<String>,
-) -> Result<Option<PlaybackOutcome>> {
-    let mut child = match tokio::process::Command::new(command).arg(temp_path).spawn() {
-        Ok(child) => child,
-        Err(_) => return Ok(None),
-    };
-
-    tokio::select! {
-        status = child.wait() => {
-            let status = status.with_context(|| format!("Failed to wait for {command}"))?;
-            if status.success() {
-                Ok(Some(PlaybackOutcome::Completed))
-            } else {
-                Ok(None)
-            }
-        }
-        reason = cancel_rx => {
-            let reason = reason.unwrap_or_default();
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            Ok(Some(PlaybackOutcome::Cancelled(reason)))
         }
     }
 }

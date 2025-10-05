@@ -55,40 +55,35 @@ pub fn get_socket_path() -> PathBuf {
         }
     };
 
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
     if let Ok(xdg_runtime) = std::env::var("XDG_RUNTIME_DIR") {
-        return make_candidate(Path::new(&xdg_runtime), false);
+        candidates.push(make_candidate(Path::new(&xdg_runtime), false));
     }
 
     if let Ok(xdg_state) = std::env::var("XDG_STATE_HOME") {
-        return make_candidate(Path::new(&xdg_state), false);
+        candidates.push(make_candidate(Path::new(&xdg_state), false));
     }
 
     if let Ok(home) = std::env::var("HOME") {
         let base = Path::new(&home).join(".local/state");
-        return make_candidate(&base, false);
+        candidates.push(make_candidate(&base, false));
     }
 
-    let candidates = [
-        (dirs::state_dir(), false),
-        (Some(get_default_voicevox_dir()), true),
-    ];
-
-    let mut creation_path = None;
-
-    for (dir_opt, base_includes_app_name) in candidates {
-        if let Some(base_dir) = dir_opt {
-            let candidate = make_candidate(base_dir.as_ref(), base_includes_app_name);
-            if candidate.exists() {
-                return candidate;
-            }
-
-            if creation_path.is_none() {
-                creation_path = Some(candidate);
-            }
-        }
+    if let Some(state_dir) = dirs::state_dir() {
+        candidates.push(make_candidate(state_dir.as_path(), false));
     }
 
-    creation_path.expect("get_default_voicevox_dir should always provide a path")
+    candidates.push(make_candidate(get_default_voicevox_dir().as_ref(), true));
+
+    if let Some(existing) = candidates.iter().find(|path| path.exists()) {
+        return existing.clone();
+    }
+
+    candidates
+        .into_iter()
+        .next()
+        .expect("get_default_voicevox_dir should always provide at least one candidate")
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

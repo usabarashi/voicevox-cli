@@ -46,18 +46,19 @@ pub fn get_socket_path() -> PathBuf {
     }
 
     let resolve_socket_path = |base_dir: &Path, app_name_in_base: bool| -> PathBuf {
-        let legacy_socket = base_dir.join(SOCKET_FILENAME);
-        if legacy_socket.exists() {
-            return legacy_socket;
-        }
-
-        if app_name_in_base {
+        let candidate = if app_name_in_base {
             base_dir.join(RUNTIME_SUBDIR).join(SOCKET_FILENAME)
         } else {
             base_dir
                 .join(APP_NAME)
                 .join(RUNTIME_SUBDIR)
                 .join(SOCKET_FILENAME)
+        };
+
+        if base_dir.join(SOCKET_FILENAME).exists() {
+            base_dir.join(SOCKET_FILENAME)
+        } else {
+            candidate
         }
     };
 
@@ -67,22 +68,24 @@ pub fn get_socket_path() -> PathBuf {
         (Some(get_default_voicevox_dir()), true),
     ];
 
-    let mut constructed: Option<PathBuf> = None;
+    let mut constructed = resolve_socket_path(get_default_voicevox_dir().as_ref(), true);
+    let mut constructed_overridden = false;
 
     for (dir_opt, app_name_in_base) in candidates {
         if let Some(base_dir) = dir_opt {
-            let legacy_socket = base_dir.join(SOCKET_FILENAME);
-            if legacy_socket.exists() {
-                return legacy_socket;
+            let candidate = resolve_socket_path(base_dir.as_ref(), app_name_in_base);
+            if candidate.exists() {
+                return candidate;
             }
 
-            if constructed.is_none() {
-                constructed = Some(resolve_socket_path(base_dir.as_ref(), app_name_in_base));
+            if !constructed_overridden {
+                constructed = candidate;
+                constructed_overridden = true;
             }
         }
     }
 
-    constructed.expect("get_default_voicevox_dir should always provide a path")
+    constructed
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

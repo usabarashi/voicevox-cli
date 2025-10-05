@@ -94,7 +94,7 @@ pub async fn daemon_mode(
                 std::fs::write(output_file, &wav_data)?;
             }
 
-            if !quiet {
+            if !quiet && output_file.is_none() {
                 crate::client::audio::play_audio_from_memory(&wav_data)?;
             }
 

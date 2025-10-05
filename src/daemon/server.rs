@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
@@ -13,6 +13,61 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::core::{CoreSynthesis, VoicevoxCore};
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
+
+#[cfg(unix)]
+fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
+    use std::env;
+
+    let mut current = Some(Path::new(dir));
+    let mut boundary: Option<PathBuf> = None;
+
+    let boundary_candidates = [
+        env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
+        env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+        env::var_os("HOME").map(PathBuf::from),
+    ];
+
+    for candidate in boundary_candidates.into_iter().flatten() {
+        if dir.starts_with(&candidate) {
+            boundary = Some(candidate);
+            break;
+        }
+    }
+
+    while let Some(path) = current {
+        let metadata = fs::metadata(path).with_context(|| {
+            format!(
+                "Failed to inspect socket directory permissions: {}",
+                path.display()
+            )
+        })?;
+
+        let mut permissions = metadata.permissions();
+        let mode = permissions.mode();
+        if mode & 0o077 != 0 {
+            permissions.set_mode(0o700);
+            fs::set_permissions(path, permissions).with_context(|| {
+                format!(
+                    "Failed to tighten socket directory permissions: {}",
+                    path.display()
+                )
+            })?;
+        }
+
+        if boundary
+            .as_ref()
+            .map(|b| path == b.as_path())
+            .unwrap_or(false)
+            || path.parent().is_none()
+        {
+            break;
+        }
+
+        current = path.parent();
+    }
+
+    Ok(())
+}
 
 pub struct DaemonState {
     core: VoicevoxCore,
@@ -182,21 +237,7 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
 
             #[cfg(unix)]
             {
-                let mut permissions = fs::metadata(parent)
-                    .with_context(|| {
-                        format!(
-                            "Failed to inspect socket parent directory permissions: {}",
-                            parent.display()
-                        )
-                    })?
-                    .permissions();
-                permissions.set_mode(0o700);
-                fs::set_permissions(parent, permissions).with_context(|| {
-                    format!(
-                        "Failed to tighten socket parent directory permissions: {}",
-                        parent.display()
-                    )
-                })?;
+                secure_socket_dir_hierarchy(parent)?;
             }
         }
     }

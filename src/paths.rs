@@ -75,11 +75,7 @@ pub fn get_socket_path() -> PathBuf {
         }
     }
 
-    if let Some(path) = creation_path {
-        path
-    } else {
-        unreachable!("get_default_voicevox_dir should always provide a path")
-    }
+    creation_path.expect("get_default_voicevox_dir should always provide a path")
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

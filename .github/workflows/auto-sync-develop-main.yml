@@ -66,7 +66,7 @@ jobs:
               .sort((a, b) => new Date(a.merged_at) - new Date(b.merged_at));
 
             const lines = mergedPrs.length
-              ? mergedPrs.map(pr => `- [#${pr.number}](${pr.url}) ${pr.title} (merged ${pr.merged_at.slice(0, 10)})`)
+              ? mergedPrs.map(pr => `- [#${pr.number}](${pr.url}) ${pr.title} (merged ${new Date(pr.merged_at).toISOString().slice(0, 10)})`)
               : ['- No merged pull requests found between develop and main.'];
 
             const title = `Sync develop into main (${new Date().toISOString().slice(0, 10)})`;

@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{env, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
 use crate::client::{
@@ -346,10 +346,13 @@ async fn play_daemon_audio_with_cancellation(
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<PlaybackOutcome> {
     if let Some(mut cancel_rx) = cancel_rx {
-        if env::var("VOICEVOX_LOW_LATENCY").is_ok() {
-            play_low_latency_with_cancel(wav_data, &mut cancel_rx).await
-        } else {
-            play_system_player_with_cancel(&wav_data, &mut cancel_rx).await
+        match play_low_latency_with_cancel(wav_data.clone(), &mut cancel_rx).await {
+            Ok(outcome) => Ok(outcome),
+            Err(err) => play_system_player_with_cancel(&wav_data, &mut cancel_rx)
+                .await
+                .map_err(|system_err| {
+                    err.context(format!("System audio fallback failed: {system_err}"))
+                }),
         }
     } else {
         play_audio_from_memory(&wav_data).context("Failed to play audio")?;

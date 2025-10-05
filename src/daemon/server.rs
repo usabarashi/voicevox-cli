@@ -161,6 +161,10 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
 }
 
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
+    if let Some(parent) = socket_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
     }

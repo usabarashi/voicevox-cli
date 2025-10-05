@@ -8,6 +8,7 @@ const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
 const ONNXRUNTIME_SUBDIR: &str = "onnxruntime/lib";
 const DICT_SUBDIR: &str = "dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
+const RUNTIME_SUBDIR: &str = "runtime";
 
 /// Get the default VOICEVOX data directory path using XDG Base Directory specification
 /// Priority: $XDG_DATA_HOME/voicevox > ~/.local/share/voicevox
@@ -44,9 +45,12 @@ pub fn get_socket_path() -> PathBuf {
         }
     }
 
-    dirs::state_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(SOCKET_FILENAME)
+    let fallback_dir = dirs::state_dir()
+        .map(|dir| dir.join(APP_NAME).join(RUNTIME_SUBDIR))
+        .or_else(|| dirs::data_local_dir().map(|dir| dir.join(APP_NAME).join(RUNTIME_SUBDIR)))
+        .unwrap_or_else(|| get_default_voicevox_dir().join(RUNTIME_SUBDIR));
+
+    fallback_dir.join(SOCKET_FILENAME)
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

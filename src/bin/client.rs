@@ -52,7 +52,7 @@ async fn try_daemon_with_retry(
             }
 
             if !quiet && output_file.is_none() {
-                play_audio_from_memory(wav_data.clone())?;
+                play_audio_from_memory(wav_data)?;
             }
 
             Ok(())

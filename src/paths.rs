@@ -58,16 +58,22 @@ pub fn get_socket_path() -> PathBuf {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     if let Ok(xdg_runtime) = std::env::var("XDG_RUNTIME_DIR") {
-        candidates.push(make_candidate(Path::new(&xdg_runtime), false));
+        if !xdg_runtime.is_empty() {
+            candidates.push(make_candidate(Path::new(&xdg_runtime), false));
+        }
     }
 
     if let Ok(xdg_state) = std::env::var("XDG_STATE_HOME") {
-        candidates.push(make_candidate(Path::new(&xdg_state), false));
+        if !xdg_state.is_empty() {
+            candidates.push(make_candidate(Path::new(&xdg_state), false));
+        }
     }
 
     if let Ok(home) = std::env::var("HOME") {
-        let base = Path::new(&home).join(".local/state");
-        candidates.push(make_candidate(&base, false));
+        if !home.is_empty() {
+            let base = Path::new(&home).join(".local/state");
+            candidates.push(make_candidate(&base, false));
+        }
     }
 
     if let Some(state_dir) = dirs::state_dir() {

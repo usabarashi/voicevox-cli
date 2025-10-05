@@ -32,7 +32,10 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
 
     let mut boundary: Option<PathBuf> = None;
     for candidate in boundary_candidates.into_iter().flatten() {
-        if !candidate.as_os_str().is_empty() && current.starts_with(&candidate) {
+        if candidate.as_os_str().is_empty() {
+            continue;
+        }
+        if current.starts_with(&candidate) {
             boundary = Some(candidate);
             break;
         }
@@ -46,6 +49,10 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
     })?;
 
     loop {
+        if current == boundary {
+            break;
+        }
+
         let metadata = fs::symlink_metadata(&current).with_context(|| {
             format!(
                 "Failed to inspect socket directory permissions: {}",
@@ -81,13 +88,32 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
             })?;
         }
 
-        if current == boundary {
-            break;
-        }
-
         if !current.pop() {
             break;
         }
+    }
+
+    let boundary_meta = fs::symlink_metadata(&boundary).with_context(|| {
+        format!(
+            "Failed to inspect socket directory permissions: {}",
+            boundary.display()
+        )
+    })?;
+
+    if boundary_meta.file_type().is_symlink() {
+        return Err(anyhow::anyhow!(
+            "Socket path traverses a symlink: {}",
+            boundary.display()
+        ));
+    }
+
+    let uid = unsafe { geteuid() } as u32;
+    let gid = unsafe { getegid() } as u32;
+    if boundary_meta.uid() != uid || boundary_meta.gid() != gid {
+        return Err(anyhow::anyhow!(
+            "Socket directory must be owned by the current user: {}",
+            boundary.display()
+        ));
     }
 
     Ok(())

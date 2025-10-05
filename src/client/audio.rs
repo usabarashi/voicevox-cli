@@ -1,9 +1,14 @@
 use anyhow::{anyhow, Context, Result};
+use std::env;
 use std::io::Write;
 use std::process::Command;
 use tempfile::{Builder, NamedTempFile};
 
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
+    if env::var_os("VOICEVOX_DISABLE_LOW_LATENCY").is_some() {
+        return play_audio_via_system(wav_data);
+    }
+
     play_audio_via_rodio(wav_data).or_else(|rodio_err| {
         play_audio_via_system(wav_data)
             .map_err(|system_err| map_system_fallback_error(system_err, rodio_err))

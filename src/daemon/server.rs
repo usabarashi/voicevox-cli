@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
+use std::fs;
 #[cfg(unix)]
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
@@ -165,7 +166,7 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     if let Some(parent) = socket_path.parent() {
         if !parent.as_os_str().is_empty() {
-            let mut builder = std::fs::DirBuilder::new();
+            let mut builder = fs::DirBuilder::new();
             builder.recursive(true);
             #[cfg(unix)]
             {
@@ -178,6 +179,25 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
                     parent.display()
                 )
             })?;
+
+            #[cfg(unix)]
+            {
+                let mut permissions = fs::metadata(parent)
+                    .with_context(|| {
+                        format!(
+                            "Failed to inspect socket parent directory permissions: {}",
+                            parent.display()
+                        )
+                    })?
+                    .permissions();
+                permissions.set_mode(0o700);
+                fs::set_permissions(parent, permissions).with_context(|| {
+                    format!(
+                        "Failed to tighten socket parent directory permissions: {}",
+                        parent.display()
+                    )
+                })?;
+            }
         }
     }
 

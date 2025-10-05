@@ -67,13 +67,12 @@ pub fn get_socket_path() -> PathBuf {
         (Some(get_default_voicevox_dir()), true),
     ];
 
-    for (dir_opt, app_name_in_base) in candidates {
-        if let Some(dir) = dir_opt {
-            return resolve_socket_path(dir, app_name_in_base);
-        }
-    }
-
-    resolve_socket_path(get_default_voicevox_dir(), true)
+    candidates
+        .into_iter()
+        .find_map(|(dir_opt, app_name_in_base)| {
+            dir_opt.map(|dir| resolve_socket_path(dir, app_name_in_base))
+        })
+        .expect("get_default_voicevox_dir should always provide a path")
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

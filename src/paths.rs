@@ -26,6 +26,19 @@ pub fn get_default_voicevox_dir() -> PathBuf {
         })
 }
 
+/// Determine the daemon Unix socket path following XDG conventions.
+///
+/// Search order:
+/// 1. `VOICEVOX_SOCKET_PATH` – if set, use the value verbatim.
+/// 2. `XDG_RUNTIME_DIR` – place the socket at `$XDG_RUNTIME_DIR/voicevox/runtime/voicevox-daemon.sock`.
+/// 3. `XDG_STATE_HOME` – use `$XDG_STATE_HOME/voicevox/runtime/voicevox-daemon.sock`.
+/// 4. `HOME` – fall back to `$HOME/.local/state/voicevox/runtime/voicevox-daemon.sock`.
+/// 5. `dirs::state_dir()` and `dirs::data_local_dir()` (via `get_default_voicevox_dir()`), each scoped
+///    under `voicevox/runtime`, preferring an existing socket if found; otherwise the first candidate
+///    becomes the creation target.
+///
+/// This ensures the daemon and clients agree on the socket location while keeping the socket confined
+/// to user-scoped runtime/state directories.
 pub fn get_socket_path() -> PathBuf {
     if let Ok(path) = std::env::var("VOICEVOX_SOCKET_PATH") {
         return PathBuf::from(path);

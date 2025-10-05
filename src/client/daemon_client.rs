@@ -95,9 +95,8 @@ pub async fn daemon_mode(
             }
 
             if !quiet && output_file.is_none() {
-                crate::client::audio::play_audio_from_memory(&wav_data)?;
+                crate::client::audio::play_audio_from_memory(wav_data)?;
             }
-
             Ok(())
         }
         OwnedResponse::Error { message } => Err(anyhow!("Daemon error: {message}")),

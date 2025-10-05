@@ -348,7 +348,7 @@ async fn play_daemon_audio_with_cancellation(
             .await
             .context("Low-latency audio playback failed")
     } else {
-        play_audio_from_memory(&wav_data).context("Failed to play audio")?;
+        play_audio_from_memory(wav_data).context("Failed to play audio")?;
         Ok(PlaybackOutcome::Completed)
     }
 }

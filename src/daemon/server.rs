@@ -32,7 +32,7 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
 
     let mut boundary: Option<PathBuf> = None;
     for candidate in boundary_candidates.into_iter().flatten() {
-        if current.starts_with(&candidate) {
+        if !candidate.as_os_str().is_empty() && current.starts_with(&candidate) {
             boundary = Some(candidate);
             break;
         }
@@ -63,7 +63,10 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
         let uid = unsafe { geteuid() } as u32;
         let gid = unsafe { getegid() } as u32;
         if metadata.uid() != uid || metadata.gid() != gid {
-            break;
+            return Err(anyhow::anyhow!(
+                "Socket directory must be owned by the current user: {}",
+                current.display()
+            ));
         }
 
         let mut permissions = metadata.permissions();

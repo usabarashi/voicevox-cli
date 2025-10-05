@@ -20,7 +20,9 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 
 #[cfg(unix)]
 fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
-    let mut current = PathBuf::from(dir);
+    let mut current = dir
+        .canonicalize()
+        .with_context(|| format!("Failed to canonicalize socket directory: {}", dir.display()))?;
 
     let boundary_candidates = [
         env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
@@ -44,10 +46,6 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
     })?;
 
     loop {
-        if current == boundary {
-            break;
-        }
-
         let metadata = fs::symlink_metadata(&current).with_context(|| {
             format!(
                 "Failed to inspect socket directory permissions: {}",
@@ -70,14 +68,18 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
 
         let mut permissions = metadata.permissions();
         let mode = permissions.mode();
-        if mode & 0o077 != 0 {
-            permissions.set_mode(mode & !0o077);
+        if mode & 0o777 != 0o700 {
+            permissions.set_mode(0o700);
             fs::set_permissions(&current, permissions).with_context(|| {
                 format!(
                     "Failed to tighten socket directory permissions: {}",
                     current.display()
                 )
             })?;
+        }
+
+        if current == boundary {
+            break;
         }
 
         if !current.pop() {

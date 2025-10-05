@@ -3,7 +3,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::fs;
 #[cfg(unix)]
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
@@ -16,10 +16,10 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 
 #[cfg(unix)]
 fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
+    use libc::{getegid, geteuid};
     use std::env;
 
-    let mut current = Some(Path::new(dir));
-    let mut boundary: Option<PathBuf> = None;
+    let mut current = PathBuf::from(dir);
 
     let boundary_candidates = [
         env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
@@ -27,50 +27,61 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
         env::var_os("HOME").map(PathBuf::from),
     ];
 
+    let mut boundary: Option<PathBuf> = None;
     for candidate in boundary_candidates.into_iter().flatten() {
-        if dir.starts_with(&candidate) {
+        if current.starts_with(&candidate) {
             boundary = Some(candidate);
             break;
         }
     }
 
-    while let Some(path) = current {
-        let metadata = fs::symlink_metadata(path).with_context(|| {
+    let boundary = boundary.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Socket directory {:?} resides outside of approved bases",
+            dir
+        )
+    })?;
+
+    loop {
+        if current == boundary {
+            break;
+        }
+
+        let metadata = fs::symlink_metadata(&current).with_context(|| {
             format!(
                 "Failed to inspect socket directory permissions: {}",
-                path.display()
+                current.display()
             )
         })?;
 
         if metadata.file_type().is_symlink() {
             return Err(anyhow::anyhow!(
                 "Socket path traverses a symlink: {}",
-                path.display()
+                current.display()
             ));
+        }
+
+        let uid = unsafe { geteuid() } as u32;
+        let gid = unsafe { getegid() } as u32;
+        if metadata.uid() != uid || metadata.gid() != gid {
+            break;
         }
 
         let mut permissions = metadata.permissions();
         let mode = permissions.mode();
         if mode & 0o077 != 0 {
             permissions.set_mode(mode & !0o077);
-            fs::set_permissions(path, permissions).with_context(|| {
+            fs::set_permissions(&current, permissions).with_context(|| {
                 format!(
                     "Failed to tighten socket directory permissions: {}",
-                    path.display()
+                    current.display()
                 )
             })?;
         }
 
-        if boundary
-            .as_ref()
-            .map(|b| path == b.as_path())
-            .unwrap_or(false)
-            || path.parent().is_none()
-        {
+        if !current.pop() {
             break;
         }
-
-        current = path.parent();
     }
 
     Ok(())

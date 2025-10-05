@@ -164,19 +164,21 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
 
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     if let Some(parent) = socket_path.parent() {
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        {
-            builder.mode(0o700);
-        }
+        if !parent.as_os_str().is_empty() {
+            let mut builder = std::fs::DirBuilder::new();
+            builder.recursive(true);
+            #[cfg(unix)]
+            {
+                builder.mode(0o700);
+            }
 
-        builder.create(parent).with_context(|| {
-            format!(
-                "Failed to create socket parent directory: {}",
-                parent.display()
-            )
-        })?;
+            builder.create(parent).with_context(|| {
+                format!(
+                    "Failed to create socket parent directory: {}",
+                    parent.display()
+                )
+            })?;
+        }
     }
 
     if socket_path.exists() {

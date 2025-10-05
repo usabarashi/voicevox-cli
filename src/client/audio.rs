@@ -16,8 +16,9 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
 
     let stream = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to create audio output stream")?;
-    // rodio requires the appended source to have a 'static lifetime. Cloning keeps an owned copy
-    // alive for the duration of playback, avoiding lifetime issues with Cursor<&[u8]>.
+    // rodio::Sink::append requires `Source + Send + 'static`. `Cursor<&[u8]>` fails this bound and
+    // triggers E0521 (borrowed data escapes). Cloning here gives us an owned buffer whose lifetime
+    // cleanly spans the playback.
     let cursor = Cursor::new(wav_data.to_vec());
     let source = Decoder::new(cursor).context("Failed to decode audio")?;
     let sink = Sink::connect_new(stream.mixer());

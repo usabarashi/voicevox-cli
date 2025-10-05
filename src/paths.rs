@@ -45,37 +45,31 @@ pub fn get_socket_path() -> PathBuf {
         }
     }
 
-    if let Some(state_dir) = dirs::state_dir() {
-        let legacy_socket = state_dir.join(SOCKET_FILENAME);
+    let resolve_socket_path = |base_dir: PathBuf, app_name_in_base: bool| -> PathBuf {
+        let legacy_socket = base_dir.join(SOCKET_FILENAME);
         if legacy_socket.exists() {
             return legacy_socket;
         }
 
-        return state_dir
-            .join(APP_NAME)
-            .join(RUNTIME_SUBDIR)
-            .join(SOCKET_FILENAME);
+        if app_name_in_base {
+            base_dir.join(RUNTIME_SUBDIR).join(SOCKET_FILENAME)
+        } else {
+            base_dir
+                .join(APP_NAME)
+                .join(RUNTIME_SUBDIR)
+                .join(SOCKET_FILENAME)
+        }
+    };
+
+    if let Some(state_dir) = dirs::state_dir() {
+        return resolve_socket_path(state_dir, false);
     }
 
     if let Some(data_dir) = dirs::data_local_dir() {
-        let legacy_socket = data_dir.join(SOCKET_FILENAME);
-        if legacy_socket.exists() {
-            return legacy_socket;
-        }
-
-        return data_dir
-            .join(APP_NAME)
-            .join(RUNTIME_SUBDIR)
-            .join(SOCKET_FILENAME);
+        return resolve_socket_path(data_dir, false);
     }
 
-    let default_root = get_default_voicevox_dir();
-    let legacy_socket = default_root.join(SOCKET_FILENAME);
-    if legacy_socket.exists() {
-        legacy_socket
-    } else {
-        default_root.join(RUNTIME_SUBDIR).join(SOCKET_FILENAME)
-    }
+    resolve_socket_path(get_default_voicevox_dir(), true)
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

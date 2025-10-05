@@ -45,35 +45,30 @@ pub fn get_socket_path() -> PathBuf {
         }
     }
 
-    let resolve_socket_path = |base_dir: &Path, app_name_in_base: bool| -> PathBuf {
-        let candidate = if app_name_in_base {
+    let make_candidate = |base_dir: &Path, app_name_in_base: bool| -> PathBuf {
+        if app_name_in_base {
             base_dir.join(RUNTIME_SUBDIR).join(SOCKET_FILENAME)
         } else {
             base_dir
                 .join(APP_NAME)
                 .join(RUNTIME_SUBDIR)
                 .join(SOCKET_FILENAME)
-        };
-
-        if base_dir.join(SOCKET_FILENAME).exists() {
-            base_dir.join(SOCKET_FILENAME)
-        } else {
-            candidate
         }
     };
+
+    let default_dir = get_default_voicevox_dir();
+    let mut constructed = make_candidate(default_dir.as_ref(), true);
+    let mut constructed_overridden = false;
 
     let candidates = [
         (dirs::state_dir(), false),
         (dirs::data_local_dir(), false),
-        (Some(get_default_voicevox_dir()), true),
+        (Some(default_dir), true),
     ];
-
-    let mut constructed = resolve_socket_path(get_default_voicevox_dir().as_ref(), true);
-    let mut constructed_overridden = false;
 
     for (dir_opt, app_name_in_base) in candidates {
         if let Some(base_dir) = dir_opt {
-            let candidate = resolve_socket_path(base_dir.as_ref(), app_name_in_base);
+            let candidate = make_candidate(base_dir.as_ref(), app_name_in_base);
             if candidate.exists() {
                 return candidate;
             }

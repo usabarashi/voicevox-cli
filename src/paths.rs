@@ -45,7 +45,7 @@ pub fn get_socket_path() -> PathBuf {
         }
     }
 
-    let resolve_socket_path = |base_dir: PathBuf, app_name_in_base: bool| -> PathBuf {
+    let resolve_socket_path = |base_dir: &Path, app_name_in_base: bool| -> PathBuf {
         let legacy_socket = base_dir.join(SOCKET_FILENAME);
         if legacy_socket.exists() {
             return legacy_socket;
@@ -67,12 +67,22 @@ pub fn get_socket_path() -> PathBuf {
         (Some(get_default_voicevox_dir()), true),
     ];
 
-    candidates
-        .into_iter()
-        .find_map(|(dir_opt, app_name_in_base)| {
-            dir_opt.map(|dir| resolve_socket_path(dir, app_name_in_base))
-        })
-        .expect("get_default_voicevox_dir should always provide a path")
+    let mut constructed: Option<PathBuf> = None;
+
+    for (dir_opt, app_name_in_base) in candidates {
+        if let Some(base_dir) = dir_opt {
+            let legacy_socket = base_dir.join(SOCKET_FILENAME);
+            if legacy_socket.exists() {
+                return legacy_socket;
+            }
+
+            if constructed.is_none() {
+                constructed = Some(resolve_socket_path(base_dir.as_ref(), app_name_in_base));
+            }
+        }
+    }
+
+    constructed.expect("get_default_voicevox_dir should always provide a path")
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

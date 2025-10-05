@@ -1,4 +1,8 @@
 use anyhow::{anyhow, Result};
+#[cfg(unix)]
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 
 const APP_NAME: &str = "voicevox";
@@ -82,8 +86,22 @@ pub fn get_socket_path() -> PathBuf {
 
     candidates.push(make_candidate(get_default_voicevox_dir().as_ref(), true));
 
-    if let Some(existing) = candidates.iter().find(|path| path.exists()) {
-        return existing.clone();
+    #[cfg(unix)]
+    {
+        for candidate in &candidates {
+            if let Ok(metadata) = fs::symlink_metadata(candidate) {
+                if metadata.file_type().is_socket() {
+                    return candidate.clone();
+                }
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        if let Some(existing) = candidates.iter().find(|path| path.exists()) {
+            return existing.clone();
+        }
     }
 
     candidates

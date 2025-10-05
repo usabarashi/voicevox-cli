@@ -20,10 +20,6 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 
 #[cfg(unix)]
 fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
-    let mut current = dir
-        .canonicalize()
-        .with_context(|| format!("Failed to canonicalize socket directory: {}", dir.display()))?;
-
     let boundary_candidates = [
         env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
         env::var_os("XDG_STATE_HOME").map(PathBuf::from),
@@ -31,14 +27,28 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
     ];
 
     let mut boundary: Option<PathBuf> = None;
-    for candidate in boundary_candidates.into_iter().flatten() {
-        if candidate.as_os_str().is_empty() {
-            continue;
-        }
-        if current.starts_with(&candidate) {
-            boundary = Some(candidate);
+    let mut current_dir = dir;
+    let mut new_dirs = Vec::new();
+
+    while let Some(parent) = current_dir.parent() {
+        if parent.as_os_str().is_empty() {
             break;
         }
+
+        if boundary_candidates
+            .iter()
+            .flatten()
+            .any(|candidate| !candidate.as_os_str().is_empty() && parent == candidate.as_path())
+        {
+            boundary = Some(parent.to_path_buf());
+            break;
+        }
+
+        if !parent.exists() {
+            new_dirs.push(parent.to_path_buf());
+        }
+
+        current_dir = parent;
     }
 
     let boundary = boundary.ok_or_else(|| {
@@ -47,51 +57,6 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
             dir.display()
         )
     })?;
-
-    loop {
-        if current == boundary {
-            break;
-        }
-
-        let metadata = fs::symlink_metadata(&current).with_context(|| {
-            format!(
-                "Failed to inspect socket directory permissions: {}",
-                current.display()
-            )
-        })?;
-
-        if metadata.file_type().is_symlink() {
-            return Err(anyhow::anyhow!(
-                "Socket path traverses a symlink: {}",
-                current.display()
-            ));
-        }
-
-        let uid = unsafe { geteuid() } as u32;
-        let gid = unsafe { getegid() } as u32;
-        if metadata.uid() != uid || metadata.gid() != gid {
-            return Err(anyhow::anyhow!(
-                "Socket directory must be owned by the current user: {}",
-                current.display()
-            ));
-        }
-
-        let mut permissions = metadata.permissions();
-        let mode = permissions.mode();
-        if mode & 0o777 != 0o700 {
-            permissions.set_mode(0o700);
-            fs::set_permissions(&current, permissions).with_context(|| {
-                format!(
-                    "Failed to tighten socket directory permissions: {}",
-                    current.display()
-                )
-            })?;
-        }
-
-        if !current.pop() {
-            break;
-        }
-    }
 
     let boundary_meta = fs::symlink_metadata(&boundary).with_context(|| {
         format!(
@@ -114,6 +79,73 @@ fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
             "Socket directory must be owned by the current user: {}",
             boundary.display()
         ));
+    }
+
+    for component in new_dirs.into_iter().rev() {
+        fs::create_dir(&component).with_context(|| {
+            format!(
+                "Failed to create socket directory component: {}",
+                component.display()
+            )
+        })?;
+
+        let mut permissions = fs::metadata(&component)
+            .with_context(|| {
+                format!(
+                    "Failed to inspect socket directory permissions: {}",
+                    component.display()
+                )
+            })?
+            .permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&component, permissions).with_context(|| {
+            format!(
+                "Failed to tighten socket directory permissions: {}",
+                component.display()
+            )
+        })?;
+    }
+
+    if !dir.exists() {
+        fs::create_dir(dir).with_context(|| {
+            format!(
+                "Failed to create socket directory component: {}",
+                dir.display()
+            )
+        })?;
+    }
+
+    let metadata = fs::symlink_metadata(dir).with_context(|| {
+        format!(
+            "Failed to inspect socket directory permissions: {}",
+            dir.display()
+        )
+    })?;
+
+    if metadata.file_type().is_symlink() {
+        return Err(anyhow::anyhow!(
+            "Socket path traverses a symlink: {}",
+            dir.display()
+        ));
+    }
+
+    if metadata.uid() != uid || metadata.gid() != gid {
+        return Err(anyhow::anyhow!(
+            "Socket directory must be owned by the current user: {}",
+            dir.display()
+        ));
+    }
+
+    let mut permissions = metadata.permissions();
+    let mode = permissions.mode();
+    if mode & 0o077 != 0 {
+        permissions.set_mode(0o700);
+        fs::set_permissions(dir, permissions).with_context(|| {
+            format!(
+                "Failed to tighten socket directory permissions: {}",
+                dir.display()
+            )
+        })?;
     }
 
     Ok(())

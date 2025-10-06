@@ -2,13 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{env, path::Path, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
-use crate::client::{
-    audio::{create_temp_wav_file, play_audio_from_memory},
-    DaemonClient,
-};
+use crate::client::{audio::play_audio_from_memory, DaemonClient};
 use crate::synthesis::StreamingSynthesizer;
 
 // Tool Definition Types
@@ -346,19 +343,18 @@ async fn play_daemon_audio_with_cancellation(
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<PlaybackOutcome> {
     if let Some(mut cancel_rx) = cancel_rx {
-        if env::var("VOICEVOX_LOW_LATENCY").is_ok() {
-            play_low_latency_with_cancel(wav_data, &mut cancel_rx).await
-        } else {
-            play_system_player_with_cancel(&wav_data, &mut cancel_rx).await
-        }
+        let shared_audio: Arc<[u8]> = wav_data.into();
+        play_low_latency_with_cancel(shared_audio, &mut cancel_rx)
+            .await
+            .context("Low-latency audio playback failed")
     } else {
-        play_audio_from_memory(&wav_data).context("Failed to play audio")?;
+        play_audio_from_memory(wav_data).context("Failed to play audio")?;
         Ok(PlaybackOutcome::Completed)
     }
 }
 
 async fn play_low_latency_with_cancel(
-    wav_data: Vec<u8>,
+    wav_data: Arc<[u8]>,
     cancel_rx: &mut oneshot::Receiver<String>,
 ) -> Result<PlaybackOutcome> {
     let stream = rodio::OutputStreamBuilder::open_default_stream()
@@ -366,7 +362,7 @@ async fn play_low_latency_with_cancel(
     let sink = Arc::new(Sink::connect_new(stream.mixer()));
     let _stream_guard = stream;
 
-    let cursor = std::io::Cursor::new(wav_data);
+    let cursor = std::io::Cursor::new(Arc::clone(&wav_data));
     let source = rodio::Decoder::new(cursor).context("Failed to decode audio")?;
     sink.append(source);
     sink.play();
@@ -390,54 +386,6 @@ async fn play_low_latency_with_cancel(
             sink.stop();
             let _ = playback_task.await;
             Ok(PlaybackOutcome::Cancelled(reason))
-        }
-    }
-}
-
-async fn play_system_player_with_cancel(
-    wav_data: &[u8],
-    cancel_rx: &mut oneshot::Receiver<String>,
-) -> Result<PlaybackOutcome> {
-    // Hold the temp file open so external players can read it.
-    let temp_file = create_temp_wav_file(wav_data)?;
-    let temp_path = temp_file.path().to_owned();
-
-    if let Some(outcome) = run_player_with_cancel("afplay", &temp_path, cancel_rx).await? {
-        return Ok(outcome);
-    }
-
-    if let Some(outcome) = run_player_with_cancel("play", &temp_path, cancel_rx).await? {
-        return Ok(outcome);
-    }
-
-    Err(anyhow!(
-        "No audio player found. Install sox or use -o to save file"
-    ))
-}
-async fn run_player_with_cancel(
-    command: &str,
-    temp_path: &Path,
-    cancel_rx: &mut oneshot::Receiver<String>,
-) -> Result<Option<PlaybackOutcome>> {
-    let mut child = match tokio::process::Command::new(command).arg(temp_path).spawn() {
-        Ok(child) => child,
-        Err(_) => return Ok(None),
-    };
-
-    tokio::select! {
-        status = child.wait() => {
-            let status = status.with_context(|| format!("Failed to wait for {command}"))?;
-            if status.success() {
-                Ok(Some(PlaybackOutcome::Completed))
-            } else {
-                Ok(None)
-            }
-        }
-        reason = cancel_rx => {
-            let reason = reason.unwrap_or_default();
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            Ok(Some(PlaybackOutcome::Cancelled(reason)))
         }
     }
 }

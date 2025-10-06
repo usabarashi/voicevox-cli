@@ -1,79 +1,20 @@
-use anyhow::{anyhow, Context, Result};
-use std::process::Command;
-use std::{env, io::Write};
-use tempfile::{Builder, NamedTempFile};
+use anyhow::{Context, Result};
 
-pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
-    if env::var("VOICEVOX_LOW_LATENCY").is_ok() {
-        play_audio_via_rodio(wav_data)
-    } else {
-        play_audio_via_system(wav_data)
-    }
-}
-
-fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
+/// Play the provided WAV data entirely in memory via rodio.
+pub fn play_audio_from_memory(wav_data: Vec<u8>) -> Result<()> {
     use rodio::{Decoder, Sink};
     use std::io::Cursor;
 
-    match rodio::OutputStreamBuilder::open_default_stream() {
-        Ok(stream) => {
-            let wav_data_owned = wav_data.to_vec();
-            let cursor = Cursor::new(wav_data_owned);
+    let stream = rodio::OutputStreamBuilder::open_default_stream()
+        .context("Failed to create audio output stream")?;
+    let cursor = Cursor::new(wav_data);
+    let source = Decoder::new(cursor).context("Failed to decode audio")?;
+    let sink = Sink::connect_new(stream.mixer());
+    sink.append(source);
+    sink.play();
+    sink.sleep_until_end();
 
-            match Decoder::new(cursor) {
-                Ok(source) => {
-                    let sink = Sink::connect_new(stream.mixer());
-                    sink.append(source);
-                    sink.play();
-                    sink.sleep_until_end();
-
-                    // Explicitly drop to minimize debug output
-                    drop(sink);
-                    std::mem::drop(stream);
-                    Ok(())
-                }
-                Err(_) => {
-                    std::mem::drop(stream);
-                    play_audio_via_system(wav_data)
-                }
-            }
-        }
-        Err(_) => play_audio_via_system(wav_data),
-    }
-}
-
-fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
-    let temp_file = create_temp_wav_file(wav_data)?;
-    let temp_path = temp_file.path();
-
-    if let Ok(output) = Command::new("afplay").arg(temp_path).output() {
-        if output.status.success() {
-            return Ok(());
-        }
-    }
-
-    if let Ok(output) = Command::new("play").arg(temp_path).output() {
-        if output.status.success() {
-            return Ok(());
-        }
-    }
-
-    Err(anyhow!(
-        "No audio player found. Install sox or use -o to save file"
-    ))
-}
-
-pub(crate) fn create_temp_wav_file(wav_data: &[u8]) -> Result<NamedTempFile> {
-    let mut temp = Builder::new()
-        .prefix("voicevox_")
-        .suffix(".wav")
-        .tempfile()
-        .context("Failed to create temporary audio file")?;
-
-    temp.write_all(wav_data)
-        .context("Failed to write temporary audio file")?;
-    temp.flush()
-        .context("Failed to flush temporary audio file")?;
-
-    Ok(temp)
+    drop(sink);
+    std::mem::drop(stream);
+    Ok(())
 }

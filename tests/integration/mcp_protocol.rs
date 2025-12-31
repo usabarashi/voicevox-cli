@@ -67,10 +67,7 @@ fn test_tools_list() -> Result<()> {
     assert_eq!(tools.len(), 2, "Should have 2 tools");
 
     // Check tool names
-    let tool_names: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
+    let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
 
     assert!(
         tool_names.contains(&"text_to_speech"),
@@ -92,12 +89,12 @@ fn test_invalid_tool_call() -> Result<()> {
     client.initialize()?;
 
     // Call non-existent tool
-    let request = JsonRpcRequest::new("tools/call").with_id(3).with_params(
-        json!({
+    let request = JsonRpcRequest::new("tools/call")
+        .with_id(3)
+        .with_params(json!({
             "name": "nonexistent_tool",
             "arguments": {}
-        }),
-    );
+        }));
 
     let response = client.call(&request)?;
 
@@ -120,12 +117,12 @@ fn test_list_voice_styles() -> Result<()> {
 
     client.initialize()?;
 
-    let request = JsonRpcRequest::new("tools/call").with_id(4).with_params(
-        json!({
+    let request = JsonRpcRequest::new("tools/call")
+        .with_id(4)
+        .with_params(json!({
             "name": "list_voice_styles",
             "arguments": {}
-        }),
-    );
+        }));
 
     let response = client.call(&request)?;
 
@@ -136,10 +133,7 @@ fn test_list_voice_styles() -> Result<()> {
 
     // Result may be error if daemon not running, but should be valid response
     let result = response.result.unwrap();
-    assert!(
-        result.is_object(),
-        "Result should be an object"
-    );
+    assert!(result.is_object(), "Result should be an object");
 
     Ok(())
 }
@@ -151,8 +145,9 @@ fn test_parameter_validation_empty_text() -> Result<()> {
 
     client.initialize()?;
 
-    let request = JsonRpcRequest::new("tools/call").with_id(5).with_params(
-        json!({
+    let request = JsonRpcRequest::new("tools/call")
+        .with_id(5)
+        .with_params(json!({
             "name": "text_to_speech",
             "arguments": {
                 "text": "",
@@ -160,8 +155,7 @@ fn test_parameter_validation_empty_text() -> Result<()> {
                 "rate": 1.0,
                 "streaming": false
             }
-        }),
-    );
+        }));
 
     let response = client.call(&request)?;
 
@@ -184,8 +178,9 @@ fn test_parameter_validation_invalid_rate() -> Result<()> {
 
     client.initialize()?;
 
-    let request = JsonRpcRequest::new("tools/call").with_id(6).with_params(
-        json!({
+    let request = JsonRpcRequest::new("tools/call")
+        .with_id(6)
+        .with_params(json!({
             "name": "text_to_speech",
             "arguments": {
                 "text": "テスト",
@@ -193,8 +188,7 @@ fn test_parameter_validation_invalid_rate() -> Result<()> {
                 "rate": MAX_RATE + 1.0,  // Invalid: exceeds MAX_RATE
                 "streaming": false
             }
-        }),
-    );
+        }));
 
     let response = client.call(&request)?;
 

@@ -144,7 +144,6 @@ impl McpClient {
 
         Ok(response)
     }
-
 }
 
 impl Drop for McpClient {

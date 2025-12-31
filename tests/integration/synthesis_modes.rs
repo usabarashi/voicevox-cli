@@ -11,9 +11,9 @@ use voicevox_cli::mcp::service::{MAX_RATE, MIN_RATE};
 /// Voice style definitions for testing
 /// These correspond to Zundamon voice styles in VOICEVOX Core
 const VOICE_STYLES: &[(u32, &str)] = &[
-    (3, "ノーマル"),   // Normal/default voice
-    (1, "あまあま"),   // Sweet/affectionate voice
-    (22, "ささやき"),  // Whisper voice
+    (3, "ノーマル"),  // Normal/default voice
+    (1, "あまあま"),  // Sweet/affectionate voice
+    (22, "ささやき"), // Whisper voice
 ];
 
 #[test]
@@ -30,8 +30,9 @@ fn test_daemon_mode_synthesis() -> Result<()> {
 
     client.initialize()?;
 
-    let request = JsonRpcRequest::new("tools/call").with_id(2).with_params(
-        json!({
+    let request = JsonRpcRequest::new("tools/call")
+        .with_id(2)
+        .with_params(json!({
             "name": "text_to_speech",
             "arguments": {
                 "text": "デーモンモードのテストなのだ",
@@ -39,8 +40,7 @@ fn test_daemon_mode_synthesis() -> Result<()> {
                 "rate": 1.0,
                 "streaming": false
             }
-        }),
-    );
+        }));
 
     let response = client.call(&request)?;
 
@@ -53,7 +53,9 @@ fn test_daemon_mode_synthesis() -> Result<()> {
     let is_error = result["isError"].as_bool().unwrap_or(false);
 
     if is_error {
-        let error_msg = result["content"][0]["text"].as_str().unwrap_or("Unknown error");
+        let error_msg = result["content"][0]["text"]
+            .as_str()
+            .unwrap_or("Unknown error");
         panic!("Daemon synthesis failed: {}", error_msg);
     }
 
@@ -84,8 +86,9 @@ fn test_streaming_mode_synthesis() -> Result<()> {
 
     client.initialize()?;
 
-    let request = JsonRpcRequest::new("tools/call").with_id(3).with_params(
-        json!({
+    let request = JsonRpcRequest::new("tools/call")
+        .with_id(3)
+        .with_params(json!({
             "name": "text_to_speech",
             "arguments": {
                 "text": "ストリーミングモードのテストなのだ",
@@ -93,8 +96,7 @@ fn test_streaming_mode_synthesis() -> Result<()> {
                 "rate": 1.0,
                 "streaming": true
             }
-        }),
-    );
+        }));
 
     let response = client.call(&request)?;
 
@@ -107,7 +109,9 @@ fn test_streaming_mode_synthesis() -> Result<()> {
     let is_error = result["isError"].as_bool().unwrap_or(false);
 
     if is_error {
-        let error_msg = result["content"][0]["text"].as_str().unwrap_or("Unknown error");
+        let error_msg = result["content"][0]["text"]
+            .as_str()
+            .unwrap_or("Unknown error");
         panic!("Streaming synthesis failed: {}", error_msg);
     }
 
@@ -131,8 +135,9 @@ fn test_synthesis_without_daemon() -> Result<()> {
 
     client.initialize()?;
 
-    let request = JsonRpcRequest::new("tools/call").with_id(4).with_params(
-        json!({
+    let request = JsonRpcRequest::new("tools/call")
+        .with_id(4)
+        .with_params(json!({
             "name": "text_to_speech",
             "arguments": {
                 "text": "短いテスト",
@@ -140,8 +145,7 @@ fn test_synthesis_without_daemon() -> Result<()> {
                 "rate": 1.0,
                 "streaming": true
             }
-        }),
-    );
+        }));
 
     let response = client.call(&request)?;
 
@@ -199,8 +203,7 @@ fn test_different_voice_styles() -> Result<()> {
         assert!(
             !is_error,
             "Style ID {} should not error: {:?}",
-            style_id,
-            result["content"]
+            style_id, result["content"]
         );
     }
 
@@ -242,8 +245,7 @@ fn test_different_speech_rates() -> Result<()> {
         assert!(
             !is_error,
             "Rate {} should not error: {:?}",
-            rate,
-            result["content"]
+            rate, result["content"]
         );
     }
 

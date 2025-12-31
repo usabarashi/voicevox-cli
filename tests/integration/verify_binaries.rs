@@ -12,8 +12,7 @@ use std::process::Command;
 
 /// Get MD5 hash of a file (platform-independent)
 fn get_md5_hash(path: &Path) -> Result<String> {
-    let contents = fs::read(path)
-        .with_context(|| format!("Failed to read file: {:?}", path))?;
+    let contents = fs::read(path).with_context(|| format!("Failed to read file: {:?}", path))?;
 
     let digest = md5::compute(&contents);
 
@@ -101,9 +100,7 @@ fn test_binaries_exist() -> Result<()> {
     let binaries = ["voicevox-daemon", "voicevox-say", "voicevox-mcp-server"];
 
     for binary in binaries {
-        let path = Path::new(manifest_dir)
-            .join("target/debug")
-            .join(binary);
+        let path = Path::new(manifest_dir).join("target/debug").join(binary);
 
         if path.exists() {
             let metadata = fs::metadata(&path)?;
@@ -125,9 +122,7 @@ fn test_compare_with_system_binaries() -> Result<()> {
     let binaries = ["voicevox-daemon", "voicevox-mcp-server"];
 
     for binary in binaries {
-        let local_path = Path::new(manifest_dir)
-            .join("target/debug")
-            .join(binary);
+        let local_path = Path::new(manifest_dir).join("target/debug").join(binary);
 
         if !local_path.exists() {
             println!("⚠️  {} not built yet", binary);
@@ -140,10 +135,7 @@ fn test_compare_with_system_binaries() -> Result<()> {
                 let system_hash = get_md5_hash(Path::new(&system_path))?;
 
                 if local_hash == system_hash {
-                    println!(
-                        "⚠️  {}: SAME as system version (may need rebuild)",
-                        binary
-                    );
+                    println!("⚠️  {}: SAME as system version (may need rebuild)", binary);
                     println!("    Local:  {}", local_path.display());
                     println!("    System: {}", system_path);
                 } else {

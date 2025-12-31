@@ -85,10 +85,8 @@ jobs:
       - name: Run security audit
         run: |
           echo "Running security audit..."
-          if ! nix develop --accept-flake-config --command cargo audit --version >/dev/null 2>&1; then
-            echo "Installing cargo-audit..."
-            nix develop --accept-flake-config --command cargo install cargo-audit
-          fi
+          echo "Installing latest cargo-audit for CVSS 4.0 support..."
+          nix develop --accept-flake-config --command cargo install cargo-audit --force
           nix develop --accept-flake-config --command cargo audit
 
       - name: Build with Nix

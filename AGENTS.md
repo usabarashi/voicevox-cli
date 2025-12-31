@@ -58,7 +58,7 @@ voicevox-cli/
 - `core/`: VOICEVOX Core FFI bindings and voice synthesis interface
 - `ipc/`: Inter-process communication protocol for Unix socket messaging
 - `synthesis/`: Streaming synthesis engine for processing long text segments
-- `mcp/`: MCP protocol implementation using [rmcp](https://github.com/4t145/rmcp) framework
+- `mcp/`: MCP protocol implementation using [rmcp](https://github.com/modelcontextprotocol/rust-sdk) framework
 
 ### Daemon Auto-Start Mechanism
 
@@ -86,7 +86,7 @@ voicevox-mcp-server                 # MCP protocol server for AI assistant integ
 
 ### Implementation Architecture
 
-The MCP server is built using the [rmcp](https://github.com/4t145/rmcp) crate, providing a standardized framework for Model Context Protocol implementation.
+The MCP server is built using the [rmcp](https://github.com/modelcontextprotocol/rust-sdk) crate, providing a standardized framework for Model Context Protocol implementation.
 
 **Implementation:**
 - Protocol: MCP 2024-11-05

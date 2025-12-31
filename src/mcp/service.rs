@@ -231,52 +231,47 @@ impl VoicevoxService {
             .await
             .context("Failed to get speakers list")?;
 
-        let mut filtered_results = Vec::new();
+        // Pre-convert filter strings to lowercase to avoid repeated conversions
+        let speaker_filter_lower = params.speaker_name.as_ref().map(|s| s.to_lowercase());
+        let style_filter_lower = params.style_name.as_ref().map(|s| s.to_lowercase());
+
+        let mut result_text = String::new();
+        let mut speaker_count = 0;
 
         for speaker in speakers {
-            if let Some(name_filter) = &params.speaker_name {
-                if !speaker
-                    .name
-                    .to_lowercase()
-                    .contains(&name_filter.to_lowercase())
-                {
+            // Filter by speaker name
+            if let Some(ref filter) = speaker_filter_lower {
+                if !speaker.name.to_lowercase().contains(filter) {
                     continue;
                 }
             }
 
-            let filtered_styles = if let Some(style_filter) = &params.style_name {
+            // Filter styles
+            let filtered_styles: Vec<_> = if let Some(ref filter) = style_filter_lower {
                 speaker
                     .styles
                     .into_iter()
-                    .filter(|style| {
-                        style
-                            .name
-                            .to_lowercase()
-                            .contains(&style_filter.to_lowercase())
-                    })
-                    .collect::<Vec<_>>()
+                    .filter(|style| style.name.to_lowercase().contains(filter))
+                    .collect()
             } else {
-                speaker.styles.to_vec()
+                speaker.styles
             };
 
             if !filtered_styles.is_empty() {
-                filtered_results.push((speaker.name, filtered_styles));
-            }
-        }
-
-        let mut result_text = String::new();
-        if filtered_results.is_empty() {
-            result_text.push_str("No speakers found matching the criteria.");
-        } else {
-            for (speaker_name, styles) in &filtered_results {
-                result_text.push_str(&format!("Speaker: {}\n", speaker_name));
+                result_text.push_str(&format!("Speaker: {}\n", speaker.name));
                 result_text.push_str("Styles:\n");
-                for style in styles {
+                for style in filtered_styles {
                     result_text.push_str(&format!("  - {} (ID: {})\n", style.name, style.id));
                 }
                 result_text.push('\n');
+                speaker_count += 1;
             }
-            result_text.push_str(&format!("Total speakers found: {}", filtered_results.len()));
+        }
+
+        if speaker_count == 0 {
+            result_text.push_str("No speakers found matching the criteria.");
+        } else {
+            result_text.push_str(&format!("Total speakers found: {}", speaker_count));
         }
 
         Ok(result_text.trim().to_string())

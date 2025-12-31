@@ -4,6 +4,14 @@ use anyhow::Result;
 use common::{get_server_path, is_daemon_running, JsonRpcRequest, McpClient};
 use serde_json::json;
 
+/// Voice style definitions for testing
+/// These correspond to Zundamon voice styles in VOICEVOX Core
+const VOICE_STYLES: &[(u32, &str)] = &[
+    (3, "ノーマル"),   // Normal/default voice
+    (1, "あまあま"),   // Sweet/affectionate voice
+    (22, "ささやき"),  // Whisper voice
+];
+
 #[test]
 #[ignore = "requires daemon running"]
 fn test_daemon_mode_synthesis() -> Result<()> {
@@ -160,7 +168,7 @@ fn test_different_voice_styles() -> Result<()> {
     client.initialize()?;
 
     // Test different style IDs
-    for (style_id, style_name) in [(3, "ノーマル"), (1, "あまあま"), (22, "ささやき")] {
+    for &(style_id, style_name) in VOICE_STYLES {
         let request = JsonRpcRequest::new("tools/call")
             .with_id(10 + style_id as u64)
             .with_params(json!({

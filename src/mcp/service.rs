@@ -155,7 +155,10 @@ impl VoicevoxService {
         let style_id = params.style_id;
 
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let runtime = tokio::runtime::Handle::current();
+            // Create a new runtime for async operations within blocking context
+            // This avoids the anti-pattern of using Handle::current().block_on() in spawn_blocking
+            let runtime = tokio::runtime::Runtime::new()
+                .context("Failed to create runtime for audio playback")?;
 
             let stream = rodio::OutputStreamBuilder::open_default_stream()
                 .context("Failed to create audio output stream")?;

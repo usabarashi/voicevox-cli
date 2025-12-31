@@ -2,7 +2,10 @@
 // and Unix socket IPC used by voicevox-daemon
 #![cfg(unix)]
 
+mod common;
+
 use anyhow::{Context, Result};
+use common::EXPECTED_PROTOCOL_VERSION;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -169,10 +172,19 @@ fn test_mcp_protocol_version() -> Result<()> {
         anyhow::bail!("❌ MCP server not built. Run: nix develop -c cargo build");
     }
 
-    if binary_contains_string(&mcp_server_path, "2024-11-05")? {
-        println!("✓ MCP server uses protocol 2024-11-05 (rmcp implementation)");
+    // Verify MCP protocol version matches expected version from rmcp crate
+    // Note: Latest MCP version is 2025-11-25, but rmcp 0.8.x supports 2024-11-05
+    // See: https://modelcontextprotocol.io/specification/2025-11-25
+    if binary_contains_string(&mcp_server_path, EXPECTED_PROTOCOL_VERSION)? {
+        println!(
+            "✓ MCP server uses protocol {} (rmcp 0.8.x compatible)",
+            EXPECTED_PROTOCOL_VERSION
+        );
     } else {
-        anyhow::bail!("❌ MCP server protocol version not found or incorrect");
+        anyhow::bail!(
+            "❌ MCP server protocol version not found or incorrect (expected: {})",
+            EXPECTED_PROTOCOL_VERSION
+        );
     }
 
     Ok(())

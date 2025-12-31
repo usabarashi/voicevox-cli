@@ -4,8 +4,13 @@ use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 
+/// Expected MCP protocol version supported by rmcp 0.8.x
+/// This is determined by the rmcp crate version in Cargo.toml
+pub const EXPECTED_PROTOCOL_VERSION: &str = "2024-11-05";
+
 /// MCP JSON-RPC request
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -16,6 +21,7 @@ pub struct JsonRpcRequest {
 }
 
 impl JsonRpcRequest {
+    #[allow(dead_code)]
     pub fn new(method: impl Into<String>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
@@ -25,11 +31,13 @@ impl JsonRpcRequest {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_id(mut self, id: u64) -> Self {
         self.id = Some(id);
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_params(mut self, params: Value) -> Self {
         self.params = Some(params);
         self
@@ -47,6 +55,7 @@ pub struct JsonRpcResponse {
 }
 
 /// MCP client for testing
+#[allow(dead_code)]
 pub struct McpClient {
     process: Child,
     stdin: std::process::ChildStdin,
@@ -55,6 +64,7 @@ pub struct McpClient {
 
 impl McpClient {
     /// Start MCP server process
+    #[allow(dead_code)]
     pub fn start(server_path: &str) -> Result<Self> {
         let mut process = Command::new(server_path)
             .stdin(Stdio::piped())
@@ -74,6 +84,7 @@ impl McpClient {
     }
 
     /// Send JSON-RPC request
+    #[allow(dead_code)]
     pub fn send(&mut self, request: &JsonRpcRequest) -> Result<()> {
         let json = serde_json::to_string(request).context("Failed to serialize request")?;
         writeln!(self.stdin, "{}", json).context("Failed to write request")?;
@@ -82,6 +93,7 @@ impl McpClient {
     }
 
     /// Read JSON-RPC response
+    #[allow(dead_code)]
     pub fn read(&mut self) -> Result<JsonRpcResponse> {
         let mut line = String::new();
         self.stdout
@@ -96,15 +108,23 @@ impl McpClient {
     }
 
     /// Send request and read response
+    #[allow(dead_code)]
     pub fn call(&mut self, request: &JsonRpcRequest) -> Result<JsonRpcResponse> {
         self.send(request)?;
         self.read()
     }
 
     /// Initialize MCP session
+    #[allow(dead_code)]
     pub fn initialize(&mut self) -> Result<JsonRpcResponse> {
+        self.initialize_with_version(EXPECTED_PROTOCOL_VERSION)
+    }
+
+    /// Initialize MCP session with specific protocol version
+    #[allow(dead_code)]
+    pub fn initialize_with_version(&mut self, protocol_version: &str) -> Result<JsonRpcResponse> {
         let params = serde_json::json!({
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": protocol_version,
             "capabilities": {},
             "clientInfo": {
                 "name": "integration-test",
@@ -124,6 +144,7 @@ impl McpClient {
 
         Ok(response)
     }
+
 }
 
 impl Drop for McpClient {
@@ -134,6 +155,7 @@ impl Drop for McpClient {
 }
 
 /// Get path to MCP server binary
+#[allow(dead_code)]
 pub fn get_server_path() -> String {
     std::env::var("MCP_SERVER_PATH").unwrap_or_else(|_| {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");

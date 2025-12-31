@@ -4,7 +4,7 @@
 mod common;
 
 use anyhow::Result;
-use common::{get_server_path, JsonRpcRequest, McpClient};
+use common::{get_server_path, JsonRpcRequest, McpClient, EXPECTED_PROTOCOL_VERSION};
 use serde_json::json;
 use voicevox_cli::mcp::service::MAX_RATE;
 
@@ -19,11 +19,11 @@ fn test_initialize_sequence() -> Result<()> {
     assert!(response.result.is_some(), "Initialize should return result");
     let result = response.result.unwrap();
 
-    // Check protocol version
+    // Check protocol version matches expected version from rmcp crate
     assert_eq!(
         result["protocolVersion"].as_str(),
-        Some("2024-11-05"),
-        "Protocol version should be 2024-11-05"
+        Some(EXPECTED_PROTOCOL_VERSION),
+        "Protocol version should match rmcp 0.8.x supported version"
     );
 
     // Check server info

@@ -303,8 +303,16 @@ fn load_instructions() -> Option<String> {
     fn try_load(path: &Path) -> Option<String> {
         match fs::read_to_string(path) {
             Ok(content) => Some(content),
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => None,
-            _ => None,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                // Log non-NotFound errors (permission denied, I/O errors, etc.)
+                eprintln!(
+                    "Warning: Failed to read instructions file at {}: {}",
+                    path.display(),
+                    e
+                );
+                None
+            }
         }
     }
 

@@ -3,6 +3,7 @@ mod common;
 use anyhow::Result;
 use common::{get_server_path, is_daemon_running, JsonRpcRequest, McpClient};
 use serde_json::json;
+use voicevox_cli::mcp::service::{MAX_RATE, MIN_RATE};
 
 /// Voice style definitions for testing
 /// These correspond to Zundamon voice styles in VOICEVOX Core
@@ -216,8 +217,8 @@ fn test_different_speech_rates() -> Result<()> {
 
     client.initialize()?;
 
-    // Test different rates
-    for rate in [0.5, 1.0, 1.5, 2.0] {
+    // Test different rates (boundary values and midpoints)
+    for rate in [MIN_RATE, 1.0, 1.5, MAX_RATE] {
         let request = JsonRpcRequest::new("tools/call")
             .with_id(20)
             .with_params(json!({

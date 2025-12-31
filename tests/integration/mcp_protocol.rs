@@ -3,6 +3,7 @@ mod common;
 use anyhow::Result;
 use common::{get_server_path, JsonRpcRequest, McpClient};
 use serde_json::json;
+use voicevox_cli::mcp::service::MAX_RATE;
 
 #[test]
 fn test_initialize_sequence() -> Result<()> {
@@ -186,7 +187,7 @@ fn test_parameter_validation_invalid_rate() -> Result<()> {
             "arguments": {
                 "text": "テスト",
                 "style_id": 3,
-                "rate": 5.0,  // Invalid: must be 0.5-2.0
+                "rate": MAX_RATE + 1.0,  // Invalid: exceeds MAX_RATE
                 "streaming": false
             }
         }),

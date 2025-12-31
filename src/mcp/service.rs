@@ -21,6 +21,11 @@ pub struct VoicevoxService {
     tool_router: ToolRouter<Self>,
 }
 
+/// Minimum allowed speech rate
+pub const MIN_RATE: f32 = 0.5;
+/// Maximum allowed speech rate
+pub const MAX_RATE: f32 = 2.0;
+
 /// Parameters for text-to-speech synthesis
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TextToSpeechParams {
@@ -28,7 +33,7 @@ pub struct TextToSpeechParams {
     pub text: String,
     /// Voice style ID (3=normal, 1=happy, 22=whisper, 76=sad, 75=confused)
     pub style_id: u32,
-    /// Speech rate (0.5-2.0, default 1.0)
+    /// Speech rate (MIN_RATE-MAX_RATE, default 1.0)
     #[serde(default = "default_rate")]
     #[schemars(range(min = 0.5, max = 2.0))]
     pub rate: f32,

@@ -59,7 +59,7 @@ impl McpClient {
         let mut process = Command::new(server_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::inherit()) // Inherit stderr for debugging
             .spawn()
             .context("Failed to spawn MCP server")?;
 

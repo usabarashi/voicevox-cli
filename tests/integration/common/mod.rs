@@ -141,7 +141,8 @@ pub fn get_server_path() -> String {
     })
 }
 
-/// Check if daemon is running
+/// Check if daemon is running (Unix-specific: uses pgrep)
+#[cfg(unix)]
 #[allow(dead_code)]
 pub fn is_daemon_running() -> bool {
     std::process::Command::new("pgrep")

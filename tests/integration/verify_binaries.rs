@@ -1,3 +1,7 @@
+// This test module is Unix-specific due to dependencies on Unix commands (pgrep, which, strings)
+// and Unix socket IPC used by voicevox-daemon
+#![cfg(unix)]
+
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
@@ -13,7 +17,7 @@ fn get_md5_hash(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest))
 }
 
-/// Check if daemon is running and return its path
+/// Check if daemon is running and return its path (Unix-specific: uses pgrep)
 fn get_running_daemon_path() -> Option<String> {
     let output = Command::new("pgrep")
         .arg("-fl")
@@ -35,7 +39,7 @@ fn get_running_daemon_path() -> Option<String> {
     }
 }
 
-/// Find system binary path using which
+/// Find system binary path (Unix-specific: uses which)
 fn find_system_binary(name: &str) -> Option<String> {
     let output = Command::new("which").arg(name).output().ok()?;
 
@@ -46,7 +50,7 @@ fn find_system_binary(name: &str) -> Option<String> {
     }
 }
 
-/// Check if string exists in binary using strings command
+/// Check if string exists in binary (Unix-specific: uses strings)
 fn binary_contains_string(binary_path: &Path, search: &str) -> Result<bool> {
     let output = Command::new("strings")
         .arg(binary_path)

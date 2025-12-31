@@ -1,3 +1,6 @@
+// This test module is Unix-specific due to daemon dependency and Unix socket IPC
+#![cfg(unix)]
+
 mod common;
 
 use anyhow::Result;

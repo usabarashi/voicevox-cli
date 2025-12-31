@@ -1,3 +1,6 @@
+// This test module is Unix-specific due to Unix socket IPC used by MCP server
+#![cfg(unix)]
+
 mod common;
 
 use anyhow::Result;

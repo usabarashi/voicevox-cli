@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 permissions:
@@ -129,25 +129,18 @@ jobs:
           result/bin/voicevox-setup --help || echo "Setup script test"
           result/bin/voicevox-say --version || echo "Version command not available"
 
-      - name: Build with Cargo for integration tests
+      - name: Run MCP protocol tests (release artifacts)
         run: |
-          echo "Building with Cargo for integration tests..."
-          nix develop --accept-flake-config --command cargo build
-
-      - name: Run binary verification tests
-        run: |
-          echo "Running binary verification tests..."
-          nix develop --accept-flake-config --command cargo test --test verify_binaries -- --nocapture
-
-      - name: Run MCP protocol tests
-        run: |
-          echo "Running MCP protocol integration tests..."
-          nix develop --accept-flake-config --command cargo test --test mcp_protocol -- --nocapture
+          echo "Running MCP protocol integration tests against release artifacts..."
+          echo "Testing binary: $(pwd)/result/bin/voicevox-mcp-server"
+          MCP_SERVER_PATH="$(pwd)/result/bin/voicevox-mcp-server" \
+            nix develop --accept-flake-config --command cargo test --test mcp_protocol -- --nocapture
 
       - name: Synthesis tests (skipped in CI)
         run: |
           echo "Synthesis tests are skipped in CI (require daemon and audio output)"
           echo "These tests can be run locally with:"
+          echo "  cargo build"
           echo "  ./target/debug/voicevox-daemon --start --detach"
           echo "  cargo test --test synthesis_modes --ignored"
 

@@ -79,6 +79,39 @@ jobs:
 
           echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
 
+      - name: Test release artifact
+        run: |
+          echo "Testing release artifact..."
+
+          # Extract tarball to test directory
+          mkdir -p test-release
+          tar -xzf "${ARCHIVE_NAME}" -C test-release
+
+          # Test all binaries
+          echo "Testing voicevox-say..."
+          test-release/voicevox-say --help
+          test-release/voicevox-say --version
+
+          echo "Testing voicevox-daemon..."
+          test-release/voicevox-daemon --help
+
+          echo "Testing voicevox-mcp-server..."
+          test-release/voicevox-mcp-server --help
+
+          echo "Testing voicevox-setup..."
+          test-release/voicevox-setup --help
+
+          # Verify all binaries are executable
+          test -x test-release/voicevox-say
+          test -x test-release/voicevox-daemon
+          test -x test-release/voicevox-mcp-server
+          test -x test-release/voicevox-setup
+
+          # Verify VOICEVOX.md exists
+          test -f test-release/VOICEVOX.md
+
+          echo "Release artifact validation passed!"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
         with:

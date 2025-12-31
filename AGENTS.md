@@ -2,6 +2,16 @@
 
 VOICEVOX CLI - Command-line text-to-speech tool using VOICEVOX Core.
 
+## Branch Strategy
+
+- **`main`**: Stable releases (default branch for users)
+  - Used by Nix flake inputs: `inputs.voicevox-cli.url = "github:usabarashi/voicevox-cli"`
+  - Tagged releases are created from this branch
+- **`develop`**: Active development (default for contributors)
+  - Use `git checkout develop` when starting development
+  - All feature branches merge into `develop`
+  - Periodically merged into `main` for releases
+
 ## Architecture
 
 Client-server model with three main binaries:

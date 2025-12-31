@@ -135,6 +135,18 @@ Server operates normally without instruction files. Default behavior defined in 
 
 ## Integration Testing
 
+### CI Environment
+
+GitHub Actions CI automatically runs the following tests:
+- **Unit tests**: `cargo test --lib`
+- **Binary verification**: `cargo test --test verify_binaries`
+- **MCP protocol tests**: `cargo test --test mcp_protocol`
+
+Synthesis tests are **skipped in CI** as they require:
+- Running daemon process
+- Audio output device
+- VOICEVOX Core models
+
 ### Prerequisites
 
 **CRITICAL**: Always verify you're testing the newly built binaries, not system-installed versions.

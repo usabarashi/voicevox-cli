@@ -63,6 +63,11 @@ jobs:
           echo "Running clippy analysis..."
           nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Run unit tests
+        run: |
+          echo "Running unit tests..."
+          nix develop --accept-flake-config --command cargo test --lib
+
       - name: Check scripts
         run: |
           echo "Checking scripts..."
@@ -123,6 +128,28 @@ jobs:
           result/bin/voicevox-mcp-server --help || echo "Help command test"
           result/bin/voicevox-setup --help || echo "Setup script test"
           result/bin/voicevox-say --version || echo "Version command not available"
+
+      - name: Build with Cargo for integration tests
+        run: |
+          echo "Building with Cargo for integration tests..."
+          nix develop --accept-flake-config --command cargo build
+
+      - name: Run binary verification tests
+        run: |
+          echo "Running binary verification tests..."
+          nix develop --accept-flake-config --command cargo test --test verify_binaries -- --nocapture
+
+      - name: Run MCP protocol tests
+        run: |
+          echo "Running MCP protocol integration tests..."
+          nix develop --accept-flake-config --command cargo test --test mcp_protocol -- --nocapture
+
+      - name: Synthesis tests (skipped in CI)
+        run: |
+          echo "Synthesis tests are skipped in CI (require daemon and audio output)"
+          echo "These tests can be run locally with:"
+          echo "  ./target/debug/voicevox-daemon --start --detach"
+          echo "  cargo test --test synthesis_modes --ignored"
 
       - name: Package verification
         run: |

@@ -139,10 +139,26 @@ Server operates normally without instruction files. Default behavior defined in 
 
 ### CI Environment
 
-GitHub Actions CI automatically runs the following tests:
-- **Unit tests**: `cargo test --lib`
-- **Binary verification**: `cargo test --test verify_binaries`
-- **MCP protocol tests**: `cargo test --test mcp_protocol`
+GitHub Actions CI automatically runs the following checks:
+
+```bash
+# 1. Format check
+cargo fmt --check
+
+# 2. Clippy analysis
+cargo clippy --all-targets --all-features -- -D warnings
+
+# 3. Unit tests
+cargo test --lib
+
+# 4. Binary verification tests
+cargo test --test verify_binaries
+
+# 5. MCP protocol tests
+cargo test --test mcp_protocol
+```
+
+**Run these same checks locally before pushing** to catch issues early.
 
 Synthesis tests are **skipped in CI** as they require:
 - Running daemon process
@@ -167,19 +183,32 @@ This test suite automatically checks:
 
 ### Test Workflow
 
-#### 1. Build and Unit Tests
+#### 1. Pre-commit Checks (Required)
+
+**CRITICAL**: Run these checks before every commit to catch errors early:
+
+```bash
+# Format check (auto-fix with: cargo fmt)
+nix develop -c cargo fmt --check
+
+# Clippy with all targets and features (same as CI)
+nix develop -c cargo clippy --all-targets --all-features -- -D warnings
+
+# Unit tests
+nix develop -c cargo test --lib
+```
+
+**Why this matters**: These are the same checks CI runs. Running them locally prevents CI failures and saves time.
+
+#### 2. Build and Integration Test Setup
 
 ```bash
 # Clean build to ensure fresh artifacts
 nix develop -c cargo clean -p voicevox-cli
 nix develop -c cargo build
-
-# Run unit tests and clippy
-nix develop -c cargo test --lib
-nix develop -c cargo clippy
 ```
 
-#### 2. Binary Verification (Automated)
+#### 3. Binary Verification (Automated)
 
 ```bash
 # Run verification tests before integration tests
@@ -196,7 +225,7 @@ md5 target/debug/voicevox-daemon
 which voicevox-daemon && md5 $(which voicevox-daemon)
 ```
 
-#### 3. Integration Tests
+#### 4. Integration Tests
 
 Run MCP protocol integration tests:
 
@@ -221,6 +250,15 @@ Tests are located in `tests/integration/`:
 - `synthesis_modes.rs` - Audio synthesis (daemon and streaming modes)
 - `common/mod.rs` - Shared test utilities (`McpClient`, helpers)
 
+### Pre-commit Checklist
+
+Before every commit:
+
+- [ ] Code formatting: `cargo fmt --check` passes (auto-fix: `cargo fmt`)
+- [ ] Clippy analysis: `cargo clippy --all-targets --all-features -- -D warnings` passes
+- [ ] Unit tests: `cargo test --lib` passes
+- [ ] Build succeeds: `cargo build` completes without errors
+
 ### Binary Verification Checklist
 
 Before running integration tests:
@@ -233,10 +271,11 @@ Before running integration tests:
 
 ### Common Pitfalls
 
-1. **PATH confusion**: System-installed binaries (Nix/Homebrew) may shadow development builds
-2. **Daemon persistence**: Old daemon processes continue running after code changes
-3. **Test isolation**: Tests using `which` or bare command names may invoke wrong binary
-4. **Hash verification**: Always compare MD5/timestamps to confirm binary identity
+1. **Skipping pre-commit checks**: Always run `cargo fmt --check`, `cargo clippy`, and `cargo test --lib` before committing to catch compile errors and lint issues locally
+2. **PATH confusion**: System-installed binaries (Nix/Homebrew) may shadow development builds
+3. **Daemon persistence**: Old daemon processes continue running after code changes
+4. **Test isolation**: Tests using `which` or bare command names may invoke wrong binary
+5. **Hash verification**: Always compare MD5/timestamps to confirm binary identity
 
 ### Automated Test Suite
 

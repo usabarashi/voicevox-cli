@@ -254,7 +254,7 @@ impl VoicevoxService {
                     .filter(|style| style.name.to_lowercase().contains(filter))
                     .collect()
             } else {
-                speaker.styles
+                speaker.styles.into_iter().collect()
             };
 
             if !filtered_styles.is_empty() {

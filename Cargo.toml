@@ -23,6 +23,18 @@ path = "src/bin/mcp_server.rs"
 name = "voicevox_cli"
 path = "src/lib.rs"
 
+[[test]]
+name = "verify_binaries"
+path = "tests/integration/verify_binaries.rs"
+
+[[test]]
+name = "mcp_protocol"
+path = "tests/integration/mcp_protocol.rs"
+
+[[test]]
+name = "synthesis_modes"
+path = "tests/integration/synthesis_modes.rs"
+
 [dependencies]
 anyhow = "1.0"
 thiserror = "2.0"
@@ -35,7 +47,8 @@ dirs = "6.0"
 tempfile = "3.23"
 
 # MCP Server dependencies
-jsonrpc-lite = "0.6"
+rmcp = { version = "0.8", features = ["server", "transport-io"] }
+schemars = { version = "1.0", features = ["derive"] }
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30", features = ["signal", "socket", "uio", "fs"] }
 
@@ -53,6 +66,9 @@ rayon = { version = "1.11", optional = true }
 smallvec = { version = "1.13", features = ["serde"], optional = true }
 compact_str = { version = "0.9", features = ["serde"], optional = true }
 mimalloc = { version = "0.1", default-features = false, optional = true }
+
+[dev-dependencies]
+md5 = "0.7"
 
 [features]
 default = []

@@ -17,6 +17,32 @@ Key design principles:
 - Automatic daemon lifecycle management
 - Transparent auto-startup for seamless user experience
 
+### Project Structure
+
+```
+voicevox-cli/
+├── src/
+│   ├── bin/
+│   │   ├── client.rs          # voicevox-say binary
+│   │   ├── daemon.rs          # voicevox-daemon binary
+│   │   └── mcp_server.rs      # voicevox-mcp-server binary
+│   ├── client/                # Client-side logic
+│   ├── daemon/                # Daemon server logic
+│   ├── core/                  # VOICEVOX Core FFI bindings
+│   ├── ipc/                   # Unix socket IPC protocol
+│   ├── synthesis/             # Streaming synthesis engine
+│   ├── mcp/                   # MCP protocol (rmcp-based)
+│   └── lib.rs                 # Library root
+├── tests/
+│   └── integration/           # Integration test suite
+│       ├── verify_binaries.sh
+│       ├── test_mcp_protocol.py
+│       ├── test_synthesis_modes.py
+│       └── README.md
+├── Cargo.toml
+└── VOICEVOX.md               # MCP server instructions
+```
+
 ## Implementation Details
 
 ### Binary Modules (`src/bin/`)
@@ -32,7 +58,7 @@ Key design principles:
 - `core/`: VOICEVOX Core FFI bindings and voice synthesis interface
 - `ipc/`: Inter-process communication protocol for Unix socket messaging
 - `synthesis/`: Streaming synthesis engine for processing long text segments
-- `mcp/`: MCP protocol tools and request handlers
+- `mcp/`: MCP protocol implementation using [rmcp](https://github.com/4t145/rmcp) framework
 
 ### Daemon Auto-Start Mechanism
 
@@ -57,6 +83,18 @@ voicevox-mcp-server                 # MCP protocol server for AI assistant integ
 ```
 
 ## MCP Integration
+
+### Implementation Architecture
+
+The MCP server is built using the [rmcp](https://github.com/4t145/rmcp) crate, providing a standardized framework for Model Context Protocol implementation.
+
+**Implementation:**
+- Protocol: MCP 2024-11-05
+- Tool definitions: `#[tool]` macro on async methods
+- Tool routing: `#[tool_router]` macro generates routing logic
+- Server handler: `#[tool_handler]` macro **REQUIRED** for tool registration
+- Parameter schemas: Automatic generation via `#[derive(JsonSchema)]`
+- Validation: `McpError::invalid_params()` for parameter errors
 
 ### Available Tools
 
@@ -94,3 +132,121 @@ voicevox-mcp-server
 ```
 
 Server operates normally without instruction files. Default behavior defined in [VOICEVOX.md](VOICEVOX.md).
+
+## Integration Testing
+
+### Prerequisites
+
+**CRITICAL**: Always verify you're testing the newly built binaries, not system-installed versions.
+
+**Automated verification:**
+```bash
+# Run binary verification tests (recommended)
+cargo test --test verify_binaries -- --nocapture
+```
+
+This test suite automatically checks:
+- All binaries are built and timestamped
+- Running daemon is development build (not system version)
+- MD5 hashes differ from system-installed binaries
+- MCP protocol version is correct (2024-11-05)
+
+### Test Workflow
+
+#### 1. Build and Unit Tests
+
+```bash
+# Clean build to ensure fresh artifacts
+nix develop -c cargo clean -p voicevox-cli
+nix develop -c cargo build
+
+# Run unit tests and clippy
+nix develop -c cargo test --lib
+nix develop -c cargo clippy
+```
+
+#### 2. Binary Verification (Automated)
+
+```bash
+# Run verification tests before integration tests
+cargo test --test verify_binaries -- --nocapture
+```
+
+If manual verification is needed:
+```bash
+# Check running daemon
+pgrep -fl voicevox-daemon  # Should show target/debug path
+
+# Check binary hashes
+md5 target/debug/voicevox-daemon
+which voicevox-daemon && md5 $(which voicevox-daemon)
+```
+
+#### 3. Integration Tests
+
+Run MCP protocol integration tests:
+
+```bash
+# 1. Verify binaries (recommended first step)
+cargo test --test verify_binaries -- --nocapture
+
+# 2. Run protocol tests (no daemon required)
+cargo test --test mcp_protocol
+
+# 3. Start daemon for synthesis tests
+./target/debug/voicevox-daemon --start --detach
+sleep 2
+
+# 4. Run synthesis tests (requires daemon)
+cargo test --test synthesis_modes --ignored
+```
+
+Tests are located in `tests/integration/`:
+- `verify_binaries.rs` - Binary verification and environment checks
+- `mcp_protocol.rs` - MCP protocol compliance
+- `synthesis_modes.rs` - Audio synthesis (daemon and streaming modes)
+- `common/mod.rs` - Shared test utilities (`McpClient`, helpers)
+
+### Binary Verification Checklist
+
+Before running integration tests:
+
+- [ ] All system daemons stopped (`pgrep voicevox`)
+- [ ] Fresh build completed (`ls -lh target/debug/voicevox-*`)
+- [ ] MD5 hashes differ from system binaries
+- [ ] Test scripts use **absolute paths** to `target/debug/` binaries
+- [ ] No `which voicevox-*` paths used in tests
+
+### Common Pitfalls
+
+1. **PATH confusion**: System-installed binaries (Nix/Homebrew) may shadow development builds
+2. **Daemon persistence**: Old daemon processes continue running after code changes
+3. **Test isolation**: Tests using `which` or bare command names may invoke wrong binary
+4. **Hash verification**: Always compare MD5/timestamps to confirm binary identity
+
+### Automated Test Suite
+
+Integration tests are written in Rust:
+
+```
+tests/integration/
+├── common/
+│   └── mod.rs                # Test utilities (McpClient, helpers)
+├── verify_binaries.rs        # Binary verification tests
+├── mcp_protocol.rs           # MCP protocol compliance tests
+└── synthesis_modes.rs        # Synthesis mode tests
+```
+
+Run full test suite:
+
+```bash
+# 1. Verify binaries
+cargo test --test verify_binaries -- --nocapture
+
+# 2. Run protocol tests
+cargo test --test mcp_protocol
+
+# 3. Run synthesis tests (requires daemon)
+./target/debug/voicevox-daemon --start --detach
+cargo test --test synthesis_modes --ignored
+```

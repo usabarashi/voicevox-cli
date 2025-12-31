@@ -35,9 +35,11 @@ voicevox-cli/
 │   └── lib.rs                 # Library root
 ├── tests/
 │   └── integration/           # Integration test suite
-│       ├── verify_binaries.sh
-│       ├── test_mcp_protocol.py
-│       ├── test_synthesis_modes.py
+│       ├── common/
+│       │   └── mod.rs         # Test utilities (McpClient, helpers)
+│       ├── verify_binaries.rs
+│       ├── mcp_protocol.rs
+│       ├── synthesis_modes.rs
 │       └── README.md
 ├── Cargo.toml
 └── VOICEVOX.md               # MCP server instructions

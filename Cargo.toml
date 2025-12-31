@@ -41,7 +41,7 @@ nix = { version = "0.30", features = ["signal", "socket", "uio", "fs"] }
 
 rodio = { version = "0.21", features = ["wav", "symphonia-all"] }
 
-tokio = { version = "1.47", features = ["full", "tracing"] }
+tokio = { version = "1.48", features = ["full", "tracing"] }
 tokio-util = { version = "0.7", features = ["codec", "io-util"] }
 futures-util = { version = "0.3", features = ["sink", "io"] }
 

@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
       - name: Install Nix with cache
         uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
@@ -85,10 +85,8 @@ jobs:
       - name: Run security audit
         run: |
           echo "Running security audit..."
-          if ! nix develop --accept-flake-config --command cargo audit --version >/dev/null 2>&1; then
-            echo "Installing cargo-audit..."
-            nix develop --accept-flake-config --command cargo install cargo-audit
-          fi
+          echo "Installing latest cargo-audit for CVSS 4.0 support..."
+          nix develop --accept-flake-config --command cargo install cargo-audit --force
           nix develop --accept-flake-config --command cargo audit
 
       - name: Build with Nix

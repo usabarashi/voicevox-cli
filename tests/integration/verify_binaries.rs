@@ -3,19 +3,14 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-/// Get MD5 hash of a file (macOS-compatible)
+/// Get MD5 hash of a file (platform-independent)
 fn get_md5_hash(path: &Path) -> Result<String> {
-    let output = Command::new("md5")
-        .arg("-q")
-        .arg(path)
-        .output()
-        .context("Failed to run md5 command")?;
+    let contents = fs::read(path)
+        .with_context(|| format!("Failed to read file: {:?}", path))?;
 
-    if !output.status.success() {
-        anyhow::bail!("md5 command failed for {:?}", path);
-    }
+    let digest = md5::compute(&contents);
 
-    Ok(String::from_utf8(output.stdout)?.trim().to_string())
+    Ok(format!("{:x}", digest))
 }
 
 /// Check if daemon is running and return its path

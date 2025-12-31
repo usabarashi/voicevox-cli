@@ -67,6 +67,9 @@ smallvec = { version = "1.13", features = ["serde"], optional = true }
 compact_str = { version = "0.9", features = ["serde"], optional = true }
 mimalloc = { version = "0.1", default-features = false, optional = true }
 
+[dev-dependencies]
+md5 = "0.7"
+
 [features]
 default = []
 simd = ["rayon"]

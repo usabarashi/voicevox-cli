@@ -101,14 +101,15 @@ The MCP server is built using the [rmcp](https://github.com/modelcontextprotocol
 **Implementation:**
 - Protocol: MCP 2024-11-05
 - Tool definitions: `#[tool]` macro on async methods
-- Tool routing: `#[tool_router]` macro generates routing logic
-- Server handler: `#[tool_handler]` macro **REQUIRED** for tool registration
+- Tool routing: Manual `ServerHandler::call_tool` implementation for RequestContext access
+- Progress notifications: MCP progress protocol for long operations
+- Cancellation: CancellationToken integration with MCP cancelled notifications
 - Parameter schemas: Automatic generation via `#[derive(JsonSchema)]`
 - Validation: `McpError::invalid_params()` for parameter errors
 
 ### Available Tools
 
-- `text_to_speech`: Convert Japanese text to speech with configurable voice style, rate, and streaming
+- `text_to_speech`: Convert Japanese text to speech with configurable voice style, rate, and streaming. Supports progress notifications and cancellation for long texts.
 - `list_voice_styles`: Query available voice styles with optional filtering by speaker or style name
 
 ### Instruction System

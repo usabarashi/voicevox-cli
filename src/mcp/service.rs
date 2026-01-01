@@ -555,7 +555,7 @@ impl ServerHandler for VoicevoxService {
             tools: vec![
                 Tool {
                     name: "text_to_speech".into(),
-                    description: Some("Convert Japanese text to speech with VOICEVOX. Splits long messages automatically for client compatibility.".into()),
+                    description: Some("Convert Japanese text to speech with VOICEVOX. Supports progress notifications for long text synthesis and cancellation via Ctrl+C. Splits long messages automatically for client compatibility.".into()),
                     input_schema: Arc::new(text_to_speech_map),
                     title: None,
                     output_schema: None,

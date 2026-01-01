@@ -137,11 +137,11 @@ jobs:
       - name: Test functionality
         run: |
           echo "Testing functionality..."
-          result/bin/voicevox-say --help || echo "Help command test"
-          result/bin/voicevox-daemon --help || echo "Help command test"
-          result/bin/voicevox-mcp-server --help || echo "Help command test"
-          result/bin/voicevox-setup --help || echo "Setup script test"
-          result/bin/voicevox-say --version || echo "Version command not available"
+          result/bin/voicevox-say --help
+          result/bin/voicevox-daemon --help
+          result/bin/voicevox-mcp-server --help
+          result/bin/voicevox-setup --help
+          result/bin/voicevox-say --version
 
       - name: Run MCP protocol tests (release artifacts)
         run: |

@@ -14,6 +14,33 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Handle --help and --version arguments
+case "${1:-}" in
+    -h|--help)
+        echo "VOICEVOX CLI Setup - Downloads required resources"
+        echo ""
+        echo "Usage: voicevox-setup [OPTIONS]"
+        echo ""
+        echo "Options:"
+        echo "  -h, --help     Show this help message and exit"
+        echo "  -V, --version  Show version information and exit"
+        echo ""
+        echo "Environment variables:"
+        echo "  VOICEVOX_DIR           Override data directory location"
+        echo "  XDG_DATA_HOME          XDG base directory (default: ~/.local/share)"
+        echo ""
+        echo "This script downloads:"
+        echo "  - ONNX Runtime library"
+        echo "  - OpenJTalk dictionary"
+        echo "  - Voice models"
+        exit 0
+        ;;
+    -V|--version)
+        echo "voicevox-setup 0.1.0"
+        exit 0
+        ;;
+esac
+
 # Function to create ONNX Runtime compatibility symlinks
 create_onnxruntime_symlinks() {
     local lib_dir="$1"

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use phf::phf_set;
 use rodio::{Decoder, Sink};
 use std::io::Cursor;
 use tokio::sync::mpsc;
@@ -11,66 +12,40 @@ use crate::config::Config;
 /// Tuple: (current_progress, total_progress, status_message)
 type ProgressSender = mpsc::Sender<(f64, Option<f64>, Option<String>)>;
 
+/// Compile-time hash set of Japanese punctuation and special characters
+static PUNCTUATION_CHARS: phf::Set<char> = phf_set! {
+    // Full-width space
+    '　',
+    // Basic Japanese punctuation
+    '。', '、', '！', '？', '．', '，',
+    // Japanese quotation marks
+    '「', '」', '『', '』', '〝', '〟',
+    // Parentheses (Japanese variants)
+    '（', '）', '［', '］', '｛', '｝', '【', '】',
+    '〔', '〕', '〈', '〉', '《', '》', '〖', '〗', '〘', '〙',
+    // Dashes and lines
+    '―', '－', '─', '━', '—', '–', '〜', '～', '‐',
+    // Dots and ellipsis
+    '…', '‥', '・', '•', '◦', '‣', '⁃',
+    // Special marks
+    '※', '〃', '々', '゜', '゛', '†', '‡', '§', '¶',
+    // Mathematical symbols (commonly used in text)
+    '×', '÷', '±', '°', '′', '″', '‰', '‱',
+    // Arrows
+    '→', '←', '↑', '↓', '⇒', '⇔', '⇄', '⇅',
+    // Zero-width characters
+    '\u{200B}', // Zero-width space
+    '\u{200C}', // Zero-width non-joiner
+    '\u{200D}', // Zero-width joiner
+    '\u{200E}', // Left-to-right mark
+    '\u{200F}', // Right-to-left mark
+    '\u{FEFF}', // Zero-width no-break space (BOM)
+};
+
 /// Check if a string contains only punctuation and symbols (no synthesizable text)
 fn is_punctuation_only(s: &str) -> bool {
-    s.chars().all(|c| {
-        // ASCII punctuation
-        c.is_ascii_punctuation()
-            // Whitespace (including full-width)
-            || c.is_whitespace()
-            || c == '　' // Full-width space
-            // Basic Japanese punctuation
-            || matches!(
-                c,
-                '。' | '、' | '！' | '？' | '．' | '，'
-            )
-            // Japanese quotation marks
-            || matches!(
-                c,
-                '「' | '」' | '『' | '』' | '〝' | '〟'
-            )
-            // Parentheses (Japanese variants)
-            || matches!(
-                c,
-                '（' | '）' | '［' | '］' | '｛' | '｝' | '【' | '】'
-                    | '〔' | '〕' | '〈' | '〉' | '《' | '》' | '〖' | '〗' | '〘' | '〙'
-            )
-            // Dashes and lines
-            || matches!(
-                c,
-                '―' | '－' | '─' | '━' | '—' | '–' | '〜' | '～' | '‐'
-            )
-            // Dots and ellipsis
-            || matches!(
-                c,
-                '…' | '‥' | '・' | '•' | '◦' | '‣' | '⁃'
-            )
-            // Special marks
-            || matches!(
-                c,
-                '※' | '〃' | '々' | '゜' | '゛' | '†' | '‡' | '§' | '¶'
-            )
-            // Mathematical symbols (commonly used in text)
-            || matches!(
-                c,
-                '×' | '÷' | '±' | '°' | '′' | '″' | '‰' | '‱'
-            )
-            // Arrows
-            || matches!(
-                c,
-                '→' | '←' | '↑' | '↓' | '⇒' | '⇔' | '⇄' | '⇅'
-            )
-            // Zero-width characters
-            || matches!(
-                c,
-                '\u{200B}' | // Zero-width space
-                '\u{200C}' | // Zero-width non-joiner
-                '\u{200D}' | // Zero-width joiner
-                '\u{200E}' | // Left-to-right mark
-                '\u{200F}' | // Right-to-left mark
-                '\u{FEFF}'   // Zero-width no-break space (BOM)
-            )
-    })
+    s.chars()
+        .all(|c| c.is_ascii_punctuation() || c.is_whitespace() || PUNCTUATION_CHARS.contains(&c))
 }
 
 pub struct StreamingSynthesizer {

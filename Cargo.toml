@@ -61,6 +61,7 @@ futures-util = { version = "0.3", features = ["sink", "io"] }
 voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", rev = "711d8b4b464ea9b1161db093e4a1feed763b9611", features = ["load-onnxruntime"], default-features = false }
 
 libc = "0.2"
+phf = { version = "0.11", features = ["macros"] }
 
 rayon = { version = "1.11", optional = true }
 smallvec = { version = "1.13", features = ["serde"], optional = true }

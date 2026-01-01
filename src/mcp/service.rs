@@ -130,9 +130,11 @@ impl VoicevoxService {
 
         match result {
             Ok(msg) => Ok(CallToolResult::success(vec![Content::text(msg)])),
-            Err(e) if e.to_string().contains("cancelled") => Ok(CallToolResult::error(vec![
-                Content::text("Synthesis cancelled by user".to_string()),
-            ])),
+            Err(e) if e.to_string().contains("cancelled") => {
+                Ok(CallToolResult::error(vec![Content::text(
+                    "Synthesis cancelled by user".to_string(),
+                )]))
+            }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
                 "Synthesis failed: {}",
                 e
@@ -550,53 +552,47 @@ impl ServerHandler for VoicevoxService {
         use std::sync::Arc;
 
         let text_to_speech_schema = serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "text": {
-                                "type": "string",
-                                "description": "Japanese text to synthesize (15-50 chars optimal, 100+ may need splitting)"
-                            },
-                            "style_id": {
-                                "type": "integer",
-                                "description": "Voice style ID (3=normal, 1=happy, 22=whisper, 76=sad, 75=confused)"
-                            },
-                            "rate": {
-                                "type": "number",
-                                "minimum": 0.5,
-                                "maximum": 2.0,
-                                "default": 1.0,
-                                "description": "Speech rate (0.5-2.0, default 1.0)"
-                            },
-                            "streaming": {
-                                "type": "boolean",
-                                "default": true,
-                                "description": "Enable streaming mode for lower latency (default true)"
-                            }
-                        },
-                        "required": ["text", "style_id"]
-                    });
-        let text_to_speech_map = text_to_speech_schema
-            .as_object()
-            .unwrap()
-            .clone();
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Japanese text to synthesize (15-50 chars optimal, 100+ may need splitting)"
+                },
+                "style_id": {
+                    "type": "integer",
+                    "description": "Voice style ID (3=normal, 1=happy, 22=whisper, 76=sad, 75=confused)"
+                },
+                "rate": {
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 2.0,
+                    "default": 1.0,
+                    "description": "Speech rate (0.5-2.0, default 1.0)"
+                },
+                "streaming": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable streaming mode for lower latency (default true)"
+                }
+            },
+            "required": ["text", "style_id"]
+        });
+        let text_to_speech_map = text_to_speech_schema.as_object().unwrap().clone();
 
         let list_voice_styles_schema = serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "speaker_name": {
-                                "type": "string",
-                                "description": "Filter by speaker name (partial match)"
-                            },
-                            "style_name": {
-                                "type": "string",
-                                "description": "Filter by style name (partial match)"
-                            }
-                        }
-                    });
-        let list_voice_styles_map = list_voice_styles_schema
-            .as_object()
-            .unwrap()
-            .clone();
+            "type": "object",
+            "properties": {
+                "speaker_name": {
+                    "type": "string",
+                    "description": "Filter by speaker name (partial match)"
+                },
+                "style_name": {
+                    "type": "string",
+                    "description": "Filter by style name (partial match)"
+                }
+            }
+        });
+        let list_voice_styles_map = list_voice_styles_schema.as_object().unwrap().clone();
 
         Ok(ListToolsResult {
             tools: vec![
@@ -630,10 +626,7 @@ impl ServerHandler for VoicevoxService {
     ) {
         // CancellationToken in RequestContext is automatically cancelled by rmcp framework
         // This handler is primarily for logging
-        eprintln!(
-            "Request {:?} cancelled by client",
-            notification.request_id
-        );
+        eprintln!("Request {:?} cancelled by client", notification.request_id);
     }
 }
 

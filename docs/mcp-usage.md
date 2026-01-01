@@ -224,10 +224,22 @@ The AI assistant will automatically receive and follow the instructions from `VO
 
 ## Streaming vs Non-Streaming
 
-- **Streaming mode (default)**: Text is split into segments and synthesized progressively for lower latency
+- **Streaming mode (default)**: Text is split into segments and synthesized progressively for lower latency. Progress notifications prevent client timeout during long synthesis.
 - **Non-streaming mode**: Entire text is synthesized at once before playback
 
 Streaming is recommended for longer texts to reduce perceived wait time.
+
+## Progress & Cancellation
+
+### Progress Notifications
+- Long text synthesis sends periodic progress updates to prevent client timeout
+- Progress messages: "Synthesizing segment X/Y" → "Reading aloud..."
+- Enables reliable synthesis of texts over 100 characters
+
+### Cancellation Support
+- User can cancel ongoing synthesis with Ctrl+C
+- Server stops immediately and frees resources
+- Graceful handling - no error response needed
 
 ## Error Handling
 
@@ -236,3 +248,4 @@ Common errors:
 - "Failed to connect to daemon": Daemon auto-start failed, check system resources
 - "Invalid style_id": Use `list_voice_styles` to see available style IDs
 - "Audio device not available": Check system audio settings
+- "Cancelled by user": Synthesis was interrupted - no error, graceful stop

@@ -1,6 +1,3 @@
-pub mod protocol;
-pub mod requests;
-pub mod server;
-pub mod tools;
+pub mod service;
 
-pub use server::run_mcp_server;
+pub use service::VoicevoxService;

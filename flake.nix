@@ -219,10 +219,10 @@
             cargo-audit
 
             # Build tools
-            cmake
             pkg-config
+            cmake
 
-            # for MCP
+            # UV for Python package management (for Serena MCP)
             nixd
             uv
           ];

@@ -1,7 +1,14 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
+#[cfg(unix)]
+use libc::{getegid, geteuid};
 use std::collections::HashMap;
-use std::path::PathBuf;
+#[cfg(unix)]
+use std::env;
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
@@ -10,6 +17,131 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::core::{CoreSynthesis, VoicevoxCore};
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
+
+#[cfg(unix)]
+fn check_dir_security(path: &Path, tighten: bool) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).with_context(|| {
+        format!(
+            "Failed to inspect socket directory permissions: {}",
+            path.display()
+        )
+    })?;
+
+    if metadata.file_type().is_symlink() {
+        return Err(anyhow::anyhow!(
+            "Socket path traverses a symlink: {}",
+            path.display()
+        ));
+    }
+
+    if !metadata.file_type().is_dir() {
+        return Err(anyhow::anyhow!(
+            "Socket path component is not a directory: {}",
+            path.display()
+        ));
+    }
+
+    let uid = unsafe { geteuid() } as u32;
+    let gid = unsafe { getegid() } as u32;
+    if metadata.uid() != uid || metadata.gid() != gid {
+        return Err(anyhow::anyhow!(
+            "Socket directory must be owned by the current user: {}",
+            path.display()
+        ));
+    }
+
+    if tighten {
+        let mut permissions = metadata.permissions();
+        if permissions.mode() & 0o077 != 0 {
+            permissions.set_mode(0o700);
+            fs::set_permissions(path, permissions).with_context(|| {
+                format!(
+                    "Failed to tighten socket directory permissions: {}",
+                    path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn secure_socket_dir_hierarchy(dir: &Path) -> Result<()> {
+    let dir_canonical = dir
+        .canonicalize()
+        .with_context(|| format!("Failed to canonicalize socket directory: {}", dir.display()))?;
+
+    let boundary_candidates = [
+        env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
+        env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+        env::var_os("HOME").map(PathBuf::from),
+    ];
+
+    let mut boundary: Option<PathBuf> = None;
+    let mut current_dir = dir;
+    let mut new_dirs = Vec::new();
+
+    while let Some(parent) = current_dir.parent() {
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+
+        if boundary_candidates.iter().flatten().any(|candidate| {
+            if candidate.as_os_str().is_empty() {
+                return false;
+            }
+            let candidate_path = candidate.as_path();
+            if let Ok(candidate_canon) = candidate_path.canonicalize() {
+                dir_canonical.starts_with(&candidate_canon) && parent == candidate_path
+            } else {
+                parent == candidate_path
+            }
+        }) {
+            boundary = Some(parent.to_path_buf());
+            break;
+        }
+
+        if !parent.exists() {
+            new_dirs.push(parent.to_path_buf());
+        }
+
+        current_dir = parent;
+    }
+
+    let boundary = boundary.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Socket directory resides outside of approved bases: {}",
+            dir.display()
+        )
+    })?;
+
+    check_dir_security(&boundary, false)?;
+
+    for component in new_dirs.into_iter().rev() {
+        fs::create_dir(&component).with_context(|| {
+            format!(
+                "Failed to create socket directory component: {}",
+                component.display()
+            )
+        })?;
+
+        check_dir_security(&component, true)?;
+    }
+
+    if !dir.exists() {
+        fs::create_dir(dir).with_context(|| {
+            format!(
+                "Failed to create socket directory component: {}",
+                dir.display()
+            )
+        })?;
+    }
+
+    check_dir_security(dir, true)?;
+
+    Ok(())
+}
 
 pub struct DaemonState {
     core: VoicevoxCore,
@@ -161,6 +293,29 @@ pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>
 }
 
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
+    if let Some(parent) = socket_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            let mut builder = fs::DirBuilder::new();
+            builder.recursive(true);
+            #[cfg(unix)]
+            {
+                builder.mode(0o700);
+            }
+
+            builder.create(parent).with_context(|| {
+                format!(
+                    "Failed to create socket parent directory: {}",
+                    parent.display()
+                )
+            })?;
+
+            #[cfg(unix)]
+            {
+                secure_socket_dir_hierarchy(parent)?;
+            }
+        }
+    }
+
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
     }

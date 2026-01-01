@@ -1,9 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
+use rmcp::{transport::stdio, ServiceExt};
 use tokio::process::Command;
 use tokio::time::timeout;
 use voicevox_cli::client::daemon_client::find_daemon_binary;
 use voicevox_cli::daemon::{exit_codes as exit_daemon, startup, DaemonError, DaemonResult};
+use voicevox_cli::mcp::VoicevoxService;
 use voicevox_cli::paths::get_socket_path;
 
 #[derive(Parser, Debug)]
@@ -168,7 +170,8 @@ async fn main() -> Result<()> {
         }
     }
 
-    voicevox_cli::mcp::run_mcp_server().await?;
+    let service = VoicevoxService::new().serve(stdio()).await?;
+    service.waiting().await?;
 
     Ok(())
 }

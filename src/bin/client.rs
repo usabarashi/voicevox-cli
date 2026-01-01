@@ -52,10 +52,7 @@ async fn try_daemon_with_retry(
             }
 
             if !quiet && output_file.is_none() {
-                if let Err(e) = play_audio_from_memory(&wav_data) {
-                    eprintln!("Error: Audio playback failed: {e}");
-                    return Err(e);
-                }
+                play_audio_from_memory(wav_data)?;
             }
 
             Ok(())
@@ -98,7 +95,7 @@ async fn main() -> Result<()> {
         )
         .arg(
             Arg::new("output-file")
-                .help("Specify the path for an audio file to be written")
+                .help("Write synthesized audio to the specified WAV file")
                 .long("output-file")
                 .short('o')
                 .value_name("FILE"),
@@ -112,7 +109,7 @@ async fn main() -> Result<()> {
         )
         .arg(
             Arg::new("quiet")
-                .help("Don't play audio, only save to file")
+                .help("Suppress playback (use with --output-file to export silently)")
                 .long("quiet")
                 .short('q')
                 .action(clap::ArgAction::SetTrue),

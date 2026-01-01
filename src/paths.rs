@@ -1,4 +1,8 @@
 use anyhow::{anyhow, Result};
+#[cfg(unix)]
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 
 const APP_NAME: &str = "voicevox";
@@ -8,6 +12,7 @@ const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
 const ONNXRUNTIME_SUBDIR: &str = "onnxruntime/lib";
 const DICT_SUBDIR: &str = "dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
+const RUNTIME_SUBDIR: &str = "runtime";
 
 /// Get the default VOICEVOX data directory path using XDG Base Directory specification
 /// Priority: $XDG_DATA_HOME/voicevox > ~/.local/share/voicevox
@@ -25,28 +30,84 @@ pub fn get_default_voicevox_dir() -> PathBuf {
         })
 }
 
+/// Determine the daemon Unix socket path following XDG conventions.
+///
+/// Search order:
+/// 1. `VOICEVOX_SOCKET_PATH` – if set, use the value verbatim.
+/// 2. `XDG_RUNTIME_DIR` – place the socket at `$XDG_RUNTIME_DIR/voicevox/runtime/voicevox-daemon.sock`.
+/// 3. `XDG_STATE_HOME` – use `$XDG_STATE_HOME/voicevox/runtime/voicevox-daemon.sock`.
+/// 4. `HOME` – fall back to `$HOME/.local/state/voicevox/runtime/voicevox-daemon.sock`.
+/// 5. `dirs::state_dir()` and `dirs::data_local_dir()` (via `get_default_voicevox_dir()`), each scoped
+///    under `voicevox/runtime`, preferring an existing socket if found; otherwise the first candidate
+///    becomes the creation target.
+///
+/// This ensures the daemon and clients agree on the socket location while keeping the socket confined
+/// to user-scoped runtime/state directories.
 pub fn get_socket_path() -> PathBuf {
-    let env_socket_paths = [
-        ("VOICEVOX_SOCKET_PATH", ""),
-        ("XDG_RUNTIME_DIR", SOCKET_FILENAME),
-        ("XDG_STATE_HOME", SOCKET_FILENAME),
-        ("HOME", &format!(".local/state/{SOCKET_FILENAME}")),
-    ];
+    if let Ok(path) = std::env::var("VOICEVOX_SOCKET_PATH") {
+        return PathBuf::from(path);
+    }
 
-    for (env_var, suffix) in &env_socket_paths {
-        if let Ok(value) = std::env::var(env_var) {
-            let path = PathBuf::from(&value);
-            return if suffix.is_empty() {
-                path
-            } else {
-                path.join(suffix)
-            };
+    let make_candidate = |base_dir: &Path, base_includes_app_name: bool| -> PathBuf {
+        if base_includes_app_name {
+            base_dir.join(RUNTIME_SUBDIR).join(SOCKET_FILENAME)
+        } else {
+            base_dir
+                .join(APP_NAME)
+                .join(RUNTIME_SUBDIR)
+                .join(SOCKET_FILENAME)
+        }
+    };
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(xdg_runtime) = std::env::var("XDG_RUNTIME_DIR") {
+        if !xdg_runtime.is_empty() {
+            candidates.push(make_candidate(Path::new(&xdg_runtime), false));
         }
     }
 
-    dirs::state_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(SOCKET_FILENAME)
+    if let Ok(xdg_state) = std::env::var("XDG_STATE_HOME") {
+        if !xdg_state.is_empty() {
+            candidates.push(make_candidate(Path::new(&xdg_state), false));
+        }
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            let base = Path::new(&home).join(".local/state");
+            candidates.push(make_candidate(&base, false));
+        }
+    }
+
+    if let Some(state_dir) = dirs::state_dir() {
+        candidates.push(make_candidate(state_dir.as_path(), false));
+    }
+
+    candidates.push(make_candidate(get_default_voicevox_dir().as_ref(), true));
+
+    #[cfg(unix)]
+    {
+        for candidate in &candidates {
+            if let Ok(metadata) = fs::symlink_metadata(candidate) {
+                if metadata.file_type().is_socket() {
+                    return candidate.clone();
+                }
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        if let Some(existing) = candidates.iter().find(|path| path.exists()) {
+            return existing.clone();
+        }
+    }
+
+    candidates
+        .into_iter()
+        .next()
+        .expect("get_default_voicevox_dir should always provide at least one candidate")
 }
 
 pub fn find_models_dir() -> Result<PathBuf> {

@@ -79,6 +79,111 @@ jobs:
 
           echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
 
+      - name: Test release artifact
+        run: |
+          echo "Testing release artifact..."
+
+          # Extract tarball to test directory
+          mkdir -p test-release
+          tar -xzf "${ARCHIVE_NAME}" -C test-release
+
+          # Test all binaries
+          echo "Testing voicevox-say..."
+          test-release/voicevox-say --help
+          test-release/voicevox-say --version
+
+          echo "Testing voicevox-daemon..."
+          test-release/voicevox-daemon --help
+
+          echo "Testing voicevox-mcp-server..."
+          test-release/voicevox-mcp-server --help
+
+          echo "Testing voicevox-setup..."
+          test-release/voicevox-setup --help
+
+          # Verify all binaries are executable
+          test -x test-release/voicevox-say
+          test -x test-release/voicevox-daemon
+          test -x test-release/voicevox-mcp-server
+          test -x test-release/voicevox-setup
+
+          # Verify VOICEVOX.md exists
+          test -f test-release/VOICEVOX.md
+
+          echo "Release artifact validation passed!"
+
+      - name: Generate release notes
+        id: release_notes
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+
+            // Get previous release tag
+            let previousTag = null;
+            try {
+              const latestRelease = await github.rest.repos.getLatestRelease({
+                owner,
+                repo
+              });
+              previousTag = latestRelease.data.tag_name;
+              core.info(`Previous release: ${previousTag}`);
+            } catch (error) {
+              core.info('No previous release found');
+            }
+
+            // Get commits since previous release
+            let compare;
+            if (previousTag) {
+              compare = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${previousTag}...main`
+              });
+            } else {
+              // First release - get all commits
+              const commits = await github.rest.repos.listCommits({
+                owner,
+                repo,
+                sha: 'main',
+                per_page: 100
+              });
+              compare = { data: { commits: commits.data } };
+            }
+
+            // Collect merged PRs
+            const prMap = new Map();
+            for (const commit of compare.data.commits) {
+              const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha: commit.sha
+              });
+
+              for (const pr of associated.data) {
+                if (pr.merged_at && !prMap.has(pr.number)) {
+                  prMap.set(pr.number, {
+                    number: pr.number,
+                    title: pr.title,
+                    url: pr.html_url,
+                    author: pr.user.login,
+                    merged_at: pr.merged_at
+                  });
+                }
+              }
+            }
+
+            const mergedPrs = Array.from(prMap.values())
+              .sort((a, b) => new Date(a.merged_at) - new Date(b.merged_at));
+
+            const prList = mergedPrs.length
+              ? mergedPrs.map(pr => `- [#${pr.number}](${pr.url}) ${pr.title} by @${pr.author}`).join('\n')
+              : 'No merged pull requests in this release.';
+
+            core.setOutput('pr_list', prList);
+            core.setOutput('pr_count', mergedPrs.length);
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
         with:
@@ -86,6 +191,10 @@ jobs:
           name: VOICEVOX CLI ${{ steps.create_tag.outputs.TAG_NAME }}
           body: |
             ## VOICEVOX CLI Release ${{ steps.create_tag.outputs.TAG_NAME }}
+
+            ### What's Changed
+
+            ${{ steps.release_notes.outputs.pr_list }}
 
             ### Download
             - **macOS (Apple Silicon)**: `voicevox-cli-${{ steps.create_tag.outputs.TAG_NAME }}-aarch64-darwin.tar.gz`
@@ -107,6 +216,7 @@ jobs:
             - **Build Time**: ${{ steps.create_tag.outputs.TAG_NAME }}
             - **Commit**: ${{ github.sha }}
             - **Branch**: main
+            - **Changes**: ${{ steps.release_notes.outputs.pr_count }} merged pull requests
           draft: false
           prerelease: false
           files: |

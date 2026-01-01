@@ -49,12 +49,48 @@ sudo cp voicevox-* /usr/local/bin/
 
 ## Installation
 
+### Nix Flake Input
+
+Add to your `flake.nix`:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    voicevox-cli = {
+      url = "github:usabarashi/voicevox-cli";
+      inputs.nixpkgs.follows = "nixpkgs";  # Ensure consistent nixpkgs version
+    };
+  };
+
+  outputs = { self, nixpkgs, voicevox-cli }:
+    let
+      system = "aarch64-darwin";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in
+    {
+      # Add to your development shell
+      devShells.${system}.default = pkgs.mkShell {
+        packages = [
+          voicevox-cli.packages.${system}.default
+        ];
+      };
+
+      # Or use directly in your configuration
+      # packages.${system}.default = voicevox-cli.packages.${system}.default;
+    };
+}
+```
+
 ### Development
 
 ```bash
 # Clone repository
 git clone https://github.com/usabarashi/voicevox-cli
 cd voicevox-cli
+
+# Checkout develop branch for development
+git checkout develop
 
 # Enter development shell
 nix develop

@@ -2,6 +2,14 @@
 
 VOICEVOX CLI - Command-line text-to-speech tool using VOICEVOX Core.
 
+## Contributing
+
+For branch strategy, development workflow, and contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+**Quick reference:**
+- **`main`**: Stable releases (used by flake inputs)
+- **`develop`**: Active development (use `git checkout develop` for contributions)
+
 ## Architecture
 
 Client-server model with three main binaries:

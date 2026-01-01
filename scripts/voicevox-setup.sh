@@ -7,12 +7,44 @@ set -euo pipefail
 # - OpenJTalk dictionary
 # - Voice models
 
+# Version
+VERSION="0.1.0"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Handle --help and --version arguments
+case "${1:-}" in
+    -h|--help)
+        cat <<EOF
+VOICEVOX CLI Setup - Downloads required resources
+
+Usage: voicevox-setup [OPTIONS]
+
+Options:
+  -h, --help     Show this help message and exit
+  -V, --version  Show version information and exit
+
+Environment variables:
+  VOICEVOX_DIR           Override data directory location
+  XDG_DATA_HOME          XDG base directory (default: ~/.local/share)
+
+This script downloads:
+  - ONNX Runtime library
+  - OpenJTalk dictionary
+  - Voice models
+EOF
+        exit 0
+        ;;
+    -V|--version)
+        echo "voicevox-setup $VERSION"
+        exit 0
+        ;;
+esac
 
 # Function to create ONNX Runtime compatibility symlinks
 create_onnxruntime_symlinks() {

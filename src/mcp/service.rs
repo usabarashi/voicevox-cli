@@ -7,11 +7,17 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
+use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
 use crate::synthesis::StreamingSynthesizer;
+
+/// Error type for synthesis cancellation
+#[derive(Debug, Error)]
+#[error("Synthesis cancelled by user")]
+pub struct CancellationError;
 
 const MAX_STYLE_ID: u32 = 1000;
 const MAX_TEXT_LENGTH: usize = 10_000;
@@ -130,11 +136,9 @@ impl VoicevoxService {
 
         match result {
             Ok(msg) => Ok(CallToolResult::success(vec![Content::text(msg)])),
-            Err(e) if e.to_string().contains("cancelled") => {
-                Ok(CallToolResult::error(vec![Content::text(
-                    "Synthesis cancelled by user".to_string(),
-                )]))
-            }
+            Err(e) if e.downcast_ref::<CancellationError>().is_some() => Ok(CallToolResult::error(
+                vec![Content::text("Synthesis cancelled by user".to_string())],
+            )),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
                 "Synthesis failed: {}",
                 e
@@ -243,7 +247,7 @@ impl VoicevoxService {
                 .context("Streaming synthesis failed")?;
 
             if cancelled {
-                return Err(anyhow::anyhow!("Synthesis cancelled by user"));
+                return Err(CancellationError.into());
             }
 
             // Wait for playback with cancellation support and progress updates
@@ -256,7 +260,7 @@ impl VoicevoxService {
                 loop {
                     if cancel_token.is_cancelled() {
                         sink.stop();
-                        return Err(anyhow::anyhow!("Playback cancelled by user"));
+                        return Err(CancellationError.into());
                     }
 
                     if sink.empty() {

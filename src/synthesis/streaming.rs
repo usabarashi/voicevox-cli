@@ -154,7 +154,11 @@ impl StreamingSynthesizer {
 
             // Report progress
             if let Some(tx) = progress_tx {
-                let progress = (i as f64 / total) * 100.0;
+                let progress = if total > 0.0 {
+                    (i as f64 / total) * 100.0
+                } else {
+                    0.0
+                };
                 let _ = tx
                     .send((
                         progress,

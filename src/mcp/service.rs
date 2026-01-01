@@ -1,12 +1,14 @@
-use anyhow::{Context, Result};
-use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::handler::server::wrapper::Parameters;
+use anyhow::{Context as AnyhowContext, Result};
 use rmcp::model::*;
-use rmcp::{tool, tool_router, ErrorData as McpError, ServerHandler};
+use rmcp::service::{NotificationContext, Peer, RequestContext, RoleServer};
+use rmcp::{ErrorData as McpError, ServerHandler};
 use rodio::Sink;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::client::{audio::play_audio_from_memory, DaemonClient};
 use crate::synthesis::StreamingSynthesizer;
@@ -14,11 +16,15 @@ use crate::synthesis::StreamingSynthesizer;
 const MAX_STYLE_ID: u32 = 1000;
 const MAX_TEXT_LENGTH: usize = 10_000;
 
+// Note: We attempted to use custom extractors with #[tool] macro,
+// but rmcp 0.8 doesn't expose FromToolCallContextPart in a compatible way.
+// Therefore, we use manual tool routing in ServerHandler::call_tool instead.
+// This gives us direct access to RequestContext for each tool call.
+
 /// VOICEVOX MCP Service providing text-to-speech tools
 #[derive(Clone)]
 pub struct VoicevoxService {
-    #[allow(dead_code)]
-    tool_router: ToolRouter<Self>,
+    // No state needed - stateless service
 }
 
 /// Minimum allowed speech rate
@@ -59,26 +65,26 @@ pub struct ListVoiceStylesParams {
     pub style_name: Option<String>,
 }
 
-#[tool_router]
+// Old #[tool_router] impl block removed - using manual routing in ServerHandler instead
+// This gives us direct access to RequestContext for progress notifications and cancellation
+
 impl VoicevoxService {
     pub fn new() -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-        }
+        Self {}
     }
+}
 
-    /// Convert Japanese text to speech with VOICEVOX
-    ///
-    /// Synthesizes Japanese text to audio and plays it back. Supports both streaming
-    /// mode for lower latency and daemon mode for reliability. Automatically splits
-    /// long messages for client compatibility.
-    #[tool(
-        description = "Convert Japanese text to speech with VOICEVOX. Splits long messages automatically for client compatibility."
-    )]
-    async fn text_to_speech(
+impl VoicevoxService {
+    /// text_to_speech tool implementation with RequestContext access
+    async fn text_to_speech_impl(
         &self,
-        Parameters(params): Parameters<TextToSpeechParams>,
+        arguments: serde_json::Value,
+        context: &RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
+        // Parse parameters
+        let params: TextToSpeechParams = serde_json::from_value(arguments)
+            .map_err(|e| McpError::invalid_params(format!("Invalid parameters: {}", e), None))?;
+
         // Validate parameters
         let text = params.text.trim();
         if text.is_empty() {
@@ -113,15 +119,20 @@ impl VoicevoxService {
             ));
         }
 
-        // Execute synthesis
+        // Execute synthesis with context
         let result = if params.streaming {
-            self.handle_streaming_synthesis(params).await
+            self.handle_streaming_synthesis_with_context(params, context)
+                .await
         } else {
+            // For non-streaming, we don't have cancellation support yet
             self.handle_daemon_synthesis(params).await
         };
 
         match result {
             Ok(msg) => Ok(CallToolResult::success(vec![Content::text(msg)])),
+            Err(e) if e.to_string().contains("cancelled") => Ok(CallToolResult::error(vec![
+                Content::text("Synthesis cancelled by user".to_string()),
+            ])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
                 "Synthesis failed: {}",
                 e
@@ -129,17 +140,15 @@ impl VoicevoxService {
         }
     }
 
-    /// Get available VOICEVOX voice styles
-    ///
-    /// Returns a list of available voice styles with their IDs, speaker names, and style types.
-    /// Use this before synthesizing speech to discover available style_ids and their characteristics.
-    #[tool(
-        description = "Get available VOICEVOX voice styles for text_to_speech. Use this before synthesizing speech to discover available style_ids and their characteristics. Filter by speaker_name or style_name (e.g., 'ノーマル', 'ささやき', 'なみだめ') to find appropriate voices. Returns style_id, speaker name, and style type for each voice."
-    )]
-    async fn list_voice_styles(
+    /// list_voice_styles tool implementation
+    async fn list_voice_styles_impl(
         &self,
-        Parameters(params): Parameters<ListVoiceStylesParams>,
+        arguments: serde_json::Value,
     ) -> Result<CallToolResult, McpError> {
+        // Parse parameters
+        let params: ListVoiceStylesParams = serde_json::from_value(arguments)
+            .map_err(|e| McpError::invalid_params(format!("Invalid parameters: {}", e), None))?;
+
         let result = self.handle_list_voice_styles(params).await;
 
         match result {
@@ -150,10 +159,134 @@ impl VoicevoxService {
             ))])),
         }
     }
-}
 
-impl VoicevoxService {
-    /// Handle streaming synthesis with concurrent processing
+    /// Handle streaming synthesis with cancellation and progress support
+    async fn handle_streaming_synthesis_with_context(
+        &self,
+        params: TextToSpeechParams,
+        ctx: &RequestContext<RoleServer>,
+    ) -> Result<String> {
+        let cancel_token = ctx.ct.clone();
+        let progress_token = ctx.meta.get_progress_token();
+        let peer = ctx.peer.clone();
+
+        self.handle_streaming_synthesis_cancellable(params, cancel_token, peer, progress_token)
+            .await
+    }
+
+    /// Handle streaming synthesis with cancellation and progress (implementation)
+    async fn handle_streaming_synthesis_cancellable(
+        &self,
+        params: TextToSpeechParams,
+        cancel_token: CancellationToken,
+        peer: Peer<RoleServer>,
+        progress_token: Option<ProgressToken>,
+    ) -> Result<String> {
+        let text_len = params.text.len();
+        let style_id = params.style_id;
+
+        // Channel for progress updates from blocking context
+        let (progress_tx, mut progress_rx) =
+            mpsc::channel::<(f64, Option<f64>, Option<String>)>(32);
+
+        // Clone for use in blocking task
+        let progress_tx_clone = progress_tx.clone();
+
+        // Spawn task to forward progress notifications
+        let progress_peer = peer.clone();
+        let progress_token_clone = progress_token.clone();
+        let progress_forwarder = tokio::spawn(async move {
+            if let Some(token) = progress_token_clone {
+                while let Some((current, total, message)) = progress_rx.recv().await {
+                    let _ = progress_peer
+                        .notify_progress(ProgressNotificationParam {
+                            progress_token: token.clone(),
+                            progress: current,
+                            total,
+                            message,
+                        })
+                        .await;
+                }
+            }
+        });
+
+        // Spawn blocking task for audio
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let progress_tx = progress_tx_clone;
+            let runtime = tokio::runtime::Runtime::new()
+                .context("Failed to create runtime for audio playback")?;
+
+            let stream = rodio::OutputStreamBuilder::open_default_stream()
+                .context("Failed to create audio output stream")?;
+            let sink = Arc::new(Sink::connect_new(stream.mixer()));
+
+            let mut synthesizer = runtime
+                .block_on(StreamingSynthesizer::new())
+                .context("Failed to create streaming synthesizer")?;
+
+            // Synthesize with progress and cancellation
+            let cancelled = runtime
+                .block_on(async {
+                    synthesizer
+                        .synthesize_streaming_with_cancellation(
+                            &params.text,
+                            params.style_id,
+                            params.rate,
+                            &sink,
+                            &cancel_token,
+                            Some(&progress_tx),
+                        )
+                        .await
+                })
+                .context("Streaming synthesis failed")?;
+
+            if cancelled {
+                return Err(anyhow::anyhow!("Synthesis cancelled by user"));
+            }
+
+            // Wait for playback with cancellation support and progress updates
+            runtime.block_on(async {
+                const POLL_INTERVAL: Duration = Duration::from_millis(100);
+                const PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
+
+                let mut last_progress_update = std::time::Instant::now();
+
+                loop {
+                    if cancel_token.is_cancelled() {
+                        sink.stop();
+                        return Err(anyhow::anyhow!("Playback cancelled by user"));
+                    }
+
+                    if sink.empty() {
+                        return Ok(());
+                    }
+
+                    // Send periodic progress updates during playback to prevent timeout
+                    if last_progress_update.elapsed() >= PROGRESS_UPDATE_INTERVAL {
+                        let _ = progress_tx
+                            .send((100.0, Some(100.0), Some("Reading aloud...".to_string())))
+                            .await;
+                        last_progress_update = std::time::Instant::now();
+                    }
+
+                    tokio::time::sleep(POLL_INTERVAL).await;
+                }
+            })
+        })
+        .await
+        .context("Audio playback task failed")??;
+
+        // progress_tx was moved into spawn_blocking, drop happens automatically
+        // Wait for progress forwarder to finish
+        let _ = progress_forwarder.await;
+
+        Ok(format!(
+            "Successfully synthesized {} characters using style ID {} in streaming mode",
+            text_len, style_id
+        ))
+    }
+
+    /// Handle streaming synthesis with concurrent processing (legacy, for compatibility)
     async fn handle_streaming_synthesis(&self, params: TextToSpeechParams) -> Result<String> {
         // Spawn blocking task to handle the entire audio playback since OutputStream is not Send
         let text_len = params.text.len();
@@ -367,7 +500,8 @@ fn load_instructions() -> Option<String> {
     None
 }
 
-#[rmcp::tool_handler]
+// Manual ServerHandler implementation without #[rmcp::tool_handler] macro
+// This allows us to access RequestContext for progress notifications and cancellation
 impl ServerHandler for VoicevoxService {
     fn get_info(&self) -> InitializeResult {
         InitializeResult {
@@ -385,6 +519,121 @@ impl ServerHandler for VoicevoxService {
             },
             instructions: load_instructions(),
         }
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        // Convert arguments from Option<Map> to Value
+        let arguments = request.arguments.map_or_else(
+            || serde_json::json!({}),
+            |map| serde_json::Value::Object(map),
+        );
+
+        match request.name.as_ref() {
+            "text_to_speech" => self.text_to_speech_impl(arguments, &context).await,
+            "list_voice_styles" => self.list_voice_styles_impl(arguments).await,
+            _ => Err(McpError::invalid_request(
+                format!("Unknown tool: {}", request.name),
+                None,
+            )),
+        }
+    }
+
+    async fn list_tools(
+        &self,
+        _pagination: Option<PaginatedRequestParam>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        use std::sync::Arc;
+
+        let text_to_speech_schema = serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "Japanese text to synthesize (15-50 chars optimal, 100+ may need splitting)"
+                            },
+                            "style_id": {
+                                "type": "integer",
+                                "description": "Voice style ID (3=normal, 1=happy, 22=whisper, 76=sad, 75=confused)"
+                            },
+                            "rate": {
+                                "type": "number",
+                                "minimum": 0.5,
+                                "maximum": 2.0,
+                                "default": 1.0,
+                                "description": "Speech rate (0.5-2.0, default 1.0)"
+                            },
+                            "streaming": {
+                                "type": "boolean",
+                                "default": true,
+                                "description": "Enable streaming mode for lower latency (default true)"
+                            }
+                        },
+                        "required": ["text", "style_id"]
+                    });
+        let text_to_speech_map = text_to_speech_schema
+            .as_object()
+            .unwrap()
+            .clone();
+
+        let list_voice_styles_schema = serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "speaker_name": {
+                                "type": "string",
+                                "description": "Filter by speaker name (partial match)"
+                            },
+                            "style_name": {
+                                "type": "string",
+                                "description": "Filter by style name (partial match)"
+                            }
+                        }
+                    });
+        let list_voice_styles_map = list_voice_styles_schema
+            .as_object()
+            .unwrap()
+            .clone();
+
+        Ok(ListToolsResult {
+            tools: vec![
+                Tool {
+                    name: "text_to_speech".into(),
+                    description: Some("Convert Japanese text to speech with VOICEVOX. Splits long messages automatically for client compatibility.".into()),
+                    input_schema: Arc::new(text_to_speech_map),
+                    title: None,
+                    output_schema: None,
+                    icons: None,
+                    annotations: None,
+                },
+                Tool {
+                    name: "list_voice_styles".into(),
+                    description: Some("Get available VOICEVOX voice styles for text_to_speech. Use this before synthesizing speech to discover available style_ids and their characteristics. Filter by speaker_name or style_name (e.g., 'ノーマル', 'ささやき', 'なみだめ') to find appropriate voices. Returns style_id, speaker name, and style type for each voice.".into()),
+                    input_schema: Arc::new(list_voice_styles_map),
+                    title: None,
+                    output_schema: None,
+                    icons: None,
+                    annotations: None,
+                },
+            ],
+            next_cursor: None,
+        })
+    }
+
+    async fn on_cancelled(
+        &self,
+        notification: CancelledNotificationParam,
+        _context: NotificationContext<RoleServer>,
+    ) {
+        // CancellationToken in RequestContext is automatically cancelled by rmcp framework
+        // This handler is primarily for logging
+        eprintln!(
+            "Request {:?} cancelled by client",
+            notification.request_id
+        );
     }
 }
 

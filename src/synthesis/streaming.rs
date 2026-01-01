@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use rodio::{Decoder, Sink};
 use std::io::Cursor;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::client::DaemonClient;
 use crate::config::Config;
@@ -54,6 +56,70 @@ impl StreamingSynthesizer {
         }
 
         Ok(())
+    }
+
+    /// Synthesize with cancellation and progress support
+    /// Returns Ok(true) if cancelled, Ok(false) if completed normally
+    pub async fn synthesize_streaming_with_cancellation(
+        &mut self,
+        text: &str,
+        style_id: u32,
+        rate: f32,
+        sink: &Sink,
+        cancel_token: &CancellationToken,
+        progress_tx: Option<&mpsc::Sender<(f64, Option<f64>, Option<String>)>>,
+    ) -> Result<bool> {
+        let segments = self.text_splitter.split(text);
+        let total = segments.len() as f64;
+
+        for (i, segment) in segments.iter().enumerate() {
+            // Check cancellation before each segment
+            if cancel_token.is_cancelled() {
+                return Ok(true); // Cancelled
+            }
+
+            if segment.trim().is_empty() {
+                continue;
+            }
+
+            // Report progress
+            if let Some(tx) = progress_tx {
+                let progress = (i as f64 / total) * 100.0;
+                let _ = tx
+                    .send((
+                        progress,
+                        Some(100.0),
+                        Some(format!("Synthesizing segment {}/{}", i + 1, total as usize)),
+                    ))
+                    .await;
+            }
+
+            let options = crate::ipc::OwnedSynthesizeOptions { rate };
+            let wav_data = self
+                .daemon_client
+                .synthesize(segment, style_id, options)
+                .await
+                .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
+
+            let cursor = Cursor::new(wav_data);
+            let source = Decoder::new(cursor)
+                .with_context(|| format!("Failed to decode audio for segment {i}"))?;
+
+            sink.append(source);
+
+            if i == 0 {
+                sink.play();
+            }
+        }
+
+        // Final progress update
+        if let Some(tx) = progress_tx {
+            let _ = tx
+                .send((100.0, Some(100.0), Some("Reading aloud...".to_string())))
+                .await;
+        }
+
+        Ok(false) // Not cancelled
     }
 }
 

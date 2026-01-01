@@ -56,12 +56,29 @@ Add to your `flake.nix`:
 ```nix
 {
   inputs = {
-    voicevox-cli.url = "github:usabarashi/voicevox-cli";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    voicevox-cli = {
+      url = "github:usabarashi/voicevox-cli";
+      inputs.nixpkgs.follows = "nixpkgs";  # Ensure consistent nixpkgs version
+    };
   };
 
-  outputs = { self, nixpkgs, voicevox-cli }: {
-    packages.aarch64-darwin.default = voicevox-cli.packages.aarch64-darwin.default;
-  };
+  outputs = { self, nixpkgs, voicevox-cli }:
+    let
+      system = "aarch64-darwin";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in
+    {
+      # Add to your development shell
+      devShells.${system}.default = pkgs.mkShell {
+        packages = [
+          voicevox-cli.packages.${system}.default
+        ];
+      };
+
+      # Or use directly in your configuration
+      # packages.${system}.default = voicevox-cli.packages.${system}.default;
+    };
 }
 ```
 

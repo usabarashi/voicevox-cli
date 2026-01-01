@@ -288,47 +288,6 @@ impl VoicevoxService {
         ))
     }
 
-    /// Handle streaming synthesis with concurrent processing (legacy, for compatibility)
-    async fn handle_streaming_synthesis(&self, params: TextToSpeechParams) -> Result<String> {
-        // Spawn blocking task to handle the entire audio playback since OutputStream is not Send
-        let text_len = params.text.len();
-        let style_id = params.style_id;
-
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            // Create a new runtime for async operations within blocking context
-            // This avoids the anti-pattern of using Handle::current().block_on() in spawn_blocking
-            let runtime = tokio::runtime::Runtime::new()
-                .context("Failed to create runtime for audio playback")?;
-
-            let stream = rodio::OutputStreamBuilder::open_default_stream()
-                .context("Failed to create audio output stream")?;
-            let sink = Arc::new(Sink::connect_new(stream.mixer()));
-
-            let mut synthesizer = runtime
-                .block_on(StreamingSynthesizer::new())
-                .context("Failed to create streaming synthesizer")?;
-
-            runtime
-                .block_on(synthesizer.synthesize_streaming(
-                    &params.text,
-                    params.style_id,
-                    params.rate,
-                    &sink,
-                ))
-                .context("Streaming synthesis failed")?;
-
-            sink.sleep_until_end();
-
-            Ok(())
-        })
-        .await
-        .context("Audio playback task failed")??;
-
-        Ok(format!(
-            "Successfully synthesized {} characters using style ID {} in streaming mode",
-            text_len, style_id
-        ))
-    }
 
     /// Handle daemon-based synthesis
     async fn handle_daemon_synthesis(&self, params: TextToSpeechParams) -> Result<String> {
@@ -529,10 +488,9 @@ impl ServerHandler for VoicevoxService {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
         // Convert arguments from Option<Map> to Value
-        let arguments = request.arguments.map_or_else(
-            || serde_json::json!({}),
-            |map| serde_json::Value::Object(map),
-        );
+        let arguments = request
+            .arguments
+            .map_or_else(|| serde_json::json!({}), serde_json::Value::Object);
 
         match request.name.as_ref() {
             "text_to_speech" => self.text_to_speech_impl(arguments, &context).await,

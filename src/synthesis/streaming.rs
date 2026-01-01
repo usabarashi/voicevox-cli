@@ -7,6 +7,10 @@ use tokio_util::sync::CancellationToken;
 use crate::client::DaemonClient;
 use crate::config::Config;
 
+/// Type alias for progress notification sender
+/// Tuple: (current_progress, total_progress, status_message)
+type ProgressSender = mpsc::Sender<(f64, Option<f64>, Option<String>)>;
+
 pub struct StreamingSynthesizer {
     daemon_client: DaemonClient,
     text_splitter: TextSplitter,
@@ -67,7 +71,7 @@ impl StreamingSynthesizer {
         rate: f32,
         sink: &Sink,
         cancel_token: &CancellationToken,
-        progress_tx: Option<&mpsc::Sender<(f64, Option<f64>, Option<String>)>>,
+        progress_tx: Option<&ProgressSender>,
     ) -> Result<bool> {
         let segments = self.text_splitter.split(text);
         let total = segments.len() as f64;

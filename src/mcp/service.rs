@@ -288,7 +288,6 @@ impl VoicevoxService {
         ))
     }
 
-
     /// Handle daemon-based synthesis
     async fn handle_daemon_synthesis(&self, params: TextToSpeechParams) -> Result<String> {
         let mut client = DaemonClient::connect_with_retry()

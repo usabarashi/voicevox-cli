@@ -538,7 +538,10 @@ impl ServerHandler for VoicevoxService {
             },
             "required": ["text", "style_id"]
         });
-        let text_to_speech_map = text_to_speech_schema.as_object().unwrap().clone();
+        let text_to_speech_map = text_to_speech_schema
+            .as_object()
+            .expect("text_to_speech schema must be a JSON object")
+            .clone();
 
         let list_voice_styles_schema = serde_json::json!({
             "type": "object",
@@ -553,7 +556,10 @@ impl ServerHandler for VoicevoxService {
                 }
             }
         });
-        let list_voice_styles_map = list_voice_styles_schema.as_object().unwrap().clone();
+        let list_voice_styles_map = list_voice_styles_schema
+            .as_object()
+            .expect("list_voice_styles schema must be a JSON object")
+            .clone();
 
         Ok(ListToolsResult {
             tools: vec![

@@ -282,7 +282,9 @@ impl VoicevoxService {
         .await
         .context("Audio playback task failed")??;
 
-        // progress_tx was moved into spawn_blocking, drop happens automatically
+        // Drop the original sender to close the channel
+        // (progress_tx_clone was moved into spawn_blocking, but progress_tx is still alive)
+        drop(progress_tx);
         // Wait for progress forwarder to finish
         let _ = progress_forwarder.await;
 

@@ -558,6 +558,7 @@ impl ServerHandler for VoicevoxService {
             .clone();
 
         Ok(ListToolsResult {
+            meta: None,
             tools: vec![
                 Tool {
                     name: "text_to_speech".into(),
@@ -567,6 +568,7 @@ impl ServerHandler for VoicevoxService {
                     output_schema: None,
                     icons: None,
                     annotations: None,
+                    meta: None,
                 },
                 Tool {
                     name: "list_voice_styles".into(),
@@ -576,6 +578,7 @@ impl ServerHandler for VoicevoxService {
                     output_schema: None,
                     icons: None,
                     annotations: None,
+                    meta: None,
                 },
             ],
             next_cursor: None,

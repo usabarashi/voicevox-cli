@@ -213,21 +213,21 @@ impl VoicevoxService {
             }
         });
 
+        // Get handle to current runtime before entering blocking context
+        let handle = tokio::runtime::Handle::current();
+
         // Spawn blocking task for audio
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let runtime = tokio::runtime::Runtime::new()
-                .context("Failed to create runtime for audio playback")?;
-
             let stream = rodio::OutputStreamBuilder::open_default_stream()
                 .context("Failed to create audio output stream")?;
             let sink = Arc::new(Sink::connect_new(stream.mixer()));
 
-            let mut synthesizer = runtime
+            let mut synthesizer = handle
                 .block_on(StreamingSynthesizer::new())
                 .context("Failed to create streaming synthesizer")?;
 
             // Synthesize with progress and cancellation
-            let cancelled = runtime
+            let cancelled = handle
                 .block_on(async {
                     synthesizer
                         .synthesize_streaming_with_cancellation(
@@ -247,7 +247,7 @@ impl VoicevoxService {
             }
 
             // Wait for playback with cancellation support and progress updates
-            runtime.block_on(async {
+            handle.block_on(async {
                 const POLL_INTERVAL: Duration = Duration::from_millis(100);
                 const PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 

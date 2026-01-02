@@ -36,6 +36,19 @@ jobs:
           extraPullNames: nix-community
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Pre-fetch dependencies
         run: |
           echo "Pre-fetching dependencies for cache..."
@@ -47,26 +60,26 @@ jobs:
           echo "Checking Nix flake..."
           nix flake check --accept-flake-config --show-trace
 
-      - name: Verify Rust toolchain
+      - name: Run Cargo checks
         run: |
-          echo "Verifying Rust toolchain..."
-          nix develop --accept-flake-config --command rustc --version
-          nix develop --accept-flake-config --command cargo --version
+          nix develop --accept-flake-config --command bash -c '
+            set -e
+            echo "=== Rust toolchain ==="
+            rustc --version
+            cargo --version
 
-      - name: Check code formatting
-        run: |
-          echo "Checking code formatting..."
-          nix develop --accept-flake-config --command cargo fmt --check
+            echo ""
+            echo "=== Format check ==="
+            cargo fmt --check
 
-      - name: Run Clippy analysis
-        run: |
-          echo "Running clippy analysis..."
-          nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
+            echo ""
+            echo "=== Clippy ==="
+            cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Run unit tests
-        run: |
-          echo "Running unit tests..."
-          nix develop --accept-flake-config --command cargo test --lib
+            echo ""
+            echo "=== Unit tests ==="
+            cargo test --lib
+          '
 
       - name: Check scripts
         run: |
@@ -90,19 +103,11 @@ jobs:
       - name: Run security audit
         run: |
           echo "Running security audit..."
-          echo "Installing latest cargo-audit for CVSS 4.0 support..."
-          nix develop --accept-flake-config --command cargo install cargo-audit --force
-
-          # Run cargo audit with error handling for known CVSS 4.0 incompatibility
           if ! nix develop --accept-flake-config --command cargo audit 2>&1 | tee /tmp/cargo-audit.log; then
             if grep -q "unsupported CVSS version: 4.0" /tmp/cargo-audit.log; then
-              echo "⚠️  Warning: cargo-audit failed due to CVSS 4.0 incompatibility (known issue)"
-              echo "    This is a tooling limitation, not a security issue in this project"
-              echo "    See: https://github.com/rustsec/rustsec/issues/1130"
+              echo "Warning: CVSS 4.0 incompatibility (known issue)"
             else
-              # Real security issue - fail the build
-              echo "❌ Security audit failed with unexpected error"
-              cat /tmp/cargo-audit.log
+              echo "Security audit failed"
               exit 1
             fi
           fi
@@ -116,17 +121,10 @@ jobs:
       - name: Verify build artifacts
         run: |
           echo "Verifying build artifacts..."
-          if [[ -d result/bin ]]; then
-            ls -la result/bin/
-            echo "Build artifacts verified"
-          else
+          if [[ ! -d result/bin ]]; then
             echo "Build artifacts not found"
             exit 1
           fi
-
-      - name: Verify build artifacts detailed
-        run: |
-          echo "Verifying build artifacts..."
           ls -la result/bin/
           file result/bin/voicevox-say
           file result/bin/voicevox-daemon
@@ -168,8 +166,8 @@ jobs:
           echo "Total package size:"
           du -sh result/
 
-      - name: Warm up cache (main branch only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Warm up cache
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name == 'push'
         run: |
           echo "Warming up cache for future builds..."
           nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org" || true

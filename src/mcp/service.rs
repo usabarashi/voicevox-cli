@@ -195,9 +195,6 @@ impl VoicevoxService {
         let (progress_tx, mut progress_rx) =
             mpsc::channel::<(f64, Option<f64>, Option<String>)>(32);
 
-        // Clone for use in blocking task
-        let progress_tx_clone = progress_tx.clone();
-
         // Spawn task to forward progress notifications
         let progress_peer = peer.clone();
         let progress_token_clone = progress_token.clone();
@@ -218,7 +215,6 @@ impl VoicevoxService {
 
         // Spawn blocking task for audio
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let progress_tx = progress_tx_clone;
             let runtime = tokio::runtime::Runtime::new()
                 .context("Failed to create runtime for audio playback")?;
 
@@ -282,8 +278,8 @@ impl VoicevoxService {
         .await
         .context("Audio playback task failed")??;
 
-        // progress_tx was moved into spawn_blocking, drop happens automatically
         // Wait for progress forwarder to finish
+        // (progress_tx was moved into spawn_blocking and dropped when task completes)
         let _ = progress_forwarder.await;
 
         Ok(format!(

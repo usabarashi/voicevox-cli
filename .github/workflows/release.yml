@@ -83,7 +83,9 @@ jobs:
       - name: Push to Cachix
         run: |
           echo "Pushing build artifacts to Cachix..."
-          nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org" || true
+          if ! nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org"; then
+            echo "::warning::Failed to push build artifacts to Cachix" >&2
+          fi
 
       - name: Test release artifact
         run: |

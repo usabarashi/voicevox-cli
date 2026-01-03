@@ -169,4 +169,6 @@ jobs:
         if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name == 'push'
         run: |
           echo "Warming up cache for future builds..."
-          nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org" || true
+          if ! nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org"; then
+            echo "::warning::Failed to push build artifacts to Cachix" >&2
+          fi

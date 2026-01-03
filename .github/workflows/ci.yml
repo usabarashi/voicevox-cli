@@ -17,11 +17,44 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0                        # Faster CI builds, better caching
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse # Faster registry index
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: macos-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      nix: ${{ steps.filter.outputs.nix }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Check changed paths
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            nix:
+              - 'flake.nix'
+              - 'flake.lock'
+            scripts:
+              - 'scripts/**'
+            workflows:
+              - '.github/workflows/**'
+
   lint-format:
     name: Format Check
     runs-on: macos-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -62,6 +95,8 @@ jobs:
   lint-clippy:
     name: Clippy Analysis
     runs-on: macos-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -98,6 +133,8 @@ jobs:
   scripts:
     name: Script Validation
     runs-on: macos-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.scripts == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -123,6 +160,8 @@ jobs:
   flake-check:
     name: Nix Flake Check
     runs-on: macos-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.nix == 'true' || needs.changes.outputs.rust == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -235,7 +274,13 @@ jobs:
   nix-build:
     name: Nix Build
     runs-on: macos-latest
-    needs: [flake-check, scripts, security-audit]
+    needs: [changes, flake-check, scripts, security-audit]
+    if: |
+      always() &&
+      (needs.changes.outputs.rust == 'true' || needs.changes.outputs.nix == 'true') &&
+      (needs.flake-check.result == 'success' || needs.flake-check.result == 'skipped') &&
+      (needs.scripts.result == 'success' || needs.scripts.result == 'skipped') &&
+      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -301,6 +346,7 @@ jobs:
     name: Integration Tests
     runs-on: macos-latest
     needs: [nix-build]
+    if: ${{ needs.nix-build.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -357,7 +403,10 @@ jobs:
     name: Push to Cachix
     runs-on: macos-latest
     needs: [integration-tests]
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name == 'push'
+    if: |
+      needs.integration-tests.result == 'success' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') &&
+      github.event_name == 'push'
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0

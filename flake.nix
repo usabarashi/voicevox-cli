@@ -30,6 +30,11 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    crane.url = "github:ipetkov/crane";
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
+    };
   };
 
   outputs =
@@ -38,14 +43,20 @@
       nixpkgs,
       flake-utils,
       fenix,
+      crane,
+      advisory-db,
     }:
     flake-utils.lib.eachSystem [ "aarch64-darwin" ] (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        inherit (pkgs) lib;
 
         # Read rust-toolchain.toml to ensure consistency
         rustToolchain = fenix.packages.${system}.stable;
+
+        # Crane with fenix integration
+        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain.toolchain;
 
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
@@ -66,7 +77,7 @@
           '';
         };
 
-        packageMeta = with pkgs.lib; {
+        packageMeta = with lib; {
           description = "VOICEVOX CLI for Apple Silicon - Dynamic voice detection system";
           homepage = "https://github.com/usabarashi/voicevox-cli";
           license = with licenses; [
@@ -77,81 +88,77 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage rec {
-          pname = "voicevox-cli";
-          version = "0.1.0";
+        # Git dependency hashes for offline evaluation
+        outputHashes = {
+          "git+https://github.com/VOICEVOX/open_jtalk-rs.git?rev=7c87b4227bb005b439a3ad473b48ce8975829576#7c87b4227bb005b439a3ad473b48ce8975829576" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
+          "git+https://github.com/VOICEVOX/voicevox_core.git?rev=711d8b4b464ea9b1161db093e4a1feed763b9611#711d8b4b464ea9b1161db093e4a1feed763b9611" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
+          "git+https://github.com/VOICEVOX/ort.git?rev=1ebb5768a78313f9db70a35c497816ec2ffae18b#1ebb5768a78313f9db70a35c497816ec2ffae18b" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
+        };
 
-          src = pkgs.lib.cleanSourceWith {
-            src = ./.;
+        # Source with custom filtering
+        src =
+          let
+            craneFiltered = craneLib.cleanCargoSource ./.;
+          in
+          lib.cleanSourceWith {
+            src = craneFiltered;
             filter =
               path: type:
               let
                 baseName = baseNameOf path;
               in
               !(
-                # Exclude temporary directories
-                (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
-                ||
-                  # Exclude other temporary files
-                  (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+                (type == "directory" && lib.hasSuffix "-extract" baseName)
+                || (type == "regular" && lib.hasSuffix ".tar.gz" baseName)
               );
           };
 
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            outputHashes = {
-              "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-              "voicevox_core-0.0.0" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
-              "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
-            };
-          };
-
-          doCheck = false;
-
-          # Force offline mode to ensure reproducible builds
-          CARGO_NET_OFFLINE = true;
-
-          # Minimal pre-configure setup
-          preConfigure = ''
-            # Create a temporary HOME for build process
-            export HOME=$PWD/build-home
-            mkdir -p $HOME
-          '';
+        # Common build arguments
+        commonArgs = {
+          inherit src;
+          strictDeps = true;
+          cargoExtraArgs = "--locked";
+          inherit outputHashes;
 
           nativeBuildInputs = with pkgs; [
-            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
-            rustToolchain.defaultToolchain
-            rustToolchain.rust-analyzer
-
-            # Build tools
             pkg-config
             cmake
             gnumake
-
-            # Autotools (for dependencies)
             autoconf
             automake
             libtool
-
-            # Version control (required by some build scripts)
             git
             cacert
           ];
 
           buildInputs = [ ];
 
-          # Build-time environment variables
-          preBuild = ''
-            # Run full CI checks before build
-            ${pkgs.bash}/bin/bash ${./scripts/ci.sh} --build-phase || exit 1
+          CARGO_NET_OFFLINE = true;
 
-            # Git SSL configuration
+          preConfigure = ''
+            export HOME=$PWD/build-home
+            mkdir -p $HOME
+          '';
+
+          preBuild = ''
             export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-
-            # Simplified build configuration - no ONNX or OpenJTalk dependencies needed
-            # Resources will be downloaded at runtime
           '';
+        };
+
+        # Cached dependency artifacts
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          pname = "voicevox-cli-deps";
+          version = "0.1.0";
+          doCheck = false;
+        });
+
+        # Main package
+        voicevox-cli = craneLib.buildPackage (commonArgs // {
+          pname = "voicevox-cli";
+          version = "0.1.0";
+          inherit cargoArtifacts;
+          doCheck = false;
 
           postInstall = ''
             # Install download utility
@@ -167,15 +174,49 @@
           '';
 
           meta = packageMeta;
+        });
+
+        # CI Checks as separate derivations
+        voicevox-cli-clippy = craneLib.cargoClippy (commonArgs // {
+          inherit cargoArtifacts;
+          cargoClippyExtraArgs = "--all-targets --all-features -- -D warnings";
+        });
+
+        voicevox-cli-fmt = craneLib.cargoFmt { inherit src; };
+
+        voicevox-cli-doc = craneLib.cargoDoc (commonArgs // {
+          inherit cargoArtifacts;
+        });
+
+        voicevox-cli-audit = craneLib.cargoAudit {
+          inherit src advisory-db;
         };
+
+        voicevox-cli-test = craneLib.cargoTest (commonArgs // {
+          inherit cargoArtifacts;
+          cargoTestExtraArgs = "--lib";
+        });
 
       in
       {
+        checks = {
+          inherit
+            voicevox-cli
+            voicevox-cli-clippy
+            voicevox-cli-fmt
+            voicevox-cli-doc
+            voicevox-cli-audit
+            voicevox-cli-test
+            ;
+        };
+
         packages = {
           default = voicevox-cli;
           voicevox-cli = voicevox-cli;
           voicevox-say = voicevox-cli;
           voicevoxResources = voicevoxResources;
+          # Expose artifacts for debugging
+          deps = cargoArtifacts;
         };
 
         apps = {
@@ -209,23 +250,19 @@
           };
         };
 
-        devShells.default = pkgs.mkShell {
-          CARGO_HOME = "./.project-home/.cargo";
+        devShells.default = craneLib.devShell {
+          # Include checks in shell for IDE integration
+          checks = self.checks.${system};
 
-          buildInputs = with pkgs; [
-            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
-            rustToolchain.defaultToolchain
+          # Additional dev tools
+          packages = with pkgs; [
             rustToolchain.rust-analyzer
             cargo-audit
-
-            # Build tools
-            pkg-config
-            cmake
-
-            # UV for Python package management (for Serena MCP)
             nixd
             uv
           ];
+
+          CARGO_HOME = "./.project-home/.cargo";
         };
 
         lib = {

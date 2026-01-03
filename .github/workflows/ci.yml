@@ -192,7 +192,12 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: macos-latest
-    needs: [lint-format, lint-clippy]
+    needs: [changes, lint-format, lint-clippy]
+    if: |
+      always() &&
+      needs.changes.outputs.rust == 'true' &&
+      needs.lint-format.result == 'success' &&
+      needs.lint-clippy.result == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -229,7 +234,11 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: macos-latest
-    needs: [unit-tests]
+    needs: [changes, unit-tests]
+    if: |
+      always() &&
+      needs.changes.outputs.rust == 'true' &&
+      needs.unit-tests.result == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0

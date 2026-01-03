@@ -83,9 +83,18 @@ jobs:
       - name: Push to Cachix
         run: |
           echo "Pushing build artifacts to Cachix..."
-          if ! nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org"; then
-            echo "::warning::Failed to push build artifacts to Cachix" >&2
-          fi
+
+          # 1. Push cargoArtifacts (dependencies)
+          echo ">>> Pushing cargoArtifacts..."
+          nix build .#deps --accept-flake-config
+          cachix push voicevox-cli ./result
+
+          # 2. Push final package
+          echo ">>> Pushing final package..."
+          nix build --accept-flake-config
+          cachix push voicevox-cli ./result
+
+          echo "Cache push completed successfully!"
 
       - name: Test release artifact
         run: |

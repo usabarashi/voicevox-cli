@@ -17,8 +17,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  CARGO_INCREMENTAL: 0                        # Faster CI builds, better caching
-  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse # Faster registry index
 
 jobs:
   changes:
@@ -48,11 +46,16 @@ jobs:
             scripts:
               - 'scripts/**'
 
-  lint-format:
-    name: Format Check
+  # Stage 1: 高速フィードバック（並列実行）
+  quick-checks:
+    name: Quick Check (${{ matrix.check }})
     runs-on: macos-latest
     needs: [changes]
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.nix == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [fmt, clippy]
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -69,32 +72,22 @@ jobs:
           name: voicevox-cli
           extraPullNames: nix-community
 
-      - name: Cache Cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-fmt-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-fmt-
-
-      - name: Check formatting
+      - name: Run ${{ matrix.check }} check
         run: |
-          echo "=== Rust toolchain ==="
-          nix develop --accept-flake-config --command rustc --version
-          nix develop --accept-flake-config --command cargo --version
-          echo ""
-          echo "=== Format check ==="
-          nix develop --accept-flake-config --command cargo fmt --check
+          echo "Running crane-based ${{ matrix.check }} check..."
+          nix build .#checks.aarch64-darwin.voicevox-cli-${{ matrix.check }} \
+            --accept-flake-config \
+            --print-build-logs
 
-  lint-clippy:
-    name: Clippy Analysis
+  # Stage 2: フルチェック（並列実行）
+  full-checks:
+    name: Full Check (${{ matrix.check }})
     runs-on: macos-latest
-    needs: [changes]
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    needs: [quick-checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [doc, audit, test]
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -111,22 +104,12 @@ jobs:
           name: voicevox-cli
           extraPullNames: nix-community
 
-      - name: Cache Cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-clippy-
-
-      - name: Run clippy
+      - name: Run ${{ matrix.check }} check
         run: |
-          echo "=== Clippy analysis ==="
-          nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
+          echo "Running crane-based ${{ matrix.check }} check..."
+          nix build .#checks.aarch64-darwin.voicevox-cli-${{ matrix.check }} \
+            --accept-flake-config \
+            --print-build-logs
 
   scripts:
     name: Script Validation
@@ -155,140 +138,15 @@ jobs:
           done
           echo "All scripts validated successfully"
 
-  flake-check:
-    name: Nix Flake Check
-    runs-on: macos-latest
-    needs: [changes]
-    if: ${{ needs.changes.outputs.nix == 'true' || needs.changes.outputs.rust == 'true' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Cachix
-        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
-        with:
-          name: voicevox-cli
-          extraPullNames: nix-community
-
-      - name: Pre-fetch dependencies
-        run: |
-          echo "Pre-fetching dependencies for cache..."
-          nix flake metadata --accept-flake-config --json > /dev/null 2>&1 || true
-          nix flake show --accept-flake-config --json > /dev/null 2>&1 || true
-
-      - name: Check Nix flake
-        run: |
-          echo "Checking Nix flake..."
-          nix flake check --accept-flake-config --show-trace
-
-  unit-tests:
-    name: Unit Tests
-    runs-on: macos-latest
-    needs: [changes, lint-format, lint-clippy]
-    if: |
-      always() &&
-      needs.changes.outputs.rust == 'true' &&
-      needs.lint-format.result == 'success' &&
-      needs.lint-clippy.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Cachix
-        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
-        with:
-          name: voicevox-cli
-          extraPullNames: nix-community
-
-      - name: Cache Cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-test-
-
-      - name: Run unit tests
-        run: |
-          echo "=== Unit tests ==="
-          nix develop --accept-flake-config --command cargo test --lib
-
-  security-audit:
-    name: Security Audit
-    runs-on: macos-latest
-    needs: [changes, unit-tests]
-    if: |
-      always() &&
-      needs.changes.outputs.rust == 'true' &&
-      needs.unit-tests.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Cachix
-        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
-        with:
-          name: voicevox-cli
-          extraPullNames: nix-community
-
-      - name: Cache Cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-audit-
-
-      - name: Run security audit
-        run: |
-          echo "Running security audit..."
-          if ! nix develop --accept-flake-config --command cargo audit 2>&1 | tee /tmp/cargo-audit.log; then
-            if grep -q "unsupported CVSS version: 4.0" /tmp/cargo-audit.log; then
-              echo "Warning: CVSS 4.0 incompatibility (known issue)"
-            else
-              echo "Security audit failed"
-              exit 1
-            fi
-          fi
-          rm -f /tmp/cargo-audit.log
-
+  # Stage 3: 最終ビルド
   nix-build:
     name: Nix Build
     runs-on: macos-latest
-    needs: [changes, flake-check, scripts, unit-tests, security-audit]
+    needs: [full-checks, scripts]
     if: |
       always() &&
-      (needs.changes.outputs.rust == 'true' || needs.changes.outputs.nix == 'true') &&
-      (needs.flake-check.result == 'success' || needs.flake-check.result == 'skipped') &&
-      (needs.scripts.result == 'success' || needs.scripts.result == 'skipped') &&
-      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped') &&
-      (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
+      (needs.full-checks.result == 'success' || needs.full-checks.result == 'skipped') &&
+      (needs.scripts.result == 'success' || needs.scripts.result == 'skipped')
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -307,8 +165,8 @@ jobs:
 
       - name: Build with Nix
         run: |
-          echo "Building project with Nix..."
-          nix build --accept-flake-config --show-trace
+          echo "Building project with Nix (using crane)..."
+          nix build --accept-flake-config --print-build-logs
 
       - name: Verify build artifacts
         run: |
@@ -379,18 +237,6 @@ jobs:
           name: voicevox-cli
           extraPullNames: nix-community
 
-      - name: Cache Cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-integration-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-integration-
-
       - name: Run MCP protocol tests
         run: |
           echo "Running MCP protocol integration tests..."
@@ -406,6 +252,7 @@ jobs:
           echo "  ./target/debug/voicevox-daemon --start --detach"
           echo "  cargo test --test synthesis_modes --ignored"
 
+  # Stage 4: キャッシュ push（全 derivation）
   cache-push:
     name: Push to Cachix
     runs-on: macos-latest
@@ -433,9 +280,19 @@ jobs:
 
       - name: Build and push to cache
         run: |
-          echo "Building for cache..."
+          echo "Building and pushing critical derivations to Cachix..."
+
+          # 1. cargoArtifacts (依存関係のみ - ソース変更でも不変)
+          echo ">>> Building cargoArtifacts (dependencies)..."
+          nix build .#deps --accept-flake-config
+          cachix push voicevox-cli ./result
+
+          # 2. 最終パッケージ (リリース成果物)
+          echo ">>> Building final package..."
           nix build --accept-flake-config
-          echo "Pushing build artifacts to Cachix..."
-          if ! nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org"; then
-            echo "::warning::Failed to push build artifacts to Cachix" >&2
-          fi
+          cachix push voicevox-cli ./result
+
+          echo "Cache push completed successfully!"
+          echo ""
+          echo "Note: Check derivations (clippy, test, doc) are NOT cached"
+          echo "because they include source code and would be rebuilt on every source change."

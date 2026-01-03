@@ -47,8 +47,6 @@ jobs:
               - 'flake.lock'
             scripts:
               - 'scripts/**'
-            workflows:
-              - '.github/workflows/**'
 
   lint-format:
     name: Format Check
@@ -81,7 +79,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-fmt-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-fmt-
 
       - name: Check formatting
         run: |
@@ -123,7 +121,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-clippy-
 
       - name: Run clippy
         run: |
@@ -224,7 +222,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-test-
 
       - name: Run unit tests
         run: |
@@ -265,7 +263,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-audit-
 
       - name: Run security audit
         run: |
@@ -283,12 +281,13 @@ jobs:
   nix-build:
     name: Nix Build
     runs-on: macos-latest
-    needs: [changes, flake-check, scripts, security-audit]
+    needs: [changes, flake-check, scripts, unit-tests, security-audit]
     if: |
       always() &&
       (needs.changes.outputs.rust == 'true' || needs.changes.outputs.nix == 'true') &&
       (needs.flake-check.result == 'success' || needs.flake-check.result == 'skipped') &&
       (needs.scripts.result == 'success' || needs.scripts.result == 'skipped') &&
+      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped') &&
       (needs.security-audit.result == 'success' || needs.security-audit.result == 'skipped')
     steps:
       - name: Checkout code
@@ -355,7 +354,6 @@ jobs:
     name: Integration Tests
     runs-on: macos-latest
     needs: [nix-build]
-    if: ${{ needs.nix-build.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -391,7 +389,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-integration-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-integration-
 
       - name: Run MCP protocol tests
         run: |

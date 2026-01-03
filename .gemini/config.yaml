@@ -8,3 +8,5 @@ code_review:
     summary: true
     code_review: false
 ignore_patterns: []
+memory_config:
+  disabled: true

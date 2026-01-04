@@ -10,20 +10,57 @@ permissions:
   contents: read
   actions: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
-  build-and-test:
-    name: Build & Test (Apple Silicon)
+  changes:
+    name: Detect Changes
     runs-on: macos-latest
-
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      nix: ${{ steps.filter.outputs.nix }}
+      scripts: ${{ steps.filter.outputs.scripts }}
     steps:
       - name: Checkout code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - name: Install Nix with cache
+      - name: Check changed paths
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            nix:
+              - 'flake.nix'
+              - 'flake.lock'
+            scripts:
+              - 'scripts/**'
+
+  # Stage 1: 高速フィードバック（並列実行）
+  quick-checks:
+    name: Quick Check (${{ matrix.check }})
+    runs-on: macos-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.nix == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [fmt, clippy]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Install Nix
         uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
         with:
           nix_path: nixpkgs=channel:nixos-unstable
@@ -34,43 +71,57 @@ jobs:
         with:
           name: voicevox-cli
           extraPullNames: nix-community
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-      - name: Pre-fetch dependencies
+      - name: Run ${{ matrix.check }} check
         run: |
-          echo "Pre-fetching dependencies for cache..."
-          nix flake metadata --accept-flake-config --json > /dev/null 2>&1 || true
-          nix flake show --accept-flake-config --json > /dev/null 2>&1 || true
+          echo "Running crane-based ${{ matrix.check }} check..."
+          nix build .#checks.aarch64-darwin.voicevox-cli-${{ matrix.check }} \
+            --accept-flake-config \
+            --print-build-logs
 
-      - name: Check Nix flake
-        run: |
-          echo "Checking Nix flake..."
-          nix flake check --accept-flake-config --show-trace
+  # Stage 2: フルチェック（並列実行）
+  full-checks:
+    name: Full Check (${{ matrix.check }})
+    runs-on: macos-latest
+    needs: [quick-checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [doc, audit, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - name: Verify Rust toolchain
-        run: |
-          echo "Verifying Rust toolchain..."
-          nix develop --accept-flake-config --command rustc --version
-          nix develop --accept-flake-config --command cargo --version
+      - name: Install Nix
+        uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check code formatting
-        run: |
-          echo "Checking code formatting..."
-          nix develop --accept-flake-config --command cargo fmt --check
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: voicevox-cli
+          extraPullNames: nix-community
 
-      - name: Run Clippy analysis
+      - name: Run ${{ matrix.check }} check
         run: |
-          echo "Running clippy analysis..."
-          nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
+          echo "Running crane-based ${{ matrix.check }} check..."
+          nix build .#checks.aarch64-darwin.voicevox-cli-${{ matrix.check }} \
+            --accept-flake-config \
+            --print-build-logs
 
-      - name: Run unit tests
-        run: |
-          echo "Running unit tests..."
-          nix develop --accept-flake-config --command cargo test --lib
+  scripts:
+    name: Script Validation
+    runs-on: macos-latest
+    needs: [changes]
+    if: ${{ needs.changes.outputs.scripts == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - name: Check scripts
+      - name: Validate scripts
         run: |
-          echo "Checking scripts..."
           echo "Checking for required scripts..."
           test -f scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
 
@@ -87,46 +138,43 @@ jobs:
           done
           echo "All scripts validated successfully"
 
-      - name: Run security audit
-        run: |
-          echo "Running security audit..."
-          echo "Installing latest cargo-audit for CVSS 4.0 support..."
-          nix develop --accept-flake-config --command cargo install cargo-audit --force
+  # Stage 3: 最終ビルド
+  nix-build:
+    name: Nix Build
+    runs-on: macos-latest
+    needs: [full-checks, scripts]
+    if: |
+      always() &&
+      (needs.full-checks.result == 'success' || needs.full-checks.result == 'skipped') &&
+      (needs.scripts.result == 'success' || needs.scripts.result == 'skipped')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-          # Run cargo audit with error handling for known CVSS 4.0 incompatibility
-          if ! nix develop --accept-flake-config --command cargo audit 2>&1 | tee /tmp/cargo-audit.log; then
-            if grep -q "unsupported CVSS version: 4.0" /tmp/cargo-audit.log; then
-              echo "⚠️  Warning: cargo-audit failed due to CVSS 4.0 incompatibility (known issue)"
-              echo "    This is a tooling limitation, not a security issue in this project"
-              echo "    See: https://github.com/rustsec/rustsec/issues/1130"
-            else
-              # Real security issue - fail the build
-              echo "❌ Security audit failed with unexpected error"
-              cat /tmp/cargo-audit.log
-              exit 1
-            fi
-          fi
-          rm -f /tmp/cargo-audit.log
+      - name: Install Nix
+        uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: voicevox-cli
+          extraPullNames: nix-community
 
       - name: Build with Nix
         run: |
-          echo "Building project with Nix..."
-          nix build --accept-flake-config --show-trace
+          echo "Building project with Nix (using crane)..."
+          nix build --accept-flake-config --print-build-logs
 
       - name: Verify build artifacts
         run: |
           echo "Verifying build artifacts..."
-          if [[ -d result/bin ]]; then
-            ls -la result/bin/
-            echo "Build artifacts verified"
-          else
+          if [[ ! -d result/bin ]]; then
             echo "Build artifacts not found"
             exit 1
           fi
-
-      - name: Verify build artifacts detailed
-        run: |
-          echo "Verifying build artifacts..."
           ls -la result/bin/
           file result/bin/voicevox-say
           file result/bin/voicevox-daemon
@@ -137,26 +185,11 @@ jobs:
       - name: Test functionality
         run: |
           echo "Testing functionality..."
-          result/bin/voicevox-say --help || echo "Help command test"
-          result/bin/voicevox-daemon --help || echo "Help command test"
-          result/bin/voicevox-mcp-server --help || echo "Help command test"
-          result/bin/voicevox-setup --help || echo "Setup script test"
-          result/bin/voicevox-say --version || echo "Version command not available"
-
-      - name: Run MCP protocol tests (release artifacts)
-        run: |
-          echo "Running MCP protocol integration tests against release artifacts..."
-          echo "Testing binary: $(pwd)/result/bin/voicevox-mcp-server"
-          MCP_SERVER_PATH="$(pwd)/result/bin/voicevox-mcp-server" \
-            nix develop --accept-flake-config --command cargo test --test mcp_protocol -- --nocapture
-
-      - name: Synthesis tests (skipped in CI)
-        run: |
-          echo "Synthesis tests are skipped in CI (require daemon and audio output)"
-          echo "These tests can be run locally with:"
-          echo "  cargo build"
-          echo "  ./target/debug/voicevox-daemon --start --detach"
-          echo "  cargo test --test synthesis_modes --ignored"
+          result/bin/voicevox-say --help
+          result/bin/voicevox-daemon --help
+          result/bin/voicevox-mcp-server --help
+          result/bin/voicevox-setup --help
+          result/bin/voicevox-say --version
 
       - name: Package verification
         run: |
@@ -168,8 +201,98 @@ jobs:
           echo "Total package size:"
           du -sh result/
 
-      - name: Warm up cache (main branch only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: voicevox-binaries
+          path: result/bin/
+          retention-days: 1
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: macos-latest
+    needs: [nix-build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: voicevox-binaries
+          path: ./result/bin
+
+      - name: Set executable permissions
+        run: chmod +x result/bin/*
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: voicevox-cli
+          extraPullNames: nix-community
+
+      - name: Run MCP protocol tests
         run: |
-          echo "Warming up cache for future builds..."
-          nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org" || true
+          echo "Running MCP protocol integration tests..."
+          echo "Testing binary: $(pwd)/result/bin/voicevox-mcp-server"
+          MCP_SERVER_PATH="$(pwd)/result/bin/voicevox-mcp-server" \
+            nix develop --accept-flake-config --command cargo test --test mcp_protocol -- --nocapture
+
+      - name: Synthesis tests note
+        run: |
+          echo "Synthesis tests are skipped in CI (require daemon and audio output)"
+          echo "These tests can be run locally with:"
+          echo "  cargo build"
+          echo "  ./target/debug/voicevox-daemon --start --detach"
+          echo "  cargo test --test synthesis_modes --ignored"
+
+  # Stage 4: キャッシュ push（全 derivation）
+  cache-push:
+    name: Push to Cachix
+    runs-on: macos-latest
+    needs: [integration-tests]
+    if: |
+      needs.integration-tests.result == 'success' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') &&
+      github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@0b0e072294b088b73964f1d72dfdac0951439dbd # v31.8.4
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        with:
+          name: voicevox-cli
+          extraPullNames: nix-community
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build and push to cache
+        run: |
+          echo "Building and pushing critical derivations to Cachix..."
+
+          # 1. cargoArtifacts (依存関係のみ - ソース変更でも不変)
+          echo ">>> Building cargoArtifacts (dependencies)..."
+          nix build .#deps --accept-flake-config
+          cachix push voicevox-cli ./result
+
+          # 2. 最終パッケージ (リリース成果物)
+          echo ">>> Building final package..."
+          nix build --accept-flake-config
+          cachix push voicevox-cli ./result
+
+          echo "Cache push completed successfully!"
+          echo ""
+          echo "Note: Check derivations (clippy, test, doc) are NOT cached"
+          echo "because they include source code and would be rebuilt on every source change."

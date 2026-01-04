@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -55,6 +55,7 @@ jobs:
         uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
         with:
           name: voicevox-cli
+          extraPullNames: nix-community
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build release artifacts
@@ -78,6 +79,22 @@ jobs:
           fi
 
           echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
+
+      - name: Push to Cachix
+        run: |
+          echo "Pushing build artifacts to Cachix..."
+
+          # 1. Push cargoArtifacts (dependencies)
+          echo ">>> Pushing cargoArtifacts..."
+          nix build .#deps --accept-flake-config
+          cachix push voicevox-cli ./result
+
+          # 2. Push final package
+          echo ">>> Pushing final package..."
+          nix build --accept-flake-config
+          cachix push voicevox-cli ./result
+
+          echo "Cache push completed successfully!"
 
       - name: Test release artifact
         run: |

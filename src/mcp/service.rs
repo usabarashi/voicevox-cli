@@ -195,9 +195,6 @@ impl VoicevoxService {
         let (progress_tx, mut progress_rx) =
             mpsc::channel::<(f64, Option<f64>, Option<String>)>(32);
 
-        // Clone for use in blocking task
-        let progress_tx_clone = progress_tx.clone();
-
         // Spawn task to forward progress notifications
         let progress_peer = peer.clone();
         let progress_token_clone = progress_token.clone();
@@ -216,22 +213,21 @@ impl VoicevoxService {
             }
         });
 
+        // Get handle to current runtime before entering blocking context
+        let handle = tokio::runtime::Handle::current();
+
         // Spawn blocking task for audio
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let progress_tx = progress_tx_clone;
-            let runtime = tokio::runtime::Runtime::new()
-                .context("Failed to create runtime for audio playback")?;
-
             let stream = rodio::OutputStreamBuilder::open_default_stream()
                 .context("Failed to create audio output stream")?;
             let sink = Arc::new(Sink::connect_new(stream.mixer()));
 
-            let mut synthesizer = runtime
+            let mut synthesizer = handle
                 .block_on(StreamingSynthesizer::new())
                 .context("Failed to create streaming synthesizer")?;
 
             // Synthesize with progress and cancellation
-            let cancelled = runtime
+            let cancelled = handle
                 .block_on(async {
                     synthesizer
                         .synthesize_streaming_with_cancellation(
@@ -251,7 +247,7 @@ impl VoicevoxService {
             }
 
             // Wait for playback with cancellation support and progress updates
-            runtime.block_on(async {
+            handle.block_on(async {
                 const POLL_INTERVAL: Duration = Duration::from_millis(100);
                 const PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -282,8 +278,8 @@ impl VoicevoxService {
         .await
         .context("Audio playback task failed")??;
 
-        // progress_tx was moved into spawn_blocking, drop happens automatically
         // Wait for progress forwarder to finish
+        // (progress_tx was moved into spawn_blocking and dropped when task completes)
         let _ = progress_forwarder.await;
 
         Ok(format!(
@@ -562,6 +558,7 @@ impl ServerHandler for VoicevoxService {
             .clone();
 
         Ok(ListToolsResult {
+            meta: None,
             tools: vec![
                 Tool {
                     name: "text_to_speech".into(),
@@ -571,6 +568,7 @@ impl ServerHandler for VoicevoxService {
                     output_schema: None,
                     icons: None,
                     annotations: None,
+                    meta: None,
                 },
                 Tool {
                     name: "list_voice_styles".into(),
@@ -580,6 +578,7 @@ impl ServerHandler for VoicevoxService {
                     output_schema: None,
                     icons: None,
                     annotations: None,
+                    meta: None,
                 },
             ],
             next_cursor: None,

@@ -89,7 +89,8 @@ jobs:
             echo "Installing cargo-audit..."
             nix develop --accept-flake-config --command cargo install cargo-audit
           fi
-          nix develop --accept-flake-config --command cargo audit
+          # RUSTSEC-2026-0009: time crate DoS via stack exhaustion (transitive dep from voicevox_core, awaiting upstream fix)
+          nix develop --accept-flake-config --command cargo audit --ignore RUSTSEC-2026-0009
 
       - name: Build with Nix
         run: |

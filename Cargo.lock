@@ -3010,7 +3010,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.15",
  "tokio",
  "tokio-util",
  "toml 0.9.5",

@@ -1,6 +1,6 @@
-pub mod handlers;
+pub mod protocol;
+pub mod requests;
 pub mod server;
 pub mod tools;
-pub mod types;
 
 pub use server::run_mcp_server;

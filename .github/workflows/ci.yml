@@ -43,7 +43,7 @@ jobs:
           restore-prefixes-first-match: |
             nix-${{ runner.os }}-
           gc-max-store-size-macos: 5G
-          purge: true
+          purge: ${{ github.event_name == 'push' }}
           purge-prefixes: nix-${{ runner.os }}-
           purge-last-accessed: 604800
 

@@ -31,7 +31,10 @@ voicevox-say --list-speakers
 voicevox-say --status
 
 # Daemon management
-voicevox-daemon --start | --stop | --restart | --status
+voicevox-daemon --start
+voicevox-daemon --stop
+voicevox-daemon --restart
+voicevox-daemon --status
 ```
 
 ## MCP Server

@@ -126,6 +126,23 @@ else
     DATA_DIR="./voicevox"
 fi
 
+# Safety check: reject dangerous paths before rm -rf
+assert_safe_path() {
+    local path="$1"
+    local label="$2"
+    # Normalize: resolve to absolute, strip trailing slashes
+    local resolved
+    resolved="$(cd / && realpath -m "$path" 2>/dev/null || echo "$path")"
+    resolved="${resolved%/}"
+    case "$resolved" in
+        ""|/|/bin|/boot|/dev|/etc|/home|/lib|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var|/nix|/Applications|/Library|/System|/Users|/Volumes|/private)
+            echo -e "${RED}Error: $label resolves to '$resolved', which is a protected system path.${NC}" >&2
+            echo "Refusing to remove. Check your environment variables." >&2
+            exit 1
+            ;;
+    esac
+}
+
 # --- Purge mode ---
 if [ "$MODE" = "purge" ]; then
     # Resolve socket path (mirrors src/paths.rs get_socket_path)
@@ -240,6 +257,7 @@ if [ "$MODE" = "purge" ]; then
 
     # Remove data directory
     if [[ " ${TARGETS[*]} " =~ " data " ]]; then
+        assert_safe_path "$DATA_DIR" "DATA_DIR"
         echo -e "${BLUE}Removing data...${NC}"
         rm -rf "$DATA_DIR"
         echo "  $DATA_DIR"
@@ -247,6 +265,7 @@ if [ "$MODE" = "purge" ]; then
 
     # Remove config directory
     if [[ " ${TARGETS[*]} " =~ " config " ]]; then
+        assert_safe_path "$CONFIG_DIR" "CONFIG_DIR"
         echo -e "${BLUE}Removing config...${NC}"
         rm -rf "$CONFIG_DIR"
         echo "  $CONFIG_DIR"

@@ -42,6 +42,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Validate option combinations
+if [ "$MODE" = "setup" ] && { [ "$SKIP_CONFIRM" = true ] || [ "$DRY_RUN" = true ]; }; then
+    echo "Error: -y/--yes and -n/--dry-run can only be used with --purge" >&2
+    show_help
+    exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

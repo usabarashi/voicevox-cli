@@ -2,25 +2,15 @@
   description = "VOICEVOX CLI";
 
   nixConfig = {
-    substituters = [
-      "https://cache.nixos.org/"
+    extra-substituters = [
       "https://voicevox-cli.cachix.org"
       "https://nix-community.cachix.org"
     ];
 
-    trusted-public-keys = [
-      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    extra-trusted-public-keys = [
       "voicevox-cli.cachix.org-1:mgBVkErTVM4g1h08Bz86D73qhB4Jew/+JQ4iCjaPzj0="
       "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
     ];
-
-    max-jobs = "auto";
-    cores = 0;
-    max-silent-time = 1800;
-    timeout = 3600;
-    connect-timeout = 5;
-    download-attempts = 3;
-    auto-optimise-store = true;
   };
 
   inputs = {
@@ -46,6 +36,43 @@
 
         # Read rust-toolchain.toml to ensure consistency
         rustToolchain = fenix.packages.${system}.stable;
+
+        # Shared cargo lock configuration (used by build and checks)
+        cargoLockConfig = {
+          lockFile = ./Cargo.lock;
+          outputHashes = {
+            "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
+            "voicevox_core-0.0.0" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
+            "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
+          };
+        };
+
+        # Shared source filter
+        srcFiltered = pkgs.lib.cleanSourceWith {
+          src = ./.;
+          filter =
+            path: type:
+            let
+              baseName = baseNameOf path;
+            in
+            !(
+              (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
+              || (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+            );
+        };
+
+        # Shared native build inputs for Rust compilation
+        commonNativeBuildInputs = with pkgs; [
+          rustToolchain.defaultToolchain
+          pkg-config
+          cmake
+          gnumake
+          autoconf
+          automake
+          libtool
+          git
+          cacert
+        ];
 
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
@@ -77,34 +104,12 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage rec {
+        voicevox-cli = pkgs.rustPlatform.buildRustPackage {
           pname = "voicevox-cli";
           version = "0.1.0";
 
-          src = pkgs.lib.cleanSourceWith {
-            src = ./.;
-            filter =
-              path: type:
-              let
-                baseName = baseNameOf path;
-              in
-              !(
-                # Exclude temporary directories
-                (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
-                ||
-                  # Exclude other temporary files
-                  (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
-              );
-          };
-
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            outputHashes = {
-              "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-              "voicevox_core-0.0.0" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
-              "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
-            };
-          };
+          src = srcFiltered;
+          cargoLock = cargoLockConfig;
 
           doCheck = false;
 
@@ -118,39 +123,23 @@
             mkdir -p $HOME
           '';
 
-          nativeBuildInputs = with pkgs; [
-            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
-            rustToolchain.defaultToolchain
-            rustToolchain.rust-analyzer
+          nativeBuildInputs = commonNativeBuildInputs;
 
-            # Build tools
-            pkg-config
-            cmake
-            gnumake
-
-            # Autotools (for dependencies)
-            autoconf
-            automake
-            libtool
-
-            # Version control (required by some build scripts)
-            git
-            cacert
-          ];
 
           buildInputs = [ ];
 
           # Build-time environment variables
           preBuild = ''
-            # Run full CI checks before build
-            ${pkgs.bash}/bin/bash ${./scripts/ci.sh} --build-phase || exit 1
-
             # Git SSL configuration
             export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+          '';
 
-            # Simplified build configuration - no ONNX or OpenJTalk dependencies needed
-            # Resources will be downloaded at runtime
+          # Clippy analysis runs after cargo build --release completes.
+          # Reuses build artifacts from the same sandbox environment,
+          # avoiding double compilation from a separate checks.clippy derivation.
+          postBuild = ''
+            cargo clippy --release --all-targets --all-features -- -D warnings
           '';
 
           postInstall = ''
@@ -162,12 +151,14 @@
 
             # Install VOICEVOX.md for MCP server
             install -m644 ${./VOICEVOX.md} $out/bin/VOICEVOX.md
-
-            # Note: All resources (ONNX, dict, models) will be downloaded at runtime
           '';
 
           meta = packageMeta;
         };
+
+        # Development utility: reset daemon state
+        voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (builtins.readFile ./scripts/voicevox-reset.sh);
+
 
       in
       {
@@ -176,6 +167,46 @@
           voicevox-cli = voicevox-cli;
           voicevox-say = voicevox-cli;
           voicevoxResources = voicevoxResources;
+        };
+
+        checks = {
+          # Code formatting check
+          formatting = pkgs.runCommand "check-formatting" {
+            nativeBuildInputs = [ rustToolchain.defaultToolchain ];
+            src = srcFiltered;
+          } ''
+            cd $src
+            export HOME=$TMPDIR
+            cargo fmt --check
+            touch $out
+          '';
+
+          # Shell script syntax validation
+          scripts = pkgs.runCommand "check-scripts" {
+            nativeBuildInputs = with pkgs; [
+              bash
+              gnused
+              gnugrep
+            ];
+            src = ./.;
+          } ''
+            test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
+
+            for script in $src/scripts/*.sh; do
+              if [ -f "$script" ]; then
+                echo "Validating: $(basename "$script")"
+                if grep -q '@@.*@@' "$script"; then
+                  sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
+                else
+                  bash -n "$script"
+                fi
+              fi
+            done
+            touch $out
+          '';
+
+          # Build verification
+          build = voicevox-cli;
         };
 
         apps = {
@@ -196,17 +227,6 @@
             program = "${voicevox-cli}/bin/voicevox-mcp-server";
           };
 
-          # CI Task Runner - All checks in one command
-          ci = {
-            type = "app";
-            program = toString (
-              pkgs.writeShellScript "ci-runner" ''
-                # Pass the project directory to the CI script
-                export PROJECT_DIR="${toString ./.}"
-                exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
-              ''
-            );
-          };
         };
 
         devShells.default = pkgs.mkShell {
@@ -222,17 +242,27 @@
             pkg-config
             cmake
 
-            # UV for Python package management (for Serena MCP)
-            nixd
-            uv
+            # Development utilities
+            voicevoxResetWrapper
           ];
+
+          shellHook = ''
+            # Create project-home directory for CARGO_HOME
+            mkdir -p .project-home
+
+            echo "VOICEVOX CLI Development Environment (Apple Silicon)"
+            echo "Available commands:"
+            echo "  cargo build --bin voicevox-say     - Build client"
+            echo "  cargo build --bin voicevox-daemon  - Build daemon"
+            echo "  cargo run --bin voicevox-say       - Run client"
+            echo "  nix build                          - Build with Nix"
+            echo "  nix run                            - Run voicevox-say directly"
+            echo "  voicevox-reset                     - Reset daemon state (kill processes + remove socket)"
+            echo ""
+            echo "Dynamic voice detection system - no hardcoded voice names"
+          '';
         };
 
-        lib = {
-          mkVoicevoxCli = pkgs: voicevox-cli;
-          getPackage = voicevox-cli;
-          meta = packageMeta;
-        };
       }
     )
     // {

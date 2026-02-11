@@ -7,6 +7,33 @@ set -euo pipefail
 # - OpenJTalk dictionary
 # - Voice models
 
+show_help() {
+    cat <<'EOF'
+VOICEVOX CLI Setup - Download required resources
+
+Usage: voicevox-setup [OPTIONS]
+
+Downloads ONNX Runtime, OpenJTalk dictionary, and voice models
+required for VOICEVOX CLI operation.
+
+Options:
+  -h, --help    Print help
+
+Environment variables:
+  VOICEVOX_DIR              Custom data directory
+  XDG_DATA_HOME             XDG base directory (default: ~/.local/share)
+  ORT_DYLIB_PATH            Custom ONNX Runtime library path
+  VOICEVOX_OPENJTALK_DICT   Custom OpenJTalk dictionary path
+EOF
+}
+
+case "${1:-}" in
+    -h|--help)
+        show_help
+        exit 0
+        ;;
+esac
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

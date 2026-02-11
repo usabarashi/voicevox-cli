@@ -14,6 +14,7 @@ Key design principles:
 - Dynamic VVM model loading (no persistent memory caching)
 - Automatic daemon lifecycle management
 - Transparent auto-startup for seamless user experience
+- Platform: macOS Apple Silicon (aarch64-darwin)
 
 ## Implementation Details
 
@@ -22,13 +23,36 @@ Key design principles:
 - `daemon.rs`: Background server handling VOICEVOX Core operations
 - `mcp_server.rs`: MCP protocol server for AI assistant integration
 
-### Core Modules (`src/`)
-- `client/`: Client-side logic including audio playback and model management
-- `daemon/`: Server implementation with request handling and lifecycle management
-- `core/`: VOICEVOX Core FFI bindings and voice synthesis interface
-- `ipc/`: Inter-process communication protocol for Unix socket messaging
-- `synthesis/`: Streaming synthesis engine for processing long text segments
-- `mcp/`: MCP protocol tools and request handlers
+### Library Modules (`src/`)
+- `core.rs`: VOICEVOX Core FFI bindings (`VoicevoxCore` struct, `CoreSynthesis` trait)
+- `ipc.rs`: IPC protocol types (`DaemonRequest`/`DaemonResponse` enums, bincode serialization)
+- `paths.rs`: XDG Base Directory path resolution for socket, models, dictionary, ONNX Runtime
+- `config.rs`: TOML configuration (`~/.config/voicevox-cli/config.toml`, `TextSplitterConfig`)
+- `setup.rs`: Initial setup orchestration (automatic and manual setup flows)
+- `voice.rs`: Voice model scanning, style-to-model mapping, voice name resolution
+- `client/`: Client-side logic (see submodules below)
+- `daemon/`: Server implementation (see submodules below)
+- `synthesis/`: Streaming synthesis engine (see submodules below)
+- `mcp/`: MCP protocol server (see submodules below)
+
+### Client Submodules (`src/client/`)
+- `daemon_client.rs`: Unix socket client (`DaemonClient`) with auto-start, exponential backoff retry, `LengthDelimitedCodec` framing
+- `audio.rs`: Dual audio playback (rodio primary, `afplay`/`play` system fallback; `VOICEVOX_LOW_LATENCY` for rodio-first mode)
+- `download.rs`: Resource download management with retry logic
+- `input.rs`: Text input handling (positional argument, `--input-file`, stdin)
+
+### Daemon Submodules (`src/daemon/`)
+- `server.rs`: `DaemonState` with dynamic style-to-model mapping, per-request model load/unload, `run_daemon` loop
+- `process.rs`: Duplicate daemon prevention via `pgrep`, stale socket detection, PID discovery
+
+### Synthesis Submodules (`src/synthesis/`)
+- `streaming.rs`: `StreamingSynthesizer` for long text with `TextSplitter` (configurable delimiters/max length), concurrent segment synthesis and rodio `Sink` playback
+
+### MCP Submodules (`src/mcp/`)
+- `server.rs`: JSON-RPC 2.0 server over stdin/stdout (MCP protocol version `2025-03-26`)
+- `tools.rs`: Tool definitions (`text_to_speech`, `list_voice_styles` with JSON Schema)
+- `handlers.rs`: Tool request handlers (streaming path via `StreamingSynthesizer`, daemon path via `DaemonClient`)
+- `types.rs`: MCP type definitions (`JsonRpcRequest`, `JsonRpcResponse`, `ToolDefinition`, `ToolCallResult`)
 
 ### Daemon Auto-Start Mechanism
 1. Client attempts Unix socket connection
@@ -40,14 +64,41 @@ Key design principles:
 ### Synthesis Modes
 - **Direct mode**: Single synthesis request sent to daemon, audio played through client
 - **Streaming mode**: Long text segmented and processed with concurrent synthesis and playback  
-- **MCP mode**: Dual-path operation supporting both streaming (default) and daemon-based synthesis
+- **MCP mode**: Streaming path (default, `StreamingSynthesizer` with direct VOICEVOX Core) or daemon path (`DaemonClient`)
 
 ## Command Interface
 
+### voicevox-say
 ```bash
-voicevox-say "テキスト"              # Text-to-speech with automatic daemon startup
-voicevox-daemon --start             # Manual daemon startup for persistent operation
-voicevox-mcp-server                 # MCP protocol server for AI assistant integration
+voicevox-say "テキスト"              # Basic text-to-speech with auto daemon startup
+voicevox-say -v NAME "テキスト"      # Specify voice by name (-v ? to list)
+voicevox-say -r 1.5 "テキスト"       # Adjust speech rate (0.5-2.0)
+voicevox-say -o output.wav "テキスト" # Save to audio file
+voicevox-say -f input.txt            # Read from file
+echo "テキスト" | voicevox-say -f -  # Read from stdin
+voicevox-say -q -o out.wav "テキスト" # Save without playback
+voicevox-say -m 3 "テキスト"         # Specify model number (3.vvm)
+voicevox-say --speaker-id 3 "テキスト" # Direct style ID
+voicevox-say --list-speakers         # List all speakers and styles
+voicevox-say --list-models           # List available VVM models
+voicevox-say --status                # Show installation status
+voicevox-say -S /path/to/sock "テキスト" # Custom socket path
+```
+
+### voicevox-daemon
+```bash
+voicevox-daemon --start              # Start daemon (shows usage if no flags)
+voicevox-daemon --start --detach     # Start as background process
+voicevox-daemon --foreground         # Run in foreground (development)
+voicevox-daemon --stop               # Stop running daemon
+voicevox-daemon --status             # Check daemon status
+voicevox-daemon --restart            # Stop then start
+voicevox-daemon -s /path/to/sock     # Custom socket path
+```
+
+### voicevox-mcp-server
+```bash
+voicevox-mcp-server                  # Start MCP server (stdin/stdout JSON-RPC)
 ```
 
 ## MCP Integration
@@ -70,3 +121,48 @@ voicevox-mcp-server
 ```
 
 Server operates normally without instruction files. Default behavior defined in [INSTRUCTIONS.md](INSTRUCTIONS.md).
+
+## Configuration
+
+User config path: `~/.config/voicevox-cli/config.toml`
+
+```toml
+[text_splitter]
+delimiters = ["。", "！", "？", "．", "\n"]
+max_length = 100
+```
+
+Used by `StreamingSynthesizer` for text segmentation in streaming mode.
+
+## Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `VOICEVOX_SOCKET_PATH` | Custom Unix socket path |
+| `VOICEVOX_MODELS_DIR` | Custom models directory (aliases: `VOICEVOX_MODEL_DIR`, `VOICEVOX_MODELS_PATH`, `VOICEVOX_MODEL_PATH`, `VOICEVOX_MODELS`) |
+| `VOICEVOX_OPENJTALK_DICT` | Custom OpenJTalk dictionary path |
+| `VOICEVOX_MCP_INSTRUCTIONS` | Custom MCP instruction file path |
+| `VOICEVOX_LOW_LATENCY` | Enable rodio low-latency audio playback |
+| `ORT_DYLIB_PATH` | Custom ONNX Runtime library path |
+
+Default paths follow XDG Base Directory specification (models: `~/.local/share/voicevox`, socket: `$XDG_RUNTIME_DIR/voicevox-daemon.sock`).
+
+## Build System
+
+### Cargo Features
+| Feature | Dependencies | Purpose |
+|---|---|---|
+| `simd` | rayon | Parallel model scanning |
+| `fast-strings` | compact_str | Memory-efficient strings |
+| `small-vectors` | smallvec | Stack-allocated small vectors |
+| `performance` | All above + mimalloc | Full optimization bundle |
+
+### Nix Flake
+```bash
+nix build                    # Build package
+nix run                      # Run voicevox-say
+nix flake check              # Run checks (formatting, clippy, build)
+nix develop                  # Enter development shell
+```
+
+Platform: macOS Apple Silicon (aarch64-darwin) only.

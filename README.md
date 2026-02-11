@@ -38,6 +38,24 @@ voicevox-say "こんにちは、ずんだもんなのだ"
 
 ## Installation
 
+### nix-darwin / home-manager
+
+```nix
+{
+  inputs.voicevox-cli.url = "github:usabarashi/voicevox-cli";
+
+  # nix-darwin
+  environment.systemPackages = [
+    voicevox-cli.packages.aarch64-darwin.default
+  ];
+
+  # or home-manager
+  home.packages = [
+    voicevox-cli.packages.aarch64-darwin.default
+  ];
+}
+```
+
 ### Development
 
 ```bash
@@ -51,18 +69,12 @@ nix develop
 # Build and test
 nix build
 nix run . -- "テストメッセージなのだ"
+
+# Run all checks (formatting, clippy, scripts, build)
+nix flake check
 ```
 
 **Note**: Voice models are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once. This project uses Nix's `nixos-unstable` channel for package dependencies, but is designed exclusively for macOS Apple Silicon (not NixOS).
-
-### Manual Resource Setup
-
-For manual setup or resource reinstallation:
-
-```bash
-# Download all required resources manually
-voicevox-setup
-```
 
 ## Usage
 

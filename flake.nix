@@ -19,25 +19,15 @@
   '';
 
   nixConfig = {
-    substituters = [
-      "https://cache.nixos.org/"
+    extra-substituters = [
       "https://voicevox-cli.cachix.org"
       "https://nix-community.cachix.org"
     ];
 
-    trusted-public-keys = [
-      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    extra-trusted-public-keys = [
       "voicevox-cli.cachix.org-1:mgBVkErTVM4g1h08Bz86D73qhB4Jew/+JQ4iCjaPzj0="
       "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
     ];
-
-    max-jobs = "auto";
-    cores = 0;
-    max-silent-time = 1800;
-    timeout = 3600;
-    connect-timeout = 5;
-    download-attempts = 3;
-    auto-optimise-store = true;
   };
 
   inputs = {
@@ -64,12 +54,48 @@
         # Read rust-toolchain.toml to ensure consistency
         rustToolchain = fenix.packages.${system}.stable;
 
+        # Shared cargo lock configuration (used by build and checks)
+        cargoLockConfig = {
+          lockFile = ./Cargo.lock;
+          outputHashes = {
+            "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
+            "voicevox_core-0.0.0" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
+            "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
+          };
+        };
+
+        # Shared source filter
+        srcFiltered = pkgs.lib.cleanSourceWith {
+          src = ./.;
+          filter =
+            path: type:
+            let
+              baseName = baseNameOf path;
+            in
+            !(
+              (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
+              || (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+            );
+        };
+
+        # Shared native build inputs for Rust compilation
+        commonNativeBuildInputs = with pkgs; [
+          rustToolchain.defaultToolchain
+          pkg-config
+          cmake
+          gnumake
+          autoconf
+          automake
+          libtool
+          git
+          cacert
+        ];
+
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
           url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/download-osx-arm64";
           sha256 = "sha256-OL5Hpyd0Mc+77PzUhtIIFmHjRQqLVaiITuHICg1QBJU=";
         };
-
 
         # Simple resources for voicevox-download binary
         voicevoxResources = pkgs.stdenv.mkDerivation {
@@ -95,34 +121,12 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage rec {
+        voicevox-cli = pkgs.rustPlatform.buildRustPackage {
           pname = "voicevox-cli";
           version = "0.1.0";
 
-          src = pkgs.lib.cleanSourceWith {
-            src = ./.;
-            filter =
-              path: type:
-              let
-                baseName = baseNameOf path;
-              in
-              !(
-                # Exclude temporary directories
-                (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
-                ||
-                  # Exclude other temporary files
-                  (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
-              );
-          };
-
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            outputHashes = {
-              "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-              "voicevox_core-0.0.0" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
-              "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
-            };
-          };
+          src = srcFiltered;
+          cargoLock = cargoLockConfig;
 
           doCheck = false;
 
@@ -136,180 +140,40 @@
             mkdir -p $HOME
           '';
 
-          nativeBuildInputs = with pkgs; [
-            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
-            rustToolchain.defaultToolchain
+          nativeBuildInputs = commonNativeBuildInputs;
 
-            # Build tools
-            pkg-config
-            cmake
-            gnumake
-
-            # Autotools (for dependencies)
-            autoconf
-            automake
-            libtool
-
-            # Version control (required by some build scripts)
-            git
-            cacert
-          ];
-
-          buildInputs = [];
+          buildInputs = [ ];
 
           # Build-time environment variables
           preBuild = ''
-            # Run full CI checks before build
-            ${pkgs.bash}/bin/bash ${./scripts/ci.sh} --build-phase || exit 1
-
             # Git SSL configuration
             export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+          '';
 
-            # Simplified build configuration - no ONNX or OpenJTalk dependencies needed
-            # Resources will be downloaded at runtime
+          # Clippy analysis runs after cargo build --release completes.
+          # Reuses build artifacts from the same sandbox environment,
+          # avoiding double compilation from a separate checks.clippy derivation.
+          postBuild = ''
+            cargo clippy --release --all-targets --all-features -- -D warnings
           '';
 
           postInstall = ''
             # Install download utility
             cp ${voicevoxResources}/bin/voicevox-download $out/bin/
-            
-            # Install setup script (renamed from voicevox-setup-models.sh)
+
+            # Install setup script
             install -m755 ${./scripts/voicevox-setup.sh} $out/bin/voicevox-setup
-            
+
             # Install INSTRUCTIONS.md for MCP server
             install -m644 ${./INSTRUCTIONS.md} $out/bin/INSTRUCTIONS.md
-            
-            # Note: All resources (ONNX, dict, models) will be downloaded at runtime
           '';
 
           meta = packageMeta;
         };
 
-        licenseAcceptor = pkgs.runCommand "voicevox-auto-setup" { } ''
-          mkdir -p $out/bin
-          substitute ${./scripts/voicevox-auto-setup.sh} $out/bin/voicevox-auto-setup \
-            --replace "@@BASH_PATH@@" "${pkgs.bash}/bin/bash" \
-            --replace "@@EXPECT_PATH@@" "${pkgs.expect}/bin/expect" \
-            --replace "@@DOWNLOADER_PATH@@" "${voicevoxResources}/bin/voicevox-download"
-          chmod +x $out/bin/voicevox-auto-setup
-        '';
-
-        # Common Serena environment setup script
-        serenaEnvSetup = ''
-          # Get the directory where this script is invoked from
-          PROJECT_DIR="$(pwd)"
-
-          # Create fake home directory structure in project
-          export HOME="$PROJECT_DIR/.project-home"
-          export XDG_DATA_HOME="$HOME/.local/share"
-          export XDG_CACHE_HOME="$HOME/.cache"
-          export UV_CACHE_DIR="$HOME/.cache/uv"
-          export UV_TOOL_DIR="$HOME/.local/uv/tools"
-          export CARGO_HOME="$PROJECT_DIR/.project-home/.cargo"
-
-          # Create necessary directories
-          mkdir -p "$HOME/.serena/logs"
-          mkdir -p "$XDG_DATA_HOME/uv"
-          mkdir -p "$XDG_CACHE_HOME"
-        '';
-
-        # Serena index creation wrapper
-        serenaIndexWrapper = pkgs.writeShellScriptBin "serena-index" ''
-          ${serenaEnvSetup}
-
-          echo "Creating Serena index for project..."
-          echo "HOME: $HOME"
-          echo "Project: $PROJECT_DIR"
-
-          # Run serena index command with all paths pointing to project directory
-          exec ${pkgs.uv}/bin/uvx \
-              --cache-dir "$UV_CACHE_DIR" \
-              --from git+https://github.com/oraios/serena \
-              serena project index
-        '';
-
-        # Serena MCP server wrapper with project-local paths
-        serenaMcpWrapper = pkgs.writeShellScriptBin "serena-mcp-wrapper" ''
-          ${serenaEnvSetup}
-
-          echo "Starting Serena MCP server with project-local paths..."
-          echo "HOME: $HOME"
-          echo "Project: $PROJECT_DIR"
-
-          # Run serena with all paths pointing to project directory
-          exec ${pkgs.uv}/bin/uvx \
-              --cache-dir "$UV_CACHE_DIR" \
-              --from git+https://github.com/oraios/serena \
-              serena start-mcp-server \
-              --context ide-assistant \
-              --enable-web-dashboard false \
-              --project "$PROJECT_DIR"
-        '';
-
-        # Helper function to run uvx with Serena
-        runSerenaCommand = ''
-          exec ${pkgs.uv}/bin/uvx \
-              --cache-dir "$UV_CACHE_DIR" \
-              --from git+https://github.com/oraios/serena \
-              serena "$@"
-        '';
-
-        # Serena memory management wrapper
-        serenaMemoryWrapper = pkgs.writeShellScriptBin "serena-memory" ''
-          set -euo pipefail
-
-          ${serenaEnvSetup}
-
-          # Handle memory commands
-          case "''${1:-}" in
-            write)
-              if [ "$#" -lt 3 ]; then
-                echo "Error: write command requires at least 2 arguments" >&2
-                echo "Usage: serena-memory write <memory-name> <content>" >&2
-                exit 1
-              fi
-              MEMORY_NAME="$2"
-              echo "Writing memory: $MEMORY_NAME"
-              # Shift twice to get all remaining args as content
-              shift 2
-              ${runSerenaCommand} memory write "$MEMORY_NAME" "$*"
-              ;;
-            read)
-              if [ "$#" -lt 2 ]; then
-                echo "Error: read command requires 1 argument" >&2
-                echo "Usage: serena-memory read <memory-name>" >&2
-                exit 1
-              fi
-              ${runSerenaCommand} memory read "$2"
-              ;;
-            list)
-              ${runSerenaCommand} memory list
-              ;;
-            delete)
-              if [ "$#" -lt 2 ]; then
-                echo "Error: delete command requires 1 argument" >&2
-                echo "Usage: serena-memory delete <memory-name>" >&2
-                exit 1
-              fi
-              echo "Deleting memory: $2"
-              ${runSerenaCommand} memory delete "$2"
-              ;;
-            *)
-              echo "Serena Memory Management"
-              echo ""
-              echo "Usage:"
-              echo "  serena-memory write <name> <content>  - Save a memory"
-              echo "  serena-memory read <name>             - Read a memory"
-              echo "  serena-memory list                    - List all memories"
-              echo "  serena-memory delete <name>           - Delete a memory"
-              echo ""
-              echo "Example:"
-              echo "  serena-memory write architecture 'This project uses daemon-client model'"
-              exit 1
-              ;;
-          esac
-        '';
+        # Development utility: reset daemon state
+        voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (builtins.readFile ./scripts/voicevox-reset.sh);
 
       in
       {
@@ -318,6 +182,46 @@
           voicevox-cli = voicevox-cli;
           voicevox-say = voicevox-cli;
           voicevoxResources = voicevoxResources;
+        };
+
+        checks = {
+          # Code formatting check
+          formatting = pkgs.runCommand "check-formatting" {
+            nativeBuildInputs = [ rustToolchain.defaultToolchain ];
+            src = srcFiltered;
+          } ''
+            cd $src
+            export HOME=$TMPDIR
+            cargo fmt --check
+            touch $out
+          '';
+
+          # Shell script syntax validation
+          scripts = pkgs.runCommand "check-scripts" {
+            nativeBuildInputs = with pkgs; [
+              bash
+              gnused
+              gnugrep
+            ];
+            src = ./.;
+          } ''
+            test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
+
+            for script in $src/scripts/*.sh; do
+              if [ -f "$script" ]; then
+                echo "Validating: $(basename "$script")"
+                if grep -q '@@.*@@' "$script"; then
+                  sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
+                else
+                  bash -n "$script"
+                fi
+              fi
+            done
+            touch $out
+          '';
+
+          # Build verification
+          build = voicevox-cli;
         };
 
         apps = {
@@ -338,17 +242,6 @@
             program = "${voicevox-cli}/bin/voicevox-mcp-server";
           };
 
-          # CI Task Runner - All checks in one command
-          ci = {
-            type = "app";
-            program = toString (
-              pkgs.writeShellScript "ci-runner" ''
-                # Pass the project directory to the CI script
-                export PROJECT_DIR="${toString ./.}"
-                exec ${pkgs.bash}/bin/bash ${./scripts/ci.sh}
-              ''
-            );
-          };
         };
 
         devShells.default = pkgs.mkShell {
@@ -363,11 +256,8 @@
             pkg-config
             cmake
 
-            # MCP
-            uv
-            serenaIndexWrapper
-            serenaMcpWrapper
-            serenaMemoryWrapper
+            # Development utilities
+            voicevoxResetWrapper
           ];
 
           shellHook = ''
@@ -381,19 +271,12 @@
             echo "  cargo run --bin voicevox-say       - Run client"
             echo "  nix build                          - Build with Nix"
             echo "  nix run                            - Run voicevox-say directly"
-            echo "  serena-index                       - Create Serena index for the project"
-            echo "  serena-mcp-wrapper                 - Start Serena MCP server"
-            echo "  serena-memory                      - Manage project memories"
+            echo "  voicevox-reset                     - Reset daemon state (kill processes + remove socket)"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
           '';
         };
 
-        lib = {
-          mkVoicevoxCli = pkgs: voicevox-cli;
-          getPackage = voicevox-cli;
-          meta = packageMeta;
-        };
       }
     )
     // {
@@ -413,10 +296,5 @@
       };
 
       overlays.voicevox-cli = self.overlays.default;
-
-      # Project metadata (not a standard flake output)
-      # This information is available via:
-      # - Individual package meta attributes
-      # - README.md and LICENSE files
     };
 }

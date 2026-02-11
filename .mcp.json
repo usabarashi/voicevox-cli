@@ -1,11 +1,13 @@
 {
     "mcpServers": {
-        "serena": {
+        "voicevox": {
             "command": "nix",
             "args": [
                 "develop",
                 "-c",
-                "serena-mcp-wrapper"
+                "bash",
+                "-c",
+                "voicevox-reset && voicevox-mcp-server"
             ]
         }
     }

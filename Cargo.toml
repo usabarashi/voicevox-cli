@@ -41,11 +41,16 @@ jsonrpc-lite = "0.6"
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30", features = ["signal", "socket", "uio", "fs"] }
 
-rodio = { version = "0.21", features = ["wav", "symphonia-all"] }
+rodio = { version = "0.21", default-features = false, features = ["playback", "wav"] }
 
-tokio = { version = "1.47", features = ["full", "tracing"] }
+tokio = { version = "1.47", features = [
+    "net", "process", "time", "signal", "sync",
+    "io-util", "io-std", "fs",
+    "rt-multi-thread", "macros",
+    "tracing",
+] }
 tokio-util = { version = "0.7", features = ["codec", "io-util"] }
-futures-util = { version = "0.3", features = ["sink", "io"] }
+futures-util = { version = "0.3", features = ["sink"] }
 
 voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", rev = "711d8b4b464ea9b1161db093e4a1feed763b9611", features = ["load-onnxruntime"], default-features = false }
 

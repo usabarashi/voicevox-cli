@@ -36,108 +36,32 @@ jobs:
           extraPullNames: nix-community
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-      - name: Pre-fetch dependencies
-        run: |
-          echo "Pre-fetching dependencies for cache..."
-          nix flake metadata --accept-flake-config --json > /dev/null 2>&1 || true
-          nix flake show --accept-flake-config --json > /dev/null 2>&1 || true
-
-      - name: Check Nix flake
-        run: |
-          echo "Checking Nix flake..."
-          nix flake check --accept-flake-config --show-trace
-
-      - name: Verify Rust toolchain
-        run: |
-          echo "Verifying Rust toolchain..."
-          nix develop --accept-flake-config --command rustc --version
-          nix develop --accept-flake-config --command cargo --version
-
-      - name: Check code formatting
-        run: |
-          echo "Checking code formatting..."
-          nix develop --accept-flake-config --command cargo fmt --check
-
-      - name: Run Clippy analysis
-        run: |
-          echo "Running clippy analysis..."
-          nix develop --accept-flake-config --command cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Check scripts
-        run: |
-          echo "Checking scripts..."
-          echo "Checking for required scripts..."
-          test -f scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
-
-          echo "Validating all scripts..."
-          for script in scripts/*.sh; do
-            if [[ -f "$script" ]]; then
-              echo "  - Validating: $(basename "$script")"
-              if grep -q '@@.*@@' "$script"; then
-                sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
-              else
-                bash -n "$script"
-              fi
-            fi
-          done
-          echo "All scripts validated successfully"
-
-      - name: Run security audit
-        run: |
-          echo "Running security audit..."
-          if ! nix develop --accept-flake-config --command cargo audit --version >/dev/null 2>&1; then
-            echo "Installing cargo-audit..."
-            nix develop --accept-flake-config --command cargo install cargo-audit
-          fi
-          nix develop --accept-flake-config --command cargo audit
+      - name: Run Nix flake checks
+        run: nix flake check --accept-flake-config --show-trace
 
       - name: Build with Nix
-        run: |
-          echo "Building project with Nix..."
-          nix build --accept-flake-config --show-trace
+        run: nix build --accept-flake-config --show-trace
+
+      - name: Run security audit
+        run: nix develop --accept-flake-config --command cargo audit
 
       - name: Verify build artifacts
         run: |
-          echo "Verifying build artifacts..."
-          if [[ -d result/bin ]]; then
-            ls -la result/bin/
-            echo "Build artifacts verified"
-          else
-            echo "Build artifacts not found"
-            exit 1
-          fi
-
-      - name: Verify build artifacts detailed
-        run: |
-          echo "Verifying build artifacts..."
-          ls -la result/bin/
-          file result/bin/voicevox-say
-          file result/bin/voicevox-daemon
-          file result/bin/voicevox-mcp-server
+          test -d result/bin
+          test -x result/bin/voicevox-say
+          test -x result/bin/voicevox-daemon
+          test -x result/bin/voicevox-mcp-server
           test -x result/bin/voicevox-setup
-          echo "All binaries built successfully"
+          echo "All build artifacts verified"
 
       - name: Test functionality
         run: |
-          echo "Testing functionality..."
-          result/bin/voicevox-say --help || echo "Help command test"
-          result/bin/voicevox-daemon --help || echo "Help command test"
-          result/bin/voicevox-mcp-server --help || echo "Help command test"
-          result/bin/voicevox-setup --help || echo "Setup script test"
-          result/bin/voicevox-say --version || echo "Version command not available"
-
-      - name: Package verification
-        run: |
-          echo "Package verification..."
-          echo "Binary sizes:"
-          ls -lah result/bin/
-          echo "Static linking verification:"
-          otool -L result/bin/voicevox-say | grep -E "(voicevox|onnx)" || echo "Static linking verified"
-          echo "Total package size:"
-          du -sh result/
+          result/bin/voicevox-say --help
+          result/bin/voicevox-daemon --help
+          result/bin/voicevox-mcp-server --help
+          result/bin/voicevox-setup --help
 
       - name: Warm up cache (main branch only)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
-          echo "Warming up cache for future builds..."
           nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org" || true

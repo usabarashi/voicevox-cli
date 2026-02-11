@@ -42,8 +42,8 @@
           lockFile = ./Cargo.lock;
           outputHashes = {
             "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-            "voicevox_core-0.0.0" = "sha256-QmnZSHB5tBxjVMEU5n0GVeV7W9c0/THXfsaN6Tu4R4Q=";
-            "voicevox-ort-2.0.0-rc.4" = "sha256-ZGT3M4GkmSgAqXwuzBvnF+Zs37TPNfKXoEqTsqoT6R4=";
+            "voicevox_core-0.0.0" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
+            "voicevox-ort-2.0.0-rc.10" = "sha256-BsgE3v8eir+IkrPw2rYrhen/s63GHnI4Na0N2c2lHVg=";
           };
         };
 
@@ -74,10 +74,17 @@
           cacert
         ];
 
+        # ONNX Runtime library search path for build.rs (voicevox-ort-sys).
+        # Actual library is loaded at runtime via dlopen (load-dynamic),
+        # so only the path needs to exist at build time.
+        onnxruntimeLibDir = pkgs.runCommand "onnxruntime-lib" { } ''
+          mkdir -p $out/lib
+        '';
+
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
-          url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.0/download-osx-arm64";
-          sha256 = "sha256-OL5Hpyd0Mc+77PzUhtIIFmHjRQqLVaiITuHICg1QBJU=";
+          url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.3/download-osx-arm64";
+          sha256 = "sha256-7GMosxM4HRDAix6BImNP5Q5PNpWJYEvMLNApKjNht+k=";
         };
 
         # Simple resources for voicevox-download binary
@@ -115,6 +122,9 @@
 
           # Force offline mode to ensure reproducible builds
           CARGO_NET_OFFLINE = true;
+
+          # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
+          ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
 
           # Minimal pre-configure setup
           preConfigure = ''
@@ -231,6 +241,9 @@
 
         devShells.default = pkgs.mkShell {
           CARGO_HOME = "./.project-home/.cargo";
+
+          # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
+          ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
 
           buildInputs = with pkgs; [
             # Use fenix-provided rust toolchain that matches rust-toolchain.toml

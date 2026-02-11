@@ -36,6 +36,17 @@ jobs:
           extraPullNames: nix-community
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}
+          restore-prefixes-first-match: |
+            nix-${{ runner.os }}-
+          gc-max-store-size-macos: 5G
+          purge: ${{ github.event_name == 'push' }}
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-last-accessed: 604800
+
       - name: Run Nix flake checks
         run: nix flake check --accept-flake-config --show-trace
 
@@ -66,4 +77,4 @@ jobs:
       - name: Warm up cache (main branch only)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
-          nix-store -qR ./result | xargs -I {} nix copy {} --to "https://voicevox-cli.cachix.org" || true
+          nix-store -qR ./result | cachix push voicevox-cli

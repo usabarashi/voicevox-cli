@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# VOICEVOX Setup Script - Downloads all required resources
-# This script downloads:
-# - ONNX Runtime library
-# - OpenJTalk dictionary
-# - Voice models
+# VOICEVOX Setup Script - Downloads and manages required resources
+# Resources: ONNX Runtime library, OpenJTalk dictionary, Voice models
 
 show_help() {
     cat <<'EOF'
-VOICEVOX CLI Setup - Download required resources
+VOICEVOX CLI Setup - Manage required resources
 
 Usage: voicevox-setup [OPTIONS]
 
@@ -17,7 +14,10 @@ Downloads ONNX Runtime, OpenJTalk dictionary, and voice models
 required for VOICEVOX CLI operation.
 
 Options:
-  -h, --help    Print help
+  -h, --help      Print help
+  --purge         Remove all local data (daemon, socket, data, config)
+  -y, --yes       Skip confirmation prompt (use with --purge)
+  -n, --dry-run   Show what would be removed without deleting (use with --purge)
 
 Environment variables:
   VOICEVOX_DIR              Custom data directory
@@ -27,12 +27,27 @@ Environment variables:
 EOF
 }
 
-case "${1:-}" in
-    -h|--help)
-        show_help
-        exit 0
-        ;;
-esac
+# Parse arguments
+MODE="setup"
+SKIP_CONFIRM=false
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)    show_help; exit 0 ;;
+        --purge)      MODE="purge"; shift ;;
+        -y|--yes)     SKIP_CONFIRM=true; shift ;;
+        -n|--dry-run) DRY_RUN=true; shift ;;
+        *) echo "Unknown option: $1"; show_help; exit 1 ;;
+    esac
+done
+
+# Validate option combinations
+if [ "$MODE" = "setup" ] && { [ "$SKIP_CONFIRM" = true ] || [ "$DRY_RUN" = true ]; }; then
+    echo "Error: -y/--yes and -n/--dry-run can only be used with --purge" >&2
+    show_help
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -117,6 +132,158 @@ elif [ -n "${HOME:-}" ]; then
 else
     DATA_DIR="./voicevox"
 fi
+
+# Safety check: reject dangerous paths before rm -rf
+assert_safe_path() {
+    local path="$1"
+    local label="$2"
+    # Normalize: resolve to absolute, strip trailing slashes
+    local resolved
+    resolved="$(cd / && realpath -m "$path" 2>/dev/null || echo "$path")"
+    resolved="${resolved%/}"
+    case "$resolved" in
+        ""|/|/bin|/boot|/dev|/etc|/home|/lib|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var|/nix|/Applications|/Library|/System|/Users|/Volumes|/private)
+            echo -e "${RED}Error: $label resolves to '$resolved', which is a protected system path.${NC}" >&2
+            echo "Refusing to remove. Check your environment variables." >&2
+            exit 1
+            ;;
+    esac
+}
+
+# --- Purge mode ---
+if [ "$MODE" = "purge" ]; then
+    # Resolve socket path (mirrors src/paths.rs get_socket_path)
+    if [ -n "${VOICEVOX_SOCKET_PATH:-}" ]; then
+        SOCKET_PATH="$VOICEVOX_SOCKET_PATH"
+    elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        SOCKET_PATH="$XDG_RUNTIME_DIR/voicevox-daemon.sock"
+    elif [ -n "${XDG_STATE_HOME:-}" ]; then
+        SOCKET_PATH="$XDG_STATE_HOME/voicevox-daemon.sock"
+    elif [ -n "${HOME:-}" ]; then
+        SOCKET_PATH="$HOME/.local/state/voicevox-daemon.sock"
+    else
+        SOCKET_PATH="/tmp/voicevox-daemon.sock"
+    fi
+
+    # Resolve config directory
+    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        CONFIG_DIR="$XDG_CONFIG_HOME/voicevox"
+    elif [ -n "${HOME:-}" ]; then
+        CONFIG_DIR="$HOME/.config/voicevox"
+    else
+        CONFIG_DIR=""
+    fi
+
+    echo -e "${BLUE}VOICEVOX Purge${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    TARGETS=()
+
+    # Daemon processes
+    PIDS=$(pgrep -u "$(id -u)" -f voicevox-daemon 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        echo -e "${YELLOW}[daemon]${NC}  Processes: $PIDS"
+        TARGETS+=("daemon")
+    else
+        echo -e "${GREEN}[daemon]${NC}  No running processes"
+    fi
+
+    # Socket file
+    if [ -e "$SOCKET_PATH" ]; then
+        echo -e "${YELLOW}[socket]${NC}  $SOCKET_PATH"
+        TARGETS+=("socket")
+    else
+        echo -e "${GREEN}[socket]${NC}  Not found"
+    fi
+
+    # Data directory (ONNX Runtime, dict, models)
+    if [ -d "$DATA_DIR" ]; then
+        SIZE=$(du -sh "$DATA_DIR" 2>/dev/null | cut -f1)
+        echo -e "${YELLOW}[data]${NC}    $DATA_DIR ($SIZE)"
+        for subdir in onnxruntime dict openjtalk_dict models; do
+            if [ -d "$DATA_DIR/$subdir" ]; then
+                SUB_SIZE=$(du -sh "$DATA_DIR/$subdir" 2>/dev/null | cut -f1)
+                echo "           $subdir/ ($SUB_SIZE)"
+            fi
+        done
+        TARGETS+=("data")
+    else
+        echo -e "${GREEN}[data]${NC}    $DATA_DIR not found"
+    fi
+
+    # Config directory
+    if [ -n "$CONFIG_DIR" ] && [ -d "$CONFIG_DIR" ]; then
+        echo -e "${YELLOW}[config]${NC}  $CONFIG_DIR"
+        TARGETS+=("config")
+    else
+        echo -e "${GREEN}[config]${NC}  Not found"
+    fi
+
+    echo ""
+
+    if [ ${#TARGETS[@]} -eq 0 ]; then
+        echo -e "${GREEN}Nothing to remove. Already clean.${NC}"
+        exit 0
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${BLUE}Dry run: no files were removed.${NC}"
+        exit 0
+    fi
+
+    if [ "$SKIP_CONFIRM" = false ]; then
+        echo -e "${RED}This will permanently delete all VOICEVOX local data.${NC}"
+        read -p "Continue? [y/N]: " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Cancelled."
+            exit 1
+        fi
+        echo ""
+    fi
+
+    # Stop daemon
+    if [[ " ${TARGETS[*]} " =~ " daemon " ]]; then
+        echo -e "${BLUE}Stopping daemon...${NC}"
+        kill -TERM $PIDS 2>/dev/null || true
+        sleep 1
+        REMAINING=$(pgrep -u "$(id -u)" -f voicevox-daemon 2>/dev/null || true)
+        if [ -n "$REMAINING" ]; then
+            kill -9 $REMAINING 2>/dev/null || true
+        fi
+        echo "  Done"
+    fi
+
+    # Remove socket
+    if [[ " ${TARGETS[*]} " =~ " socket " ]]; then
+        echo -e "${BLUE}Removing socket...${NC}"
+        rm -f "$SOCKET_PATH"
+        echo "  $SOCKET_PATH"
+    fi
+
+    # Remove data directory
+    if [[ " ${TARGETS[*]} " =~ " data " ]]; then
+        assert_safe_path "$DATA_DIR" "DATA_DIR"
+        echo -e "${BLUE}Removing data...${NC}"
+        rm -rf "$DATA_DIR"
+        echo "  $DATA_DIR"
+    fi
+
+    # Remove config directory
+    if [[ " ${TARGETS[*]} " =~ " config " ]]; then
+        assert_safe_path "$CONFIG_DIR" "CONFIG_DIR"
+        echo -e "${BLUE}Removing config...${NC}"
+        rm -rf "$CONFIG_DIR"
+        echo "  $CONFIG_DIR"
+    fi
+
+    echo ""
+    echo -e "${GREEN}Purge complete. Run 'voicevox-setup' to re-download resources.${NC}"
+    exit 0
+fi
+
+# --- Setup mode ---
 
 echo -e "${BLUE}VOICEVOX CLI Setup${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -239,12 +406,12 @@ echo ""
 echo -e "${BLUE}Creating directories...${NC}"
 mkdir -p "$DATA_DIR"
 
-# Find the voicevox-download binary
+# Find the voicevox-download binary (co-located binary takes priority over PATH)
 DOWNLOADER=""
-if command -v voicevox-download &> /dev/null; then
-    DOWNLOADER="voicevox-download"
-elif [ -f "${0%/*}/voicevox-download" ]; then
+if [ -f "${0%/*}/voicevox-download" ]; then
     DOWNLOADER="${0%/*}/voicevox-download"
+elif command -v voicevox-download &> /dev/null; then
+    DOWNLOADER="voicevox-download"
 elif [ -f "./voicevox-download" ]; then
     DOWNLOADER="./voicevox-download"
 else
@@ -258,6 +425,17 @@ ONLY_ARGS=()
 for resource in "${MISSING_RESOURCES[@]}"; do
     ONLY_ARGS+=(--only "$resource")
 done
+
+# Set up GitHub token for rate limit avoidance
+if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
+    if command -v gh &> /dev/null; then
+        GH_TOKEN=$(gh auth token 2>/dev/null || true)
+        if [ -n "$GH_TOKEN" ]; then
+            export GH_TOKEN
+            echo -e "${GREEN}Using GitHub token from gh CLI${NC}"
+        fi
+    fi
+fi
 
 # Download resources
 echo -e "${BLUE}Downloading resources...${NC}"
@@ -299,6 +477,11 @@ else
     echo ""
     echo -e "${RED}Resource download failed${NC}"
     echo ""
+    if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
+        echo -e "${YELLOW}Tip: Set a GitHub token to avoid rate limits:${NC}"
+        echo "  GH_TOKEN=\$(gh auth token) voicevox-setup"
+        echo ""
+    fi
     echo "You can try running the download manually:"
     echo "  $DOWNLOADER ${ONLY_ARGS[*]} --output $DATA_DIR"
     echo ""

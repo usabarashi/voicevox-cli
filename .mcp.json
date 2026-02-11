@@ -1,13 +1,10 @@
 {
     "mcpServers": {
         "voicevox": {
-            "command": "nix",
+            "command": "bash",
             "args": [
-                "develop",
                 "-c",
-                "bash",
-                "-c",
-                "voicevox-reset && voicevox-mcp-server"
+                "bash scripts/voicevox-reset.sh; ./result/bin/voicevox-mcp-server"
             ]
         }
     }

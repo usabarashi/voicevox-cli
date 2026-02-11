@@ -6,203 +6,63 @@
 [![Nixpkgs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fusabarashi%2Fvoicevox-cli%2Fmain%2Fflake.lock&query=%24.nodes.nixpkgs.locked.rev&color=5277C3&label=nixpkgs)](https://github.com/NixOS/nixpkgs)
 [![CI Status](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/usabarashi/voicevox-cli/actions/workflows/ci.yml)
 
-Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
-
-## Features
-
-- **Easy Setup**: Install with Nix, then run `voicevox-setup` for resources
-- **26+ Voice Characters**: Automatic detection of available voice models
-- **Instant Response**: Fast voice synthesis after initial setup
-- **Silent Operation**: Works like macOS `say` command
-- **Lightweight**: Small download size, easy installation
+Japanese text-to-speech CLI using [VOICEVOX Core](https://github.com/VOICEVOX/voicevox_core) for Apple Silicon Macs (requires [Nix](https://nixos.org/download.html#nix-install-macos)).
 
 ## Quick Start
 
-**Prerequisites**: macOS Apple Silicon (M1, M2, M3, etc.) required.
-
 ```bash
-# Method 1: Manual download (check https://github.com/usabarashi/voicevox-cli/releases/latest for the latest version)
-# Replace <VERSION> with the actual version number (e.g., v20250830122339)
-curl -L -o voicevox-cli.tar.gz https://github.com/usabarashi/voicevox-cli/releases/download/<VERSION>/voicevox-cli-<VERSION>-aarch64-darwin.tar.gz
+nix shell github:usabarashi/voicevox-cli
 
-# Method 2: Auto-download latest (requires jq)
-curl -L -o voicevox-cli.tar.gz "$(curl -s https://api.github.com/repos/usabarashi/voicevox-cli/releases/latest | jq -r '.assets[] | select(.name | contains("aarch64-darwin.tar.gz")) | .browser_download_url')"
-
-# Extract and setup
-tar -xzf voicevox-cli.tar.gz
-cd voicevox-cli-*
-
-# Setup required resources first
-./voicevox-setup  # Download all required resources
-
-# Then use voice synthesis
-./voicevox-say "こんにちは、ずんだもんなのだ"
+voicevox-setup                              # Download resources (first time only)
+voicevox-say "こんにちは、ずんだもんなのだ"   # Voice synthesis
 ```
-
-**Note**: `voicevox-setup` downloads required resources. `voicevox-say` requires setup to be completed first.
-
-**Optional**: Add to PATH for system-wide access:
-```bash
-# Move binaries to a directory in your PATH (e.g., /usr/local/bin)
-sudo cp voicevox-* /usr/local/bin/
-```
-
-## Installation
-
-### nix-darwin / home-manager
-
-```nix
-{
-  inputs.voicevox-cli.url = "github:usabarashi/voicevox-cli";
-
-  # nix-darwin
-  environment.systemPackages = [
-    voicevox-cli.packages.aarch64-darwin.default
-  ];
-
-  # or home-manager
-  home.packages = [
-    voicevox-cli.packages.aarch64-darwin.default
-  ];
-}
-```
-
-### Development
-
-```bash
-# Clone repository
-git clone https://github.com/usabarashi/voicevox-cli
-cd voicevox-cli
-
-# Enter development shell
-nix develop
-
-# Build and test
-nix build
-nix run . -- "テストメッセージなのだ"
-
-# Run all checks (formatting, clippy, scripts, build)
-nix flake check
-```
-
-**Note**: Voice models are stored in your user directory (`~/.local/share/voicevox/`) and only need to be downloaded once. This project uses Nix's `nixos-unstable` channel for package dependencies, but is designed exclusively for macOS Apple Silicon (not NixOS).
 
 ## Usage
 
-### Basic Usage
-
 ```bash
-# Voice synthesis with automatic daemon startup
+# Voice synthesis (daemon starts automatically)
 voicevox-say "こんにちは、ずんだもんなのだ"
-
-# Voice selection by model or speaker ID
-voicevox-say --model 3 "モデル3の音声なのだ"
 voicevox-say --speaker-id 3 "声を変えてみるのだ"
-
-# File output
 voicevox-say -o output.wav "保存するテキスト"
-
-# From stdin
 echo "パイプからの入力" | voicevox-say
 
-# Check information
+# Voice discovery
+voicevox-say --list-speakers
 voicevox-say --status
+
+# Daemon management
+voicevox-daemon --start
+voicevox-daemon --stop
+voicevox-daemon --restart
+voicevox-daemon --status
 ```
 
-
-### Daemon Management
-
-```bash
-# Basic daemon control
-voicevox-daemon --start    # Start daemon (automatically detached)
-voicevox-daemon --stop     # Stop daemon
-voicevox-daemon --status   # Check daemon status
-voicevox-daemon --restart  # Restart daemon
-
-# Development options
-voicevox-daemon --foreground  # Run in foreground (development mode)
-voicevox-daemon --socket-path /custom/path/daemon.sock --start  # Custom socket
-```
-
-## Voice Management
-
-### Available Voices
-
-Voice characters (26+) are automatically detected from downloaded models:
-- **ずんだもん** - Cheerful and energetic character
-- **四国めたん** - Sweet and gentle character
-- **春日部つむぎ**, **雨晴はう**, **波音リツ**, **九州そら**, **もち子さん**, and many more
-
-### Voice Discovery
-
-```bash
-# Discover available voices
-voicevox-say --list-models        # Show installed voice model files
-voicevox-say --list-speakers      # Show detailed voice information
-voicevox-say --status             # Check installation status
-```
-
-## System Requirements
-
-- **Platform**: macOS Apple Silicon (M1, M2, M3, etc.) only
-- **Package Manager**: [Nix package manager for macOS](https://nixos.org/download.html#nix-install-macos) required
-- **Audio**: WAV file output and system audio playback
-- **Storage**: Voice models stored in your user directory (`~/.local/share/voicevox/`)
-- **Network**: Required for initial voice model download
-
-**Important**: This version is designed exclusively for Apple Silicon Macs with Nix package manager. NixOS, Linux, Intel Mac, and Windows are not supported.
-
-## MCP Server (AI Assistant Integration)
+## MCP Server
 
 Enable AI assistants to use VOICEVOX for Japanese speech synthesis.
 
 ```bash
-voicevox-mcp-server  # Start MCP server
+voicevox-mcp-server
 ```
 
 [See detailed MCP documentation](docs/mcp-usage.md)
 
 ## Troubleshooting
 
-### Common Issues
-
-**Resource Setup**:
-- Run `voicevox-setup` to download required resources
-- Wait for download completion
-- Resources include voice models, ONNX Runtime, and OpenJTalk dictionary
-
-**Download/Model Issues**:
 ```bash
 voicevox-say --status              # Check installation status
 voicevox-setup                     # Reinstall all resources
-```
-
-**Voice Synthesis Issues**:
-```bash
+voicevox-setup --purge             # Remove all local data for a clean reinstall
 voicevox-daemon --restart          # Restart daemon
+GH_TOKEN=$(gh auth token) voicevox-setup  # Avoid GitHub API rate limits
 ```
 
 ## License
 
-This project includes multiple components with different licenses. See [LICENSE](LICENSE) for complete details.
-
-**Quick Summary for Users:**
-- Commercial and non-commercial use of generated audio allowed
-- **Required**: Credit "VOICEVOX:[Character Name]" in your work (e.g., "VOICEVOX:ずんだもん")
-- No redistribution of VOICEVOX software without permission
-- Individual character license terms apply (displayed during setup)
-
-**Important**: You'll need to accept license terms for all voice characters during first-run setup.
+See [LICENSE](LICENSE) for details. Generated audio requires credit "VOICEVOX:[Character Name]" (e.g., "VOICEVOX:ずんだもん"). License terms are displayed during `voicevox-setup`.
 
 Details: [VOICEVOX Terms of Use](https://voicevox.hiroshiba.jp/term)
-
-## Related Links
-
-- [VOICEVOX](https://voicevox.hiroshiba.jp/)
-- [VOICEVOX Core](https://github.com/VOICEVOX/voicevox_core)
-- [Nix Package Manager for macOS](https://nixos.org/download.html#nix-install-macos)
 
 ---
 
 ずんだもんと一緒に楽しい TTS ライフを送るのだ！
-Enjoy a fun TTS life with Zundamon!

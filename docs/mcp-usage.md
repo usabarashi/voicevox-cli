@@ -43,7 +43,7 @@ The server will respond with its capabilities and available tools.
 
 ## AI Assistant Instructions
 
-The MCP server automatically loads behavioral instructions for AI assistants from `INSTRUCTIONS.md`. These instructions define:
+The MCP server automatically loads behavioral instructions for AI assistants from `VOICEVOX.md`. These instructions define:
 
 - **Audio usage policies**: When and how to use voice synthesis
 - **Voice style guidelines**: Which voice styles to use in different situations
@@ -51,17 +51,37 @@ The MCP server automatically loads behavioral instructions for AI assistants fro
 
 ### Default Instructions
 
-By default, the server loads instructions from:
-1. File specified by `VOICEVOX_MCP_INSTRUCTIONS` environment variable
-2. `INSTRUCTIONS.md` in the executable directory
-3. `INSTRUCTIONS.md` in the current working directory
+The server loads instructions using XDG Base Directory specification with the following priority order:
+
+1. **Environment variable**: File specified by `VOICEVOX_MCP_INSTRUCTIONS` (highest priority)
+2. **XDG user config**: `$XDG_CONFIG_HOME/voicevox/VOICEVOX.md` (user-specific settings)
+3. **Config fallback**: `~/.config/voicevox/VOICEVOX.md` (when XDG_CONFIG_HOME is not set)
+4. **Executable directory**: `VOICEVOX.md` bundled with the binary (distribution default)
+5. **Current directory**: `VOICEVOX.md` in working directory (development use)
 
 ### Custom Instructions
 
-To use custom instructions for specific workflows:
+You can customize the AI assistant behavior using several methods:
 
+#### Method 1: Environment Variable (Highest Priority)
 ```bash
 export VOICEVOX_MCP_INSTRUCTIONS=/path/to/custom/instructions.md
+voicevox-mcp-server
+```
+
+#### Method 2: XDG_CONFIG_HOME (If Set)
+```bash
+# When XDG_CONFIG_HOME is configured (higher priority)
+mkdir -p $XDG_CONFIG_HOME/voicevox
+cp custom-instructions.md $XDG_CONFIG_HOME/voicevox/VOICEVOX.md
+voicevox-mcp-server
+```
+
+#### Method 3: Config Fallback (Recommended for most users)
+```bash
+# Create user-specific configuration (XDG default location)
+mkdir -p ~/.config/voicevox
+cp custom-instructions.md ~/.config/voicevox/VOICEVOX.md
 voicevox-mcp-server
 ```
 
@@ -77,6 +97,36 @@ Example custom instructions structure:
 - ID: 3 - Default communications
 - ID: 1 - Success notifications
 - ID: 76 - Error situations
+```
+
+### XDG Base Directory Support
+
+The VOICEVOX MCP server follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html), providing clean separation between:
+
+- **User configurations**: Personal settings that persist across updates
+- **Distribution defaults**: Settings bundled with the application
+- **Development settings**: Project-specific configurations for development
+
+#### Benefits
+
+1. **User-specific customization**: Settings in `~/.config/voicevox/` persist across application updates
+2. **Multi-environment support**: Different configurations for different projects using XDG_CONFIG_HOME
+3. **Clean separation**: User settings don't interfere with distribution defaults
+4. **Standard compliance**: Follows Unix/Linux configuration management conventions
+
+#### Debugging Configuration Loading
+
+The MCP server logs which configuration file it loads:
+
+```bash
+# Enable debug output to see configuration loading
+voicevox-mcp-server 2>&1 | grep "instructions"
+```
+
+Example output:
+```
+Trying instructions from XDG_CONFIG_HOME: /home/user/.config/voicevox/VOICEVOX.md
+Loaded instructions from: /home/user/.config/voicevox/VOICEVOX.md
 ```
 
 ## Available Tools
@@ -170,7 +220,7 @@ Configure Claude Desktop to use the VOICEVOX MCP server:
 }
 ```
 
-The AI assistant will automatically receive and follow the instructions from `INSTRUCTIONS.md`, enabling context-aware voice synthesis during conversations.
+The AI assistant will automatically receive and follow the instructions from `VOICEVOX.md`, enabling context-aware voice synthesis during conversations.
 
 ## Streaming vs Non-Streaming
 

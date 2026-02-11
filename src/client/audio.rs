@@ -1,8 +1,10 @@
-use anyhow::{anyhow, Result};
-use std::fs;
+use anyhow::{anyhow, Context, Result};
+use std::process::Command;
+use std::{env, io::Write};
+use tempfile::{Builder, NamedTempFile};
 
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
-    if std::env::var("VOICEVOX_LOW_LATENCY").is_ok() {
+    if env::var("VOICEVOX_LOW_LATENCY").is_ok() {
         play_audio_via_rodio(wav_data)
     } else {
         play_audio_via_system(wav_data)
@@ -41,24 +43,16 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
 }
 
 fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
-    let temp_file = "/tmp/voicevox_say_temp.wav";
-    fs::write(temp_file, wav_data)?;
+    let temp_file = create_temp_wav_file(wav_data)?;
+    let temp_path = temp_file.path();
 
-    struct TempFileCleanup<'a>(&'a str);
-    impl Drop for TempFileCleanup<'_> {
-        fn drop(&mut self) {
-            let _ = fs::remove_file(self.0);
-        }
-    }
-    let _cleanup = TempFileCleanup(temp_file);
-
-    if let Ok(output) = std::process::Command::new("afplay").arg(temp_file).output() {
+    if let Ok(output) = Command::new("afplay").arg(temp_path).output() {
         if output.status.success() {
             return Ok(());
         }
     }
 
-    if let Ok(output) = std::process::Command::new("play").arg(temp_file).output() {
+    if let Ok(output) = Command::new("play").arg(temp_path).output() {
         if output.status.success() {
             return Ok(());
         }
@@ -67,4 +61,19 @@ fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
     Err(anyhow!(
         "No audio player found. Install sox or use -o to save file"
     ))
+}
+
+pub(crate) fn create_temp_wav_file(wav_data: &[u8]) -> Result<NamedTempFile> {
+    let mut temp = Builder::new()
+        .prefix("voicevox_")
+        .suffix(".wav")
+        .tempfile()
+        .context("Failed to create temporary audio file")?;
+
+    temp.write_all(wav_data)
+        .context("Failed to write temporary audio file")?;
+    temp.flush()
+        .context("Failed to flush temporary audio file")?;
+
+    Ok(temp)
 }

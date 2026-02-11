@@ -338,8 +338,7 @@ where
 
         progress_callback(index + 1, total_models, model_filename);
 
-        if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("Failed to load model {model_id} for mapping: {e}");
+        if core.load_specific_model(&model_id.to_string()).is_err() {
             continue;
         }
 
@@ -349,13 +348,10 @@ where
                 let path_str = match path.to_str() {
                     Some(s) => s,
                     None => {
-                        eprintln!("Model path contains invalid UTF-8: {:?}", path);
                         continue;
                     }
                 };
-                if let Err(e) = core.unload_voice_model_by_path(path_str) {
-                    eprintln!("Failed to unload model {model_id} after error: {e}");
-                }
+                let _ = core.unload_voice_model_by_path(path_str);
                 continue;
             }
         };
@@ -373,13 +369,10 @@ where
         let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
-        if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("Failed to unload model {model_id} after mapping: {e}");
-        }
+        let _ = core.unload_voice_model_by_path(path_str);
     }
 
     let mut all_speakers = Vec::new();
@@ -394,9 +387,7 @@ where
             None => continue,
         };
 
-        if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("Failed to reload model {model_id} for speakers: {e}");
-        }
+        let _ = core.load_specific_model(&model_id.to_string());
     }
 
     if let Ok(speakers) = core.get_speakers() {
@@ -407,13 +398,10 @@ where
         let path_str = match path.to_str() {
             Some(s) => s,
             None => {
-                eprintln!("Model path contains invalid UTF-8: {:?}", path);
                 continue;
             }
         };
-        if let Err(e) = core.unload_voice_model_by_path(path_str) {
-            eprintln!("Failed to unload model after speaker collection: {e}");
-        }
+        let _ = core.unload_voice_model_by_path(path_str);
     }
 
     // Build available models list using existing scan function

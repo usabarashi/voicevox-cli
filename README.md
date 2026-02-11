@@ -18,23 +18,34 @@ Japanese text-to-speech using VOICEVOX Core for Apple Silicon Macs
 
 ## Quick Start
 
-**Prerequisites**: [Nix package manager for macOS](https://nixos.org/download.html#nix-install-macos) must be installed.
+**Prerequisites**: macOS Apple Silicon (M1, M2, M3, etc.) required.
 
 ```bash
-# Try temporarily
-nix shell github:usabarashi/voicevox-cli
+# Method 1: Manual download (check https://github.com/usabarashi/voicevox-cli/releases/latest for the latest version)
+# Replace <VERSION> with the actual version number (e.g., v20250830122339)
+curl -L -o voicevox-cli.tar.gz https://github.com/usabarashi/voicevox-cli/releases/download/<VERSION>/voicevox-cli-<VERSION>-aarch64-darwin.tar.gz
 
-# Or install permanently
-nix profile install github:usabarashi/voicevox-cli
+# Method 2: Auto-download latest (requires jq)
+curl -L -o voicevox-cli.tar.gz "$(curl -s https://api.github.com/repos/usabarashi/voicevox-cli/releases/latest | jq -r '.assets[] | select(.name | contains("aarch64-darwin.tar.gz")) | .browser_download_url')"
+
+# Extract and setup
+tar -xzf voicevox-cli.tar.gz
+cd voicevox-cli-*
 
 # Setup required resources first
-voicevox-setup  # Download all required resources
+./voicevox-setup  # Download all required resources
 
 # Then use voice synthesis
-voicevox-say "こんにちは、ずんだもんなのだ"
+./voicevox-say "こんにちは、ずんだもんなのだ"
 ```
 
 **Note**: `voicevox-setup` downloads required resources. `voicevox-say` requires setup to be completed first.
+
+**Optional**: Add to PATH for system-wide access:
+```bash
+# Move binaries to a directory in your PATH (e.g., /usr/local/bin)
+sudo cp voicevox-* /usr/local/bin/
+```
 
 ## Installation
 

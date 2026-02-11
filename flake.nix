@@ -1,22 +1,5 @@
 {
-  description = ''
-    VOICEVOX CLI for Apple Silicon Macs - Dynamic voice detection system
-
-    Zero-configuration Japanese text-to-speech with automatic voice model discovery.
-    Supports 26+ voice characters with dynamic detection and daemon-client architecture.
-
-    Platform: Apple Silicon (aarch64-darwin) only
-
-    License Information:
-    - CLI Tool: MIT License + Apache License 2.0
-    - VOICEVOX Core: MIT License (https://github.com/VOICEVOX/voicevox_core/blob/main/LICENSE)
-    - ONNX Runtime: MIT License (https://github.com/microsoft/onnxruntime/blob/main/LICENSE)
-
-    Usage Requirements:
-    - Credit VOICEVOX when using generated audio
-    - Follow individual voice library terms
-    - See official repositories for complete license details
-  '';
+  description = "VOICEVOX CLI";
 
   nixConfig = {
     extra-substituters = [
@@ -31,7 +14,7 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     fenix = {
       url = "github:nix-community/fenix";
@@ -142,6 +125,7 @@
 
           nativeBuildInputs = commonNativeBuildInputs;
 
+
           buildInputs = [ ];
 
           # Build-time environment variables
@@ -165,8 +149,8 @@
             # Install setup script
             install -m755 ${./scripts/voicevox-setup.sh} $out/bin/voicevox-setup
 
-            # Install INSTRUCTIONS.md for MCP server
-            install -m644 ${./INSTRUCTIONS.md} $out/bin/INSTRUCTIONS.md
+            # Install VOICEVOX.md for MCP server
+            install -m644 ${./VOICEVOX.md} $out/bin/VOICEVOX.md
           '';
 
           meta = packageMeta;
@@ -174,6 +158,7 @@
 
         # Development utility: reset daemon state
         voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (builtins.readFile ./scripts/voicevox-reset.sh);
+
 
       in
       {
@@ -250,6 +235,7 @@
           buildInputs = with pkgs; [
             # Use fenix-provided rust toolchain that matches rust-toolchain.toml
             rustToolchain.defaultToolchain
+            rustToolchain.rust-analyzer
             cargo-audit
 
             # Build tools
@@ -280,16 +266,6 @@
       }
     )
     // {
-      # Example usage for other projects:
-      # {
-      #   inputs.voicevox-cli.url = "github:usabarashi/voicevox-cli";
-      #
-      #   # In your system or home-manager configuration:
-      #   environment.systemPackages = [
-      #     voicevox-cli.packages.aarch64-darwin.default
-      #   ];
-      # }
-
       overlays.default = final: prev: {
         voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;

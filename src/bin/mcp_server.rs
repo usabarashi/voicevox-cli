@@ -142,6 +142,12 @@ fn print_mcp_warning(message: &str) {
     eprintln!("Audio synthesis may not be available.");
 }
 
+fn print_mcp_warning_with_detail(message: &str, detail: &str) {
+    eprintln!("Warning: {message}");
+    eprintln!("{detail}");
+    eprintln!("Audio synthesis may not be available.");
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let _args = Args::parse();
@@ -149,15 +155,18 @@ async fn main() -> Result<()> {
     if let Err(e) = ensure_daemon_running().await {
         match e {
             DaemonError::AlreadyRunning { pid } => {
-                eprintln!("Warning: Daemon is running (PID: {pid}) but may not be responsive.");
+                print_mcp_warning(&format!(
+                    "Daemon is running (PID: {pid}) but may not be responsive."
+                ));
             }
             DaemonError::SocketPermissionDenied { path } => {
-                eprintln!("Warning: Permission denied when starting daemon.");
-                eprintln!(
-                    "Socket file may be owned by another user: {}",
-                    path.display()
+                print_mcp_warning_with_detail(
+                    "Permission denied when starting daemon.",
+                    &format!(
+                        "Socket file may be owned by another user: {}",
+                        path.display()
+                    ),
                 );
-                eprintln!("Audio synthesis may not be available.");
             }
             DaemonError::NotResponding { attempts } => {
                 print_mcp_warning(&format!(

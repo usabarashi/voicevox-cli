@@ -40,18 +40,69 @@ fn print_missing_resource_summary(missing_resources: &[&str]) {
     println!();
 }
 
+async fn read_stdin_line() -> Result<String> {
+    let mut input = String::new();
+    let mut stdin = BufReader::new(tokio::io::stdin());
+    stdin.read_line(&mut input).await?;
+    Ok(input)
+}
+
 async fn prompt_for_resource_download() -> Result<bool> {
     print!("Would you like to download these resources now? [Y/n]: ");
     tokio::io::AsyncWriteExt::flush(&mut tokio::io::stdout()).await?;
 
-    let mut input = String::new();
-    {
-        let mut stdin = BufReader::new(tokio::io::stdin());
-        stdin.read_line(&mut input).await?;
-    }
-
+    let input = read_stdin_line().await?;
     let response = input.trim().to_lowercase();
     Ok(response.is_empty() || response == "y" || response == "yes")
+}
+
+async fn run_downloader_for_resources(
+    downloader_path: &Path,
+    missing_resources: &[&str],
+    target_dir: &Path,
+) -> Result<std::process::ExitStatus> {
+    let mut cmd = tokio::process::Command::new(downloader_path);
+    for resource in missing_resources {
+        cmd.arg("--only").arg(resource);
+    }
+
+    cmd.arg("--output")
+        .arg(target_dir)
+        .status()
+        .await
+        .map_err(Into::into)
+}
+
+fn maybe_set_ort_dylib_path(missing_resources: &[&str]) {
+    if missing_resources.contains(&"onnxruntime") {
+        if let Ok(ort_path) = find_onnxruntime() {
+            std::env::set_var("ORT_DYLIB_PATH", ort_path);
+        }
+    }
+}
+
+fn print_download_failure_summary(
+    target_dir: &Path,
+    missing_resources: &[&str],
+    max_retries: u32,
+    last_error: Option<&str>,
+) {
+    if let Some(error) = last_error {
+        eprintln!(" Resource download failed after {max_retries} attempts: {error}");
+    } else {
+        eprintln!("Resource download failed after {max_retries} attempts");
+    }
+
+    let manual_cmd = missing_resources
+        .iter()
+        .map(|r| format!("--only {r}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    eprintln!(
+        "You can manually run: voicevox-download {} --output {}",
+        manual_cmd,
+        target_dir.display()
+    );
 }
 
 async fn download_missing_resources(missing_resources: &[&str]) -> Result<()> {
@@ -70,20 +121,10 @@ async fn download_missing_resources(missing_resources: &[&str]) -> Result<()> {
             cleanup_incomplete_downloads(&target_dir);
         }
 
-        let mut cmd = tokio::process::Command::new(&downloader_path);
-        for resource in missing_resources {
-            cmd.arg("--only").arg(resource);
-        }
-        let status = cmd.arg("--output").arg(&target_dir).status().await;
-
-        match status {
+        match run_downloader_for_resources(&downloader_path, missing_resources, &target_dir).await {
             Ok(exit_status) if exit_status.success() => {
                 println!("All resources downloaded successfully!");
-                if missing_resources.contains(&"onnxruntime") {
-                    if let Ok(ort_path) = find_onnxruntime() {
-                        std::env::set_var("ORT_DYLIB_PATH", ort_path);
-                    }
-                }
+                maybe_set_ort_dylib_path(missing_resources);
                 return Ok(());
             }
             Ok(exit_status) => {
@@ -104,20 +145,11 @@ async fn download_missing_resources(missing_resources: &[&str]) -> Result<()> {
     }
 
     cleanup_incomplete_downloads(&target_dir);
-    if let Some(error) = last_error {
-        eprintln!(" Resource download failed after {max_retries} attempts: {error}");
-    } else {
-        eprintln!("Resource download failed after {max_retries} attempts");
-    }
-    let manual_cmd = missing_resources
-        .iter()
-        .map(|r| format!("--only {r}"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    eprintln!(
-        "You can manually run: voicevox-download {} --output {}",
-        manual_cmd,
-        target_dir.display()
+    print_download_failure_summary(
+        &target_dir,
+        missing_resources,
+        max_retries,
+        last_error.as_deref(),
     );
     Err(anyhow!(
         "Failed to download required resources after {max_retries} attempts"
@@ -141,6 +173,81 @@ async fn prepare_update_target_dir() -> Result<PathBuf> {
     tokio::fs::create_dir_all(&target_dir).await?;
     println!(" Target directory: {}", target_dir.display());
     Ok(target_dir)
+}
+
+enum UpdateRequest {
+    Models,
+    Dictionary,
+    SpecificModel(u32),
+}
+
+impl UpdateRequest {
+    const fn resource(&self) -> &'static str {
+        match self {
+            Self::Models | Self::SpecificModel(_) => "models",
+            Self::Dictionary => "dict",
+        }
+    }
+
+    fn start_message(&self) -> String {
+        match self {
+            Self::Models => " Updating voice models only...".to_string(),
+            Self::Dictionary => " Updating dictionary only...".to_string(),
+            Self::SpecificModel(model_id) => format!(" Updating model {model_id} only..."),
+        }
+    }
+
+    fn progress_message(&self) -> String {
+        match self {
+            Self::Models => " Downloading voice models only...".to_string(),
+            Self::Dictionary => " Downloading dictionary only...".to_string(),
+            Self::SpecificModel(model_id) => format!(" Downloading model {model_id} only..."),
+        }
+    }
+
+    const fn fallback_message(&self) -> &'static str {
+        match self {
+            Self::Models => "  Models-only update not supported, falling back to full update...",
+            Self::Dictionary => {
+                "  Dictionary-only update not supported, falling back to full update..."
+            }
+            Self::SpecificModel(_) => {
+                "  Specific model update not supported, falling back to full update..."
+            }
+        }
+    }
+
+    fn print_success(&self, target_dir: &Path) {
+        match self {
+            Self::Models => {
+                let vvm_count = count_vvm_files_recursive(&target_dir.join("models"));
+                println!(" Voice models updated successfully!");
+                println!("   Found {vvm_count} VVM model files");
+            }
+            Self::Dictionary => {
+                println!(" Dictionary updated successfully!");
+            }
+            Self::SpecificModel(model_id) => {
+                println!(" Model {model_id} updated successfully!");
+            }
+        }
+    }
+}
+
+async fn run_update_request(request: UpdateRequest) -> Result<()> {
+    println!("{}", request.start_message());
+
+    let target_dir = prepare_update_target_dir().await?;
+    println!("{}", request.progress_message());
+
+    if try_run_downloader_only(request.resource(), &target_dir).await? {
+        request.print_success(&target_dir);
+        cleanup_unnecessary_files(&target_dir);
+        Ok(())
+    } else {
+        println!("{}", request.fallback_message());
+        launch_downloader_for_user().await
+    }
 }
 
 /// Ensures all runtime resources (ONNX Runtime, dictionary, models) are available.
@@ -168,65 +275,70 @@ pub async fn ensure_resources_available() -> Result<()> {
 fn cleanup_incomplete_downloads(target_dir: &std::path::Path) {
     if let Ok(entries) = std::fs::read_dir(target_dir) {
         for entry in entries.flatten() {
-            if let Ok(file_type) = entry.file_type() {
-                let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            let path = entry.path();
 
-                // Remove temporary files (e.g., .tmp, .download, .partial)
-                if let Some(extension) = path.extension() {
-                    let ext_str = extension.to_string_lossy().to_lowercase();
-                    if ext_str == "tmp" || ext_str == "download" || ext_str == "partial" {
-                        if let Err(e) = std::fs::remove_file(&path) {
-                            eprintln!(
-                                "Warning: Failed to clean up temporary file {}: {}",
-                                path.display(),
-                                e
-                            );
-                        } else {
-                            println!("Cleaned up temporary file: {}", path.display());
-                        }
-                        continue;
-                    }
-                }
+            if is_temporary_download_file(&path) {
+                log_remove_file(&path, "temporary file", "Cleaned up temporary file");
+                continue;
+            }
 
-                // Remove very small files that might be incomplete downloads
-                if file_type.is_file() {
-                    if let Ok(metadata) = std::fs::metadata(&path) {
-                        // Files smaller than 1KB are likely incomplete
-                        if metadata.len() < 1024 {
-                            // Only remove files that look like they should be larger
-                            if let Some(filename) = path.file_name() {
-                                let filename_str = filename.to_string_lossy().to_lowercase();
-                                let shared_lib_ext = path
-                                    .extension()
-                                    .and_then(|ext| ext.to_str())
-                                    .is_some_and(|ext| {
-                                        matches!(
-                                            ext.to_ascii_lowercase().as_str(),
-                                            "dylib" | "so" | "dll"
-                                        )
-                                    });
-                                if filename_str.contains("onnx")
-                                    || filename_str.contains("dict")
-                                    || filename_str.contains("model")
-                                    || shared_lib_ext
-                                {
-                                    if let Err(e) = std::fs::remove_file(&path) {
-                                        eprintln!(
-                                            "Warning: Failed to clean up incomplete file {}: {}",
-                                            path.display(),
-                                            e
-                                        );
-                                    } else {
-                                        println!("Cleaned up incomplete file: {}", path.display());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            if file_type.is_file() && is_likely_incomplete_download_file(&path) {
+                log_remove_file(&path, "incomplete file", "Cleaned up incomplete file");
             }
         }
     }
+}
+
+fn is_temporary_download_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "tmp" | "download" | "partial"
+            )
+        })
+}
+
+fn is_shared_library_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "dylib" | "so" | "dll"))
+}
+
+fn looks_like_large_resource_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|filename| filename.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|filename| {
+            filename.contains("onnx")
+                || filename.contains("dict")
+                || filename.contains("model")
+                || is_shared_library_file(path)
+        })
+}
+
+fn is_likely_incomplete_download_file(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .ok()
+        .filter(|metadata| metadata.len() < 1024)
+        .is_some_and(|_| looks_like_large_resource_file(path))
+}
+
+fn log_remove_file(path: &Path, label: &str, success_message: &str) {
+    std::fs::remove_file(path).map_or_else(
+        |e| {
+            eprintln!(
+                "Warning: Failed to clean up {label} {}: {}",
+                path.display(),
+                e
+            );
+        },
+        |()| println!("{success_message}: {}", path.display()),
+    );
 }
 
 /// Find the voicevox-download binary
@@ -267,11 +379,7 @@ pub async fn launch_downloader_for_user() -> Result<()> {
     println!("   Please follow the on-screen instructions to accept license terms.");
     println!("   Press Enter when ready to continue...");
 
-    let mut input = String::new();
-    {
-        let mut stdin = BufReader::new(tokio::io::stdin());
-        stdin.read_line(&mut input).await?;
-    }
+    let _input = read_stdin_line().await?;
 
     let status = tokio::process::Command::new(&downloader_path)
         .arg("--only")
@@ -410,21 +518,7 @@ pub async fn ensure_models_available() -> Result<()> {
 ///
 /// Returns an error if fallback full download also fails.
 pub async fn update_models_only() -> Result<()> {
-    println!(" Updating voice models only...");
-
-    let target_dir = prepare_update_target_dir().await?;
-    println!(" Downloading voice models only...");
-
-    if try_run_downloader_only("models", &target_dir).await? {
-        let vvm_count = count_vvm_files_recursive(&target_dir.join("models"));
-        println!(" Voice models updated successfully!");
-        println!("   Found {vvm_count} VVM model files");
-        cleanup_unnecessary_files(&target_dir);
-        Ok(())
-    } else {
-        println!("  Models-only update not supported, falling back to full update...");
-        launch_downloader_for_user().await
-    }
+    run_update_request(UpdateRequest::Models).await
 }
 
 /// Attempts to update only the `OpenJTalk` dictionary using `voicevox-download`.
@@ -433,19 +527,7 @@ pub async fn update_models_only() -> Result<()> {
 ///
 /// Returns an error if fallback full download also fails.
 pub async fn update_dictionary_only() -> Result<()> {
-    println!(" Updating dictionary only...");
-
-    let target_dir = prepare_update_target_dir().await?;
-    println!(" Downloading dictionary only...");
-
-    if try_run_downloader_only("dict", &target_dir).await? {
-        println!(" Dictionary updated successfully!");
-        cleanup_unnecessary_files(&target_dir);
-        Ok(())
-    } else {
-        println!("  Dictionary-only update not supported, falling back to full update...");
-        launch_downloader_for_user().await
-    }
+    run_update_request(UpdateRequest::Dictionary).await
 }
 
 /// Attempts to update a specific model, falling back to full model download if unsupported.
@@ -454,19 +536,7 @@ pub async fn update_dictionary_only() -> Result<()> {
 ///
 /// Returns an error if directory setup fails or fallback download fails.
 pub async fn update_specific_model(model_id: u32) -> Result<()> {
-    println!(" Updating model {model_id} only...");
-
-    let target_dir = prepare_update_target_dir().await?;
-    println!(" Downloading model {model_id} only...");
-
-    if try_run_downloader_only("models", &target_dir).await? {
-        println!(" Model {model_id} updated successfully!");
-        cleanup_unnecessary_files(&target_dir);
-        Ok(())
-    } else {
-        println!("  Specific model update not supported, falling back to full update...");
-        launch_downloader_for_user().await
-    }
+    run_update_request(UpdateRequest::SpecificModel(model_id)).await
 }
 
 /// Prints currently installed resources and available update commands.

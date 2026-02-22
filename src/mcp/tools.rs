@@ -184,6 +184,8 @@ struct ListVoiceStylesParams {
     style_name: Option<String>,
 }
 
+type FilteredSpeakerStyles<Name = String> = (Name, Vec<crate::voice::Style>);
+
 fn cancelled_message(reason: &str) -> String {
     if reason.is_empty() {
         "Audio playback cancelled by client".to_string()
@@ -192,30 +194,78 @@ fn cancelled_message(reason: &str) -> String {
     }
 }
 
-/// Executes the `text_to_speech` tool without external cancellation.
-///
-/// # Errors
-///
-/// Returns an error if parameter validation, synthesis, or playback setup fails.
-#[allow(clippy::future_not_send)]
-pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
-    handle_text_to_speech_cancellable(arguments, None).await
+fn normalized_filters(params: &ListVoiceStylesParams) -> (Option<String>, Option<String>) {
+    (
+        params.speaker_name.as_ref().map(|s| s.to_lowercase()),
+        params.style_name.as_ref().map(|s| s.to_lowercase()),
+    )
 }
 
-/// Executes the `text_to_speech` tool with optional cancellation support.
-///
-/// # Errors
-///
-/// Returns an error if parameters are invalid, synthesis fails, playback fails, or
-/// daemon communication fails in non-streaming mode.
-#[allow(clippy::future_not_send)]
-pub async fn handle_text_to_speech_cancellable(
-    arguments: Value,
-    cancel_rx: Option<oneshot::Receiver<String>>,
-) -> Result<ToolCallResult> {
-    let params: SynthesizeParams =
-        serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
+fn filter_speakers(
+    speakers: Vec<crate::voice::Speaker>,
+    speaker_name_filter: Option<&str>,
+    style_name_filter: Option<&str>,
+) -> Vec<FilteredSpeakerStyles> {
+    speakers
+        .into_iter()
+        .filter_map(|speaker| {
+            let crate::voice::Speaker { name, styles, .. } = speaker;
 
+            if let Some(name_filter) = speaker_name_filter {
+                if !name.to_lowercase().contains(name_filter) {
+                    return None;
+                }
+            }
+
+            let filtered_styles = styles
+                .into_iter()
+                .filter(|style| {
+                    style_name_filter
+                        .is_none_or(|style_filter| style.name.to_lowercase().contains(style_filter))
+                })
+                .collect::<Vec<_>>();
+
+            (!filtered_styles.is_empty()).then_some((name.to_string(), filtered_styles))
+        })
+        .collect()
+}
+
+fn streaming_success_message(text_len: usize, style_id: u32) -> String {
+    format!("Successfully synthesized {text_len} characters using style ID {style_id} in streaming mode")
+}
+
+fn daemon_success_message(text_len: usize, style_id: u32, audio_size: usize) -> String {
+    format!(
+        "Successfully synthesized {text_len} characters using style ID {style_id} (audio size: {audio_size} bytes)"
+    )
+}
+
+fn cancelled_result(reason: &str) -> ToolCallResult {
+    text_result(cancelled_message(reason), true)
+}
+
+fn daemon_playback_result(
+    outcome: PlaybackOutcome,
+    text_len: usize,
+    style_id: u32,
+    audio_size: usize,
+) -> ToolCallResult {
+    match outcome {
+        PlaybackOutcome::Completed => text_result(
+            daemon_success_message(text_len, style_id, audio_size),
+            false,
+        ),
+        PlaybackOutcome::Cancelled(reason) => cancelled_result(&reason),
+    }
+}
+
+async fn connect_daemon_client_for_tool() -> Result<DaemonClient> {
+    DaemonClient::connect_with_retry()
+        .await
+        .context("Failed to connect to VOICEVOX daemon after multiple attempts")
+}
+
+fn validate_synthesize_params(params: &SynthesizeParams) -> Result<()> {
     let text = params.text.trim();
     (!text.is_empty())
         .then_some(())
@@ -245,6 +295,39 @@ pub async fn handle_text_to_speech_cancellable(
                 MAX_STYLE_ID
             )
         })?;
+
+    Ok(())
+}
+
+fn parse_synthesize_params(arguments: Value) -> Result<SynthesizeParams> {
+    let params: SynthesizeParams =
+        serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
+    validate_synthesize_params(&params)?;
+    Ok(params)
+}
+
+/// Executes the `text_to_speech` tool without external cancellation.
+///
+/// # Errors
+///
+/// Returns an error if parameter validation, synthesis, or playback setup fails.
+#[allow(clippy::future_not_send)]
+pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
+    handle_text_to_speech_cancellable(arguments, None).await
+}
+
+/// Executes the `text_to_speech` tool with optional cancellation support.
+///
+/// # Errors
+///
+/// Returns an error if parameters are invalid, synthesis fails, playback fails, or
+/// daemon communication fails in non-streaming mode.
+#[allow(clippy::future_not_send)]
+pub async fn handle_text_to_speech_cancellable(
+    arguments: Value,
+    cancel_rx: Option<oneshot::Receiver<String>>,
+) -> Result<ToolCallResult> {
+    let params = parse_synthesize_params(arguments)?;
 
     if params.streaming {
         handle_streaming_synthesis_cancellable(params, cancel_rx).await
@@ -298,8 +381,7 @@ async fn handle_streaming_synthesis_cancellable(
             reason = &mut cancel_rx => {
                 sink.stop();
                 let reason = reason.unwrap_or_default();
-                let message = cancelled_message(&reason);
-                return Ok(text_result(message, true));
+                return Ok(cancelled_result(&reason));
             }
         }
     } else {
@@ -307,9 +389,7 @@ async fn handle_streaming_synthesis_cancellable(
     }
 
     Ok(text_result(
-        format!(
-            "Successfully synthesized {text_len} characters using style ID {style_id} in streaming mode",
-        ),
+        streaming_success_message(text_len, style_id),
         false,
     ))
 }
@@ -319,8 +399,7 @@ async fn handle_daemon_synthesis(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<ToolCallResult> {
-    // Try to connect with retries
-    let mut client = match DaemonClient::connect_with_retry().await {
+    let mut client = match connect_daemon_client_for_tool().await {
         Ok(client) => client,
         Err(e) => {
             return Ok(text_result(
@@ -341,15 +420,10 @@ async fn handle_daemon_synthesis(
     let text_len = params.text.len();
     let style_id = params.style_id;
 
-    match play_daemon_audio_with_cancellation(wav_data, cancel_rx).await? {
-        PlaybackOutcome::Completed => Ok(text_result(
-            format!(
-                "Successfully synthesized {text_len} characters using style ID {style_id} (audio size: {audio_size} bytes)"
-            ),
-            false,
-        )),
-        PlaybackOutcome::Cancelled(reason) => Ok(text_result(cancelled_message(&reason), true)),
-    }
+    let outcome = play_daemon_audio_with_cancellation(wav_data, cancel_rx).await?;
+    Ok(daemon_playback_result(
+        outcome, text_len, style_id, audio_size,
+    ))
 }
 
 enum PlaybackOutcome {
@@ -466,37 +540,16 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
     let params: ListVoiceStylesParams =
         serde_json::from_value(arguments).context("Invalid parameters for list_voice_styles")?;
 
-    let mut client = DaemonClient::connect_with_retry()
-        .await
-        .context("Failed to connect to VOICEVOX daemon after multiple attempts")?;
+    let mut client = connect_daemon_client_for_tool().await?;
 
     let speakers = client.list_speakers().await?;
 
-    let speaker_name_filter = params.speaker_name.as_ref().map(|s| s.to_lowercase());
-    let style_name_filter = params.style_name.as_ref().map(|s| s.to_lowercase());
-    let filtered_results: Vec<_> = speakers
-        .into_iter()
-        .filter_map(|speaker| {
-            let crate::voice::Speaker { name, styles, .. } = speaker;
-
-            if let Some(name_filter) = &speaker_name_filter {
-                if !name.to_lowercase().contains(name_filter) {
-                    return None;
-                }
-            }
-
-            let filtered_styles = styles
-                .into_iter()
-                .filter(|style| {
-                    style_name_filter
-                        .as_ref()
-                        .is_none_or(|style_filter| style.name.to_lowercase().contains(style_filter))
-                })
-                .collect::<Vec<_>>();
-
-            (!filtered_styles.is_empty()).then_some((name, filtered_styles))
-        })
-        .collect();
+    let (speaker_name_filter, style_name_filter) = normalized_filters(&params);
+    let filtered_results = filter_speakers(
+        speakers,
+        speaker_name_filter.as_deref(),
+        style_name_filter.as_deref(),
+    );
 
     let result_text = render_voice_styles_result(&filtered_results);
     Ok(text_result(result_text, false))

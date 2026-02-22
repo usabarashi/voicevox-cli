@@ -225,7 +225,7 @@ fn filter_speakers(
                 })
                 .collect::<Vec<_>>();
 
-            (!filtered_styles.is_empty()).then_some((name.to_string(), filtered_styles))
+            (!filtered_styles.is_empty()).then_some((name.into(), filtered_styles))
         })
         .collect()
 }
@@ -574,20 +574,13 @@ where
         return "No speakers found matching the criteria.".to_string();
     }
 
-    let mut result_text = String::new();
-    for (index, item) in filtered_results.iter().enumerate() {
-        if index > 0 {
-            let _ = writeln!(result_text);
-        }
-        let _ = write!(result_text, "{}", render_voice_styles_block(item));
-    }
-    let _ = writeln!(result_text);
-    let _ = write!(
-        result_text,
-        "Total speakers found: {}",
-        filtered_results.len()
-    );
-    result_text
+    let blocks = filtered_results
+        .iter()
+        .map(render_voice_styles_block)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    format!("{blocks}\nTotal speakers found: {}", filtered_results.len())
 }
 
 fn render_voice_styles_block<Name>(

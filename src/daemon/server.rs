@@ -39,14 +39,16 @@ impl DaemonState {
     }
 
     async fn get_model_id_from_style(&self, style_id: u32) -> u32 {
-        if let Some(model_id) = self.style_to_model_map.read().await.get(&style_id).copied() {
-            model_id
-        } else {
-            eprintln!(
-                "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
-            );
-            style_id
-        }
+        let model_id = self.style_to_model_map.read().await.get(&style_id).copied();
+        model_id.map_or_else(
+            || {
+                eprintln!(
+                    "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
+                );
+                style_id
+            },
+            std::convert::identity,
+        )
     }
 
     async fn get_model_path(&self, model_id: u32) -> Option<PathBuf> {
@@ -87,16 +89,20 @@ impl DaemonState {
         let model_id = self.get_model_id_from_style(style_id).await;
         let model_path = self.get_model_path(model_id).await;
 
-        let core = self.core.lock().await;
-        if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-            eprintln!("Failed to load model {model_id}: {e}");
-            return OwnedResponse::Error {
-                message: format!("Failed to load model {model_id} for synthesis: {e}"),
-            };
-        }
+        let synthesis_result = {
+            let core = self.core.lock().await;
+            if let Err(e) = core.load_specific_model(&model_id.to_string()) {
+                eprintln!("Failed to load model {model_id}: {e}");
+                return OwnedResponse::Error {
+                    message: format!("Failed to load model {model_id} for synthesis: {e}"),
+                };
+            }
 
-        let synthesis_result = core.synthesize_with_rate(&text, style_id, rate);
-        Self::unload_model_if_known(&core, model_id, model_path.as_deref());
+            let synthesis_result = core.synthesize_with_rate(&text, style_id, rate);
+            Self::unload_model_if_known(&core, model_id, model_path.as_deref());
+            drop(core);
+            synthesis_result
+        };
 
         match synthesis_result {
             Ok(wav_data) => OwnedResponse::SynthesizeResult { wav_data },
@@ -186,8 +192,10 @@ async fn wait_for_shutdown_signal() -> Result<()> {
 /// Returns an error if socket cleanup/bind fails, daemon state initialization fails,
 /// socket accept fails, or final socket cleanup fails during shutdown.
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
+    match std::fs::remove_file(&socket_path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
 
     let listener = UnixListener::bind(&socket_path)?;

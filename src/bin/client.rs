@@ -127,7 +127,7 @@ fn print_no_models_message() {
 
 const DEFAULT_STYLE_ID: u32 = 3;
 
-fn default_voice_selection() -> u32 {
+const fn default_voice_selection() -> u32 {
     DEFAULT_STYLE_ID
 }
 

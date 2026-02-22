@@ -68,8 +68,11 @@ impl ActiveRequests {
     ///
     /// - `request_id`: The unique identifier from the original MCP request
     /// - `sender`: The oneshot channel sender for delivering cancellation signals
-    pub async fn register(&self, request_id: String, sender: oneshot::Sender<String>) {
-        self.abort_channels.lock().await.insert(request_id, sender);
+    pub async fn register(&self, request_id: &str, sender: oneshot::Sender<String>) {
+        self.abort_channels
+            .lock()
+            .await
+            .insert(request_id.to_owned(), sender);
     }
 
     /// Cancel a request by sending the cancellation signal.
@@ -127,11 +130,20 @@ impl ActiveRequests {
             std::mem::take(&mut *channels)
         };
         let count = channels.len();
-        let reason = reason.to_string();
+        let mut senders = channels.into_values().peekable();
+        let mut final_reason = Some(reason.to_string());
 
         // Send cancellation signal to all active requests after releasing the mutex.
-        for sender in channels.into_values() {
-            let _ = sender.send(reason.clone());
+        while let Some(sender) = senders.next() {
+            let reason_to_send = if senders.peek().is_some() {
+                final_reason
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_owned()
+            } else {
+                final_reason.take().unwrap_or_default()
+            };
+            let _ = sender.send(reason_to_send);
         }
 
         count
@@ -164,7 +176,7 @@ impl ActiveRequests {
         let (abort_tx, abort_rx) = oneshot::channel::<String>();
 
         // Register the cancellation channel
-        self.register(request_id.clone(), abort_tx).await;
+        self.register(&request_id, abort_tx).await;
 
         let tool_name = tool_name.to_owned();
         let active_requests = self.clone();

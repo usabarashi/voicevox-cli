@@ -30,9 +30,9 @@
       fenix,
     }:
     let
-      supportedSystems = [ "aarch64-darwin" ];
+      systems = [ "aarch64-darwin" ];
     in
-    flake-utils.lib.eachSystem supportedSystems (
+    flake-utils.lib.eachSystem systems (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -80,14 +80,14 @@
         # ONNX Runtime library search path for build.rs (voicevox-ort-sys).
         # Actual library is loaded at runtime via dlopen (load-dynamic),
         # so only the path needs to exist at build time.
-        onnxruntimeLibDir = pkgs.runCommand "onnxruntime-lib" { } ''
+        onnxruntimeLibDir = pkgs.runCommand "onnxruntime-lib" {} ''
           mkdir -p $out/lib
         '';
 
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
           url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.3/download-osx-arm64";
-          sha256 = "sha256-7GMosxM4HRDAix6BImNP5Q5PNpWJYEvMLNApKjNht+k=";
+          hash = "sha256-7GMosxM4HRDAix6BImNP5Q5PNpWJYEvMLNApKjNht+k=";
         };
 
         # Simple resources for voicevox-download binary
@@ -202,7 +202,7 @@
               gnused
               gnugrep
             ];
-            src = ./.;
+            src = srcFiltered;
           } ''
             test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
 
@@ -236,7 +236,7 @@
           # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
           ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
 
-          buildInputs = with pkgs; [
+          packages = with pkgs; [
             # Use fenix-provided rust toolchain that matches rust-toolchain.toml
             rustToolchain.defaultToolchain
             rustToolchain.rust-analyzer

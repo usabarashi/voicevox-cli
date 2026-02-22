@@ -242,8 +242,7 @@ fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<(PathBuf, bool)> {
     let mut candidates = std::fs::read_dir(lib_dir)
         .ok()
         .into_iter()
-        .flatten()
-        .flatten()
+        .flat_map(|entries| entries.filter_map(Result::ok))
         .map(|entry| entry.path())
         .filter_map(|path| {
             let filename = path.file_name()?.to_string_lossy().into_owned();
@@ -256,7 +255,7 @@ fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<(PathBuf, bool)> {
 
     // Sort to prioritize original voicevox libraries over symlinks
     // After fixing the rpath, the original library should work directly
-    candidates.sort_by_key(|(_, is_original)| !*is_original);
+    candidates.sort_unstable_by_key(|(_, is_original)| !*is_original);
     candidates
 }
 

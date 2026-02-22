@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use rodio::{Decoder, Sink};
+use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::client::DaemonClient;
@@ -66,14 +67,14 @@ impl StreamingSynthesizer {
 
 #[derive(Debug, Clone)]
 pub struct TextSplitter {
-    delimiters: Vec<char>,
+    delimiters: HashSet<char>,
     max_length: usize,
 }
 
 impl Default for TextSplitter {
     fn default() -> Self {
         Self {
-            delimiters: vec!['。', '！', '？', '．', '\n'],
+            delimiters: ['。', '！', '？', '．', '\n'].into_iter().collect(),
             max_length: 100,
         }
     }
@@ -86,7 +87,7 @@ impl TextSplitter {
             .delimiters
             .iter()
             .filter_map(|s| s.chars().next())
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
         let max_length = config.max_length.max(1);
 
         if delimiters.is_empty() {
@@ -190,7 +191,7 @@ mod tests {
     #[test]
     fn test_text_splitter_long_text() {
         let splitter = TextSplitter {
-            delimiters: vec!['。'],
+            delimiters: ['。'].into_iter().collect(),
             max_length: 10,
         };
 

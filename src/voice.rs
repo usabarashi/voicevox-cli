@@ -11,58 +11,49 @@ use smallvec::SmallVec;
 #[cfg(feature = "compact_str")]
 use compact_str::CompactString;
 
+#[cfg(feature = "compact_str")]
+type VoiceString = CompactString;
+#[cfg(not(feature = "compact_str"))]
+type VoiceString = String;
+
+#[cfg(feature = "smallvec")]
+type StyleList = SmallVec<[Style; 8]>;
+#[cfg(not(feature = "smallvec"))]
+type StyleList = Vec<Style>;
+
+#[cfg(feature = "smallvec")]
+type SpeakerList = SmallVec<[Speaker; 4]>;
+#[cfg(not(feature = "smallvec"))]
+type SpeakerList = Vec<Speaker>;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Speaker {
-    #[cfg(feature = "compact_str")]
-    pub name: CompactString,
-    #[cfg(not(feature = "compact_str"))]
-    pub name: String,
+    pub name: VoiceString,
 
     #[serde(default)]
-    #[cfg(feature = "compact_str")]
-    pub speaker_uuid: CompactString,
-    #[serde(default)]
-    #[cfg(not(feature = "compact_str"))]
-    pub speaker_uuid: String,
+    pub speaker_uuid: VoiceString,
 
-    #[cfg(feature = "smallvec")]
-    pub styles: SmallVec<[Style; 8]>,
-    #[cfg(not(feature = "smallvec"))]
-    pub styles: Vec<Style>,
+    pub styles: StyleList,
 
     #[serde(default)]
-    #[cfg(feature = "compact_str")]
-    pub version: CompactString,
-    #[serde(default)]
-    #[cfg(not(feature = "compact_str"))]
-    pub version: String,
+    pub version: VoiceString,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Style {
-    #[cfg(feature = "compact_str")]
-    pub name: CompactString,
-    #[cfg(not(feature = "compact_str"))]
-    pub name: String,
+    pub name: VoiceString,
 
     pub id: u32,
 
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    #[cfg(feature = "compact_str")]
-    pub style_type: Option<CompactString>,
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    #[cfg(not(feature = "compact_str"))]
-    pub style_type: Option<String>,
+    pub style_type: Option<VoiceString>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AvailableModel {
     pub model_id: u32,
     pub file_path: PathBuf,
-    #[cfg(feature = "smallvec")]
-    pub speakers: SmallVec<[Speaker; 4]>,
-    #[cfg(not(feature = "smallvec"))]
-    pub speakers: Vec<Speaker>,
+    pub speakers: SpeakerList,
 }
 
 pub type StyleModelMapBuildResult = (
@@ -78,11 +69,19 @@ fn available_models_from_paths(model_files: Vec<PathBuf>) -> Vec<AvailableModel>
             extract_model_id_from_path(&file_path).map(|model_id| AvailableModel {
                 model_id,
                 file_path,
-                #[cfg(feature = "smallvec")]
-                speakers: SmallVec::new(),
-                #[cfg(not(feature = "smallvec"))]
-                speakers: Vec::new(),
+                speakers: SpeakerList::new(),
             })
+        })
+        .collect()
+}
+
+fn available_models_from_entries(model_entries: Vec<(u32, PathBuf)>) -> Vec<AvailableModel> {
+    model_entries
+        .into_iter()
+        .map(|(model_id, file_path)| AvailableModel {
+            model_id,
+            file_path,
+            speakers: SpeakerList::new(),
         })
         .collect()
 }
@@ -112,6 +111,15 @@ fn record_new_style_ids<I>(
             style_map.insert(style_id, model_id);
         }
     });
+}
+
+fn unload_model_quietly(core: &crate::core::VoicevoxCore, model_path: &Path) {
+    if let Err(error) = core.unload_voice_model_by_path(model_path) {
+        eprintln!(
+            "Warning: failed to unload model {}: {error}",
+            model_path.display()
+        );
+    }
 }
 
 /// Scans the configured models directory for available VOICEVOX model files.
@@ -209,6 +217,15 @@ fn extract_model_id_from_path(path: &Path) -> Option<u32> {
         .filter(|&id| id < 10000)
 }
 
+fn scan_model_file_entries(models_dir: &Path) -> Result<Vec<(u32, PathBuf)>> {
+    let mut entries = find_vvm_files(models_dir)?
+        .into_iter()
+        .filter_map(|path| extract_model_id_from_path(&path).map(|model_id| (model_id, path)))
+        .collect::<Vec<_>>();
+    entries.sort_unstable_by_key(|(model_id, _)| *model_id);
+    Ok(entries)
+}
+
 /// Resolves a CLI voice input string into a style/model ID and description.
 ///
 /// # Errors
@@ -216,6 +233,8 @@ fn extract_model_id_from_path(path: &Path) -> Option<u32> {
 /// Returns an error if model discovery fails or the provided voice/model specifier cannot
 /// be resolved to an available voice.
 pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
+    let voice_input = voice_input.trim();
+
     if voice_input == "?" {
         return Err(anyhow!(
             "Voice help is a CLI concern. Call `print_voice_help()` before resolving."
@@ -223,7 +242,6 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
     }
 
     voice_input
-        .trim()
         .parse::<u32>()
         .ok()
         .filter(|&id| id > 0 && id < 1000)
@@ -248,6 +266,7 @@ pub fn print_voice_help() {
 }
 
 fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
+    let voice_input = voice_input.trim();
     let available_models = scan_available_models().map_err(|e| {
         anyhow!(
             "Failed to scan available models: {e}. Use --speaker-id for direct ID specification."
@@ -337,17 +356,11 @@ where
         .flat_map(|s| s.styles.iter().map(|style| style.id))
         .collect();
 
-    let mut model_files = find_vvm_files(&models_dir)?;
-    model_files.sort();
-
-    let total_models = model_files.len();
+    let model_entries = scan_model_file_entries(&models_dir)?;
+    let total_models = model_entries.len();
     let mut cumulative_style_ids = initial_style_ids;
 
-    for (index, path) in model_files.iter().enumerate() {
-        let Some(model_id) = extract_model_id_from_path(path) else {
-            continue;
-        };
-
+    for (index, (model_id, path)) in model_entries.iter().enumerate() {
         let model_filename = path
             .file_name()
             .and_then(|s| s.to_str())
@@ -360,37 +373,52 @@ where
         }
 
         let Ok(current_speakers) = core.get_speakers() else {
-            let _ = core.unload_voice_model_by_path(path);
+            unload_model_quietly(core, path);
             continue;
         };
 
         record_new_style_ids(
             &mut style_map,
             &mut cumulative_style_ids,
-            model_id,
+            *model_id,
             current_speakers
                 .into_iter()
                 .flat_map(|speaker| speaker.styles.into_iter().map(|style| style.id)),
         );
 
-        let _ = core.unload_voice_model_by_path(path);
+        unload_model_quietly(core, path);
     }
 
-    for path in &model_files {
-        let Some(model_id) = extract_model_id_from_path(path) else {
-            continue;
-        };
-
-        let _ = core.load_specific_model(&model_id.to_string());
-    }
+    let loaded_model_paths = model_entries
+        .iter()
+        .filter_map(|(model_id, path)| {
+            core.load_specific_model(&model_id.to_string())
+                .ok()
+                .map(|()| path)
+        })
+        .collect::<Vec<_>>();
 
     let all_speakers = core.get_speakers()?;
 
-    for path in &model_files {
-        let _ = core.unload_voice_model_by_path(path);
+    for path in loaded_model_paths {
+        unload_model_quietly(core, path);
     }
 
-    let available_models = available_models_from_paths(model_files);
+    let mut available_models = available_models_from_entries(model_entries);
+    sort_models_by_id(&mut available_models);
 
     Ok((style_map, all_speakers, available_models))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_voice_dynamic;
+
+    #[test]
+    fn resolve_voice_dynamic_trims_direct_style_id() {
+        let (style_id, description) =
+            resolve_voice_dynamic("  3  ").expect("trimmed numeric style id should resolve");
+        assert_eq!(style_id, 3);
+        assert_eq!(description, "Style ID 3");
+    }
 }

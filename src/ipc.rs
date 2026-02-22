@@ -17,7 +17,7 @@ pub enum DaemonRequest {
 }
 
 /// Synthesis options for voice synthesis requests
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct SynthesizeOptions {
     pub rate: f32,
 }

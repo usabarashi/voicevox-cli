@@ -29,7 +29,10 @@
       flake-utils,
       fenix,
     }:
-    flake-utils.lib.eachSystem [ "aarch64-darwin" ] (
+    let
+      supportedSystems = [ "aarch64-darwin" ];
+    in
+    flake-utils.lib.eachSystem supportedSystems (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -110,7 +113,7 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage {
+        voicevoxCli = pkgs.rustPlatform.buildRustPackage {
           pname = "voicevox-cli";
           version = "0.1.0";
 
@@ -163,15 +166,20 @@
         };
 
         # Development utility: reset daemon state
-        voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (builtins.readFile ./scripts/voicevox-reset.sh);
+        voicevoxResetWrapper =
+          pkgs.writeShellScriptBin "voicevox-reset" (builtins.readFile ./scripts/voicevox-reset.sh);
 
+        mkApp = program: {
+          type = "app";
+          inherit program;
+        };
 
       in
       {
         packages = {
-          default = voicevox-cli;
-          voicevox-cli = voicevox-cli;
-          voicevox-say = voicevox-cli;
+          default = voicevoxCli;
+          voicevox-cli = voicevoxCli;
+          voicevox-say = voicevoxCli;
           voicevoxResources = voicevoxResources;
         };
 
@@ -212,27 +220,14 @@
           '';
 
           # Build verification
-          build = voicevox-cli;
+          build = voicevoxCli;
         };
 
         apps = {
-          default = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-say";
-          };
-          voicevox-say = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-say";
-          };
-          voicevox-daemon = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-daemon";
-          };
-          voicevox-mcp-server = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-mcp-server";
-          };
-
+          default = mkApp "${voicevoxCli}/bin/voicevox-say";
+          voicevox-say = mkApp "${voicevoxCli}/bin/voicevox-say";
+          voicevox-daemon = mkApp "${voicevoxCli}/bin/voicevox-daemon";
+          voicevox-mcp-server = mkApp "${voicevoxCli}/bin/voicevox-mcp-server";
         };
 
         devShells.default = pkgs.mkShell {
@@ -276,7 +271,8 @@
     )
     // {
       overlays.default = final: _prev: {
-        voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
+        voicevox-cli =
+          (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;
       };
 

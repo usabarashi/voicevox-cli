@@ -40,13 +40,13 @@ impl StreamingSynthesizer {
     ) -> Result<()> {
         let segments = self.text_splitter.split(text);
         sink.play();
+        let options = crate::ipc::OwnedSynthesizeOptions { rate };
 
         for (i, segment) in segments
             .iter()
             .enumerate()
             .filter(|(_, segment)| !segment.trim().is_empty())
         {
-            let options = crate::ipc::OwnedSynthesizeOptions { rate };
             let wav_data = self
                 .daemon_client
                 .synthesize(segment, style_id, options)

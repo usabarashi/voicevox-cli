@@ -221,11 +221,12 @@ fn find_openjtalk_dict_in_xdg_dir(dir: &Path) -> Option<PathBuf> {
     }
 
     let dict_dir = dir.join(DICT_SUBDIR);
-    is_existing_dir(&dict_dir)
-        .then(|| std::fs::read_dir(&dict_dir).ok())
-        .flatten()
-        .into_iter()
-        .flatten()
+    if !is_existing_dir(&dict_dir) {
+        return None;
+    }
+
+    let entries = std::fs::read_dir(&dict_dir).ok()?;
+    entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .find(|path| {

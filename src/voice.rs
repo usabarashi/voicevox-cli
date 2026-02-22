@@ -87,6 +87,18 @@ fn available_models_from_paths(model_files: Vec<PathBuf>) -> Vec<AvailableModel>
         .collect()
 }
 
+fn sort_models_by_id(models: &mut [AvailableModel]) {
+    #[cfg(feature = "rayon")]
+    {
+        models.par_sort_unstable_by_key(|m| m.model_id);
+    }
+
+    #[cfg(not(feature = "rayon"))]
+    {
+        models.sort_unstable_by_key(|m| m.model_id);
+    }
+}
+
 fn record_new_style_ids<I>(
     style_map: &mut std::collections::HashMap<u32, u32>,
     cumulative_style_ids: &mut std::collections::HashSet<u32>,
@@ -111,47 +123,10 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     use crate::paths::find_models_dir_client;
 
     let models_dir = find_models_dir_client()?;
-
-    #[cfg(feature = "smallvec")]
-    let mut available_models = SmallVec::<[AvailableModel; 32]>::new();
-    #[cfg(not(feature = "smallvec"))]
-    let mut available_models = Vec::new();
-
     let vvm_files = find_vvm_files(&models_dir)?;
-
-    let models_iter = vvm_files
-        .into_iter()
-        .filter_map(|vvm_file| {
-            extract_model_id_from_path(&vvm_file).map(|model_id| (model_id, vvm_file))
-        })
-        .map(|(model_id, file_path)| AvailableModel {
-            model_id,
-            file_path,
-            #[cfg(feature = "smallvec")]
-            speakers: SmallVec::new(),
-            #[cfg(not(feature = "smallvec"))]
-            speakers: Vec::new(),
-        });
-
-    #[cfg(feature = "rayon")]
-    {
-        let mut models: Vec<_> = models_iter.collect();
-        models.par_sort_unstable_by_key(|m| m.model_id);
-        available_models.extend(models);
-    }
-
-    #[cfg(not(feature = "rayon"))]
-    {
-        available_models.extend(models_iter);
-        available_models.sort_unstable_by_key(|m| m.model_id);
-    }
-
-    #[cfg(feature = "smallvec")]
-    let result = available_models.into_vec();
-    #[cfg(not(feature = "smallvec"))]
-    let result = available_models;
-
-    Ok(result)
+    let mut models = available_models_from_paths(vvm_files);
+    sort_models_by_id(&mut models);
+    Ok(models)
 }
 
 /// Checks if any VOICEVOX models are available in the models directory.

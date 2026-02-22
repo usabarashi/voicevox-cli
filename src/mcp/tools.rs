@@ -193,6 +193,10 @@ fn cancelled_message(reason: &str) -> String {
     }
 }
 
+fn text_char_count(text: &str) -> usize {
+    text.chars().count()
+}
+
 fn normalized_filters(params: &ListVoiceStylesParams) -> (Option<String>, Option<String>) {
     (
         params.speaker_name.as_ref().map(|s| s.to_lowercase()),
@@ -209,18 +213,22 @@ fn filter_speakers(
         .into_iter()
         .filter_map(|speaker| {
             let crate::voice::Speaker { name, styles, .. } = speaker;
+            let speaker_name_lower = speaker_name_filter.map(|_| name.to_lowercase());
 
             if let Some(name_filter) = speaker_name_filter {
-                if !name.to_lowercase().contains(name_filter) {
+                if !speaker_name_lower
+                    .as_deref()
+                    .is_some_and(|lower| lower.contains(name_filter))
+                {
                     return None;
                 }
             }
 
             let filtered_styles = styles
                 .into_iter()
-                .filter(|style| {
-                    style_name_filter
-                        .is_none_or(|style_filter| style.name.to_lowercase().contains(style_filter))
+                .filter(|style| match style_name_filter {
+                    Some(style_filter) => style.name.to_lowercase().contains(style_filter),
+                    None => true,
                 })
                 .collect::<Vec<_>>();
 
@@ -266,16 +274,17 @@ async fn connect_daemon_client_for_tool() -> Result<DaemonClient> {
 
 fn validate_synthesize_params(params: &SynthesizeParams) -> Result<()> {
     let text = params.text.trim();
+    let text_char_count = text_char_count(text);
     (!text.is_empty())
         .then_some(())
         .ok_or_else(|| anyhow!("Text cannot be empty"))?;
 
-    (text.len() <= MAX_TEXT_LENGTH)
+    (text_char_count <= MAX_TEXT_LENGTH)
         .then_some(())
         .ok_or_else(|| {
             anyhow!(
                 "Text too long: {} characters (max: {})",
-                text.len(),
+                text_char_count,
                 MAX_TEXT_LENGTH
             )
         })?;
@@ -355,7 +364,7 @@ async fn handle_streaming_synthesis_cancellable(
         .context("Failed to create streaming synthesizer")?;
 
     let sink_clone = Arc::clone(&sink);
-    let text_len = text.len();
+    let text_len = text_char_count(&text);
 
     let synthesis_and_playback_fut = async move {
         synthesizer
@@ -416,7 +425,7 @@ async fn handle_daemon_synthesis(
         .context("Synthesis failed")?;
 
     let audio_size = wav_data.len();
-    let text_len = params.text.len();
+    let text_len = text_char_count(&params.text);
     let style_id = params.style_id;
 
     let outcome = play_daemon_audio_with_cancellation(wav_data, cancel_rx).await?;
@@ -659,5 +668,21 @@ mod tests {
         });
 
         assert_tts_error_contains(args, "Invalid style_id").await;
+    }
+
+    #[test]
+    fn test_validate_synthesize_params_char_limit_uses_character_count() {
+        let params = SynthesizeParams {
+            text: "あ".repeat(MAX_TEXT_LENGTH),
+            style_id: 3,
+            rate: 1.0,
+            streaming: false,
+        };
+
+        let result = validate_synthesize_params(&params);
+        assert!(
+            result.is_ok(),
+            "expected char-limit boundary to pass: {result:?}"
+        );
     }
 }

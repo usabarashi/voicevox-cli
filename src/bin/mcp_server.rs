@@ -12,7 +12,20 @@ use voicevox_cli::paths::get_socket_path;
     about = "VOICEVOX MCP Server for AI assistants",
     version
 )]
-struct Args {}
+struct Args;
+
+async fn remove_stale_socket_if_present(socket_path: &std::path::Path) {
+    match tokio::fs::remove_file(socket_path).await {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(()) => {}
+        Err(error) => {
+            eprintln!(
+                "Warning: failed to remove stale socket candidate {}: {error}",
+                socket_path.display()
+            );
+        }
+    }
+}
 
 async fn ensure_daemon_running() -> DaemonResult<()> {
     let socket_path = get_socket_path();
@@ -21,10 +34,7 @@ async fn ensure_daemon_running() -> DaemonResult<()> {
         return Ok(());
     }
 
-    match tokio::fs::remove_file(&socket_path).await {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Ok(()) | Err(_) => {}
-    }
+    remove_stale_socket_if_present(&socket_path).await;
 
     start_daemon_process(&socket_path).await?;
     wait_for_daemon_ready(&socket_path).await
@@ -177,7 +187,7 @@ fn warn_nonfatal_daemon_issue(error: &DaemonError) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _args = Args::parse();
+    let _ = Args::parse();
 
     if let Err(error) = ensure_daemon_running().await {
         warn_nonfatal_daemon_issue(&error);

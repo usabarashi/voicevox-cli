@@ -17,6 +17,11 @@ Key design principles:
 - Automatic daemon lifecycle management
 - Transparent auto-startup for seamless user experience
 
+### Cache Strategy
+
+- Do not cache voice models in memory. Voice models are large and persistent caching increases memory pressure significantly.
+- Prioritize user experience based on end-to-end latency: audio playback time is typically the dominant portion, so voice model caching is not implemented as an optimization strategy.
+
 ## Implementation Details
 
 ### Binary Modules (`src/bin/`)

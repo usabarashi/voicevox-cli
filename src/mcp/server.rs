@@ -6,6 +6,12 @@ use tokio::sync::mpsc;
 use crate::mcp::protocol::{JsonRpcResponse, INVALID_REQUEST, PARSE_ERROR};
 use crate::mcp::requests::ActiveRequests;
 
+/// Runs the MCP server loop over stdio and dispatches JSON-RPC requests/notifications.
+///
+/// # Errors
+///
+/// Returns an error if reading stdin lines fails or stdout writes fail while sending
+/// responses.
 pub async fn run_mcp_server() -> Result<()> {
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
@@ -53,9 +59,8 @@ async fn process_line(
         None => return false,   // EOF, terminate
     };
 
-    let raw_request = match parse_json_request(&line, stdout).await {
-        Some(request) => request,
-        None => return true, // Parse error handled, continue
+    let Some(raw_request) = parse_json_request(&line, stdout).await else {
+        return true; // Parse error handled, continue
     };
 
     if raw_request.get("method").is_some() {
@@ -68,14 +73,13 @@ async fn process_line(
 }
 
 async fn parse_json_request(line: &str, stdout: &mut tokio::io::Stdout) -> Option<Value> {
-    match serde_json::from_str(line) {
-        Ok(request) => Some(request),
-        Err(_) => {
-            let id = extract_id_from_invalid_json(line);
-            let error_response = JsonRpcResponse::error(id, PARSE_ERROR, "Parse error".to_string());
-            send_response(&error_response, stdout).await;
-            None
-        }
+    if let Ok(request) = serde_json::from_str(line) {
+        Some(request)
+    } else {
+        let id = extract_id_from_invalid_json(line);
+        let error_response = JsonRpcResponse::error(id, PARSE_ERROR, "Parse error".to_string());
+        send_response(&error_response, stdout).await;
+        None
     }
 }
 

@@ -81,17 +81,20 @@ pub mod startup {
     pub const ALREADY_RUNNING_RETRIES: u32 = 3;
 
     /// Get initial retry delay as Duration
-    pub fn initial_retry_delay() -> Duration {
+    #[must_use]
+    pub const fn initial_retry_delay() -> Duration {
         Duration::from_millis(INITIAL_RETRY_DELAY_MS)
     }
 
     /// Get max retry delay as Duration
-    pub fn max_retry_delay() -> Duration {
+    #[must_use]
+    pub const fn max_retry_delay() -> Duration {
         Duration::from_millis(MAX_RETRY_DELAY_MS)
     }
 
     /// Get connection timeout as Duration
-    pub fn connect_timeout() -> Duration {
+    #[must_use]
+    pub const fn connect_timeout() -> Duration {
         Duration::from_secs(CONNECT_TIMEOUT_SECS)
     }
 }

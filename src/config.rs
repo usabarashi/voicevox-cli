@@ -33,6 +33,6 @@ fn default_delimiters() -> Vec<String> {
     ]
 }
 
-fn default_max_length() -> usize {
+const fn default_max_length() -> usize {
     100
 }

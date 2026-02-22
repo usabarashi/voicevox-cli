@@ -46,6 +46,7 @@ pub struct JsonRpcNotification {
 }
 
 impl JsonRpcResponse {
+    #[must_use]
     pub fn success(id: Value, result: Value) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
@@ -55,6 +56,7 @@ impl JsonRpcResponse {
         }
     }
 
+    #[must_use]
     pub fn error(id: Value, code: i32, message: String) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
@@ -67,6 +69,10 @@ impl JsonRpcResponse {
             id,
         }
     }
+}
+
+fn jsonrpc_error(id: Value, code: i32, message: impl Into<String>) -> JsonRpcResponse {
+    JsonRpcResponse::error(id, code, message.into())
 }
 
 // JSON-RPC Error Codes
@@ -121,10 +127,10 @@ pub enum CancelRequestId {
 }
 
 impl CancelRequestId {
-    fn as_lookup_key(&self) -> String {
+    fn into_lookup_key(self) -> String {
         match self {
-            CancelRequestId::String(value) => value.clone(),
-            CancelRequestId::Number(value) => value.to_string(),
+            Self::String(value) => value,
+            Self::Number(value) => value.to_string(),
         }
     }
 }
@@ -145,11 +151,11 @@ pub struct CancelledParams {
 ///
 /// 1. Environment variable: `VOICEVOX_MCP_INSTRUCTIONS` (highest priority)
 /// 2. XDG user config: `$XDG_CONFIG_HOME/voicevox/VOICEVOX.md`
-/// 3. Config fallback: `~/.config/voicevox/VOICEVOX.md` (when XDG_CONFIG_HOME is not set)
+/// 3. Config fallback: `~/.config/voicevox/VOICEVOX.md` (when `XDG_CONFIG_HOME` is not set)
 /// 4. Executable directory: `VOICEVOX.md` bundled with the binary (distribution default)
 /// 5. Current directory: `VOICEVOX.md` in working directory (development use)
 fn load_instructions() -> Option<String> {
-    fn try_load(path: &Path, _description: &str) -> Option<String> {
+    fn try_load(path: &Path) -> Option<String> {
         match fs::read_to_string(path) {
             Ok(content) => Some(content),
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => None,
@@ -157,55 +163,29 @@ fn load_instructions() -> Option<String> {
         }
     }
 
-    // 1. Environment variable: VOICEVOX_MCP_INSTRUCTIONS (highest priority)
-    if let Ok(custom_path) = std::env::var(INSTRUCTIONS_ENV_VAR) {
-        let path = Path::new(&custom_path);
-        if let Ok(content) = fs::read_to_string(path) {
-            return Some(content);
-        }
-    }
+    let xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();
+    let xdg_fallback = xdg_config_home.is_none().then(|| {
+        std::env::var("HOME")
+            .ok()
+            .map(|home| PathBuf::from(home).join(".config").join("voicevox"))
+    });
 
-    // 2. XDG user config: $XDG_CONFIG_HOME/voicevox/VOICEVOX.md (user-specific settings)
-    let xdg_config_var = std::env::var("XDG_CONFIG_HOME");
-    if let Ok(ref xdg_config) = xdg_config_var {
-        let path = PathBuf::from(xdg_config)
-            .join("voicevox")
-            .join(INSTRUCTIONS_FILE);
-        if let Some(content) = try_load(&path, "XDG_CONFIG_HOME") {
-            return Some(content);
-        }
-    }
-
-    // 3. Config fallback: ~/.config/voicevox/VOICEVOX.md (only when XDG_CONFIG_HOME is not set)
-    if xdg_config_var.is_err() {
-        if let Ok(home) = std::env::var("HOME") {
-            let path = PathBuf::from(home)
-                .join(".config")
-                .join("voicevox")
-                .join(INSTRUCTIONS_FILE);
-            if let Some(content) = try_load(&path, "~/.config") {
-                return Some(content);
-            }
-        }
-    }
-
-    // 4. Executable directory: VOICEVOX.md bundled with the binary (distribution default)
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let path = exe_dir.join(INSTRUCTIONS_FILE);
-            if let Some(content) = try_load(&path, "executable directory") {
-                return Some(content);
-            }
-        }
-    }
-
-    // 5. Current directory: VOICEVOX.md in working directory (development use)
-    let path = PathBuf::from(INSTRUCTIONS_FILE);
-    if let Some(content) = try_load(&path, "current directory") {
-        return Some(content);
-    }
-
-    None
+    [
+        std::env::var(INSTRUCTIONS_ENV_VAR).ok().map(PathBuf::from),
+        xdg_config_home
+            .as_ref()
+            .map(|path| PathBuf::from(path).join("voicevox").join(INSTRUCTIONS_FILE)),
+        xdg_fallback
+            .flatten()
+            .map(|dir| dir.join(INSTRUCTIONS_FILE)),
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe_path| exe_path.parent().map(|dir| dir.join(INSTRUCTIONS_FILE))),
+        Some(PathBuf::from(INSTRUCTIONS_FILE)),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|path| try_load(&path))
 }
 
 /// Initialize request processor - MCP session initialization.
@@ -224,8 +204,9 @@ fn load_instructions() -> Option<String> {
 ///
 /// ## Returns
 ///
-/// InitializeResult with server info, capabilities, and optional instructions
-pub async fn process_initialize(id: Value, _params: Option<Value>) -> JsonRpcResponse {
+/// `InitializeResult` with server info, capabilities, and optional instructions
+#[must_use]
+pub fn process_initialize(id: Value, _params: Option<Value>) -> JsonRpcResponse {
     let result = InitializeResult {
         protocol_version: MCP_VERSION.to_string(),
         server_info: ServerInfo {
@@ -264,19 +245,16 @@ pub async fn process_initialize(id: Value, _params: Option<Value>) -> JsonRpcRes
 ///
 /// ## Returns
 ///
-/// ToolsListResult containing array of available tool definitions
-pub async fn process_tools_list(id: Value, _params: Option<Value>) -> JsonRpcResponse {
+/// `ToolsListResult` containing array of available tool definitions
+#[must_use]
+pub fn process_tools_list(id: Value, _params: Option<Value>) -> JsonRpcResponse {
     let result = ToolsListResult {
         tools: get_tool_definitions(),
     };
 
     match serde_json::to_value(result) {
         Ok(value) => JsonRpcResponse::success(id, value),
-        Err(_) => JsonRpcResponse::error(
-            id,
-            INTERNAL_ERROR,
-            "Failed to serialize response".to_string(),
-        ),
+        Err(_) => jsonrpc_error(id, INTERNAL_ERROR, "Failed to serialize response"),
     }
 }
 
@@ -306,42 +284,41 @@ pub async fn process_tools_call(
     active_requests: &ActiveRequests,
 ) -> Option<JsonRpcResponse> {
     let request_id = match &id {
-        Value::String(s) => s.clone(),
+        Value::String(s) => s.to_owned(),
         Value::Number(n) => n.to_string(),
-        _ => "unknown".to_string(),
+        _ => String::from("unknown"),
     };
 
-    if let Some(params) = params {
-        if let Some(params_obj) = params.as_object() {
-            let tool_name = params_obj
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-
-            let arguments = params_obj
-                .get("arguments")
-                .cloned()
-                .unwrap_or(Value::Object(serde_json::Map::new()));
-
-            // Spawn async execution for tool request
-            active_requests
-                .spawn_execution(request_id, id.clone(), tool_name, arguments)
-                .await;
-            None // No immediate response
-        } else {
-            Some(JsonRpcResponse::error(
-                id,
-                INVALID_PARAMS,
-                "Invalid params".to_string(),
-            ))
-        }
-    } else {
-        Some(JsonRpcResponse::error(
+    let Some(params) = params else {
+        return Some(JsonRpcResponse::error(
             id,
             INVALID_PARAMS,
             "Missing params".to_string(),
-        ))
-    }
+        ));
+    };
+
+    let Some(params_obj) = params.as_object() else {
+        return Some(JsonRpcResponse::error(
+            id,
+            INVALID_PARAMS,
+            "Invalid params".to_string(),
+        ));
+    };
+
+    let tool_name = params_obj
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let arguments = params_obj
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+
+    active_requests
+        .spawn_execution(request_id, id, tool_name, arguments)
+        .await;
+    None
 }
 
 /// Request dispatcher - Routes MCP requests to specific processors.
@@ -381,10 +358,10 @@ pub async fn process_request(
     let params = request.get("params").cloned();
 
     match method {
-        "initialize" => Some(process_initialize(id, params).await),
-        "tools/list" => Some(process_tools_list(id, params).await),
+        "initialize" => Some(process_initialize(id, params)),
+        "tools/list" => Some(process_tools_list(id, params)),
         "tools/call" => process_tools_call(id, params, active_requests).await,
-        _ => Some(JsonRpcResponse::error(
+        _ => Some(jsonrpc_error(
             id,
             METHOD_NOT_FOUND,
             format!("Method not found: {method}"),
@@ -414,7 +391,7 @@ pub async fn handle_notification(notification: Value, active_requests: &ActiveRe
     let params = notification.get("params").cloned();
 
     match method {
-        "notifications/initialized" => handle_notification_initialized(params).await,
+        "notifications/initialized" => handle_notification_initialized(params),
         "notifications/cancelled" => handle_notification_cancelled(params, active_requests).await,
         _ => {
             // Unknown notifications are silently ignored per MCP specification
@@ -435,7 +412,7 @@ pub async fn handle_notification(notification: Value, active_requests: &ActiveRe
 /// ## Parameters
 ///
 /// - `_params`: Notification parameters (currently unused)
-async fn handle_notification_initialized(_params: Option<Value>) {
+fn handle_notification_initialized(_params: Option<Value>) {
     // Currently no action needed for initialized notification
     // This serves as a confirmation that the client is ready
 }
@@ -456,15 +433,14 @@ async fn handle_notification_initialized(_params: Option<Value>) {
 /// - `params`: Cancellation parameters containing request ID and optional reason
 /// - `active_requests`: Request management for sending cancellation signals
 async fn handle_notification_cancelled(params: Option<Value>, active_requests: &ActiveRequests) {
-    if let Some(params) = params {
-        if let Ok(cancelled_params) = serde_json::from_value::<CancelledParams>(params) {
-            let request_id = cancelled_params.request_id.as_lookup_key();
-            let cancelled = active_requests
-                .cancel(&request_id, cancelled_params.reason.clone())
-                .await;
-            let _ = cancelled;
-        }
-    }
+    let Some(params) = params else { return };
+    let Ok(cancelled_params) = serde_json::from_value::<CancelledParams>(params) else {
+        return;
+    };
+
+    let CancelledParams { request_id, reason } = cancelled_params;
+    let request_id = request_id.into_lookup_key();
+    let _ = active_requests.cancel(&request_id, reason).await;
 }
 
 #[cfg(test)]
@@ -472,15 +448,21 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn parse_cancelled_params_or_panic(params: Value) -> CancelledParams {
+        match serde_json::from_value::<CancelledParams>(params) {
+            Ok(parsed) => parsed,
+            Err(error) => panic!("cancelled params should deserialize: {error}"),
+        }
+    }
+
     #[test]
     fn deserialize_cancelled_params_with_numeric_id() {
         let params = json!({
             "requestId": 42,
         });
 
-        let parsed = serde_json::from_value::<CancelledParams>(params)
-            .expect("numeric requestId should deserialize");
-        assert_eq!(parsed.request_id.as_lookup_key(), "42");
+        let parsed = parse_cancelled_params_or_panic(params);
+        assert_eq!(parsed.request_id.into_lookup_key(), "42");
     }
 
     #[test]
@@ -489,8 +471,7 @@ mod tests {
             "requestId": "abc",
         });
 
-        let parsed = serde_json::from_value::<CancelledParams>(params)
-            .expect("string requestId should deserialize");
-        assert_eq!(parsed.request_id.as_lookup_key(), "abc");
+        let parsed = parse_cancelled_params_or_panic(params);
+        assert_eq!(parsed.request_id.into_lookup_key(), "abc");
     }
 }

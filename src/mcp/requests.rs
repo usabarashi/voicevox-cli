@@ -6,6 +6,17 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use crate::mcp::protocol::{JsonRpcResponse, INTERNAL_ERROR};
 use crate::mcp::tools::{self, ToolCallResult, ToolContent};
 
+fn serialize_result_response(
+    id: Value,
+    result: ToolCallResult,
+    fallback_message: &str,
+) -> JsonRpcResponse {
+    match serde_json::to_value(result) {
+        Ok(value) => JsonRpcResponse::success(id, value),
+        Err(_) => JsonRpcResponse::error(id, INTERNAL_ERROR, fallback_message.to_string()),
+    }
+}
+
 /// Manages active requests and their cancellation tokens.
 ///
 /// This structure implements the server-side cancellation management for MCP requests.
@@ -29,6 +40,7 @@ pub struct ActiveRequests {
 }
 
 impl ActiveRequests {
+    #[must_use]
     pub fn new(response_sender: mpsc::UnboundedSender<JsonRpcResponse>) -> Self {
         Self {
             abort_channels: Arc::new(Mutex::new(HashMap::new())),
@@ -66,12 +78,11 @@ impl ActiveRequests {
     /// - `true` if the request was found and cancellation signal was sent
     /// - `false` if the request was not found (already completed or invalid ID)
     pub async fn cancel(&self, request_id: &str, reason: Option<String>) -> bool {
-        if let Some(sender) = self.abort_channels.lock().await.remove(request_id) {
+        let sender = self.abort_channels.lock().await.remove(request_id);
+        sender.is_some_and(|sender| {
             let _ = sender.send(reason.unwrap_or_default());
             true
-        } else {
-            false
-        }
+        })
     }
 
     /// Remove a completed request from the active list.
@@ -101,12 +112,16 @@ impl ActiveRequests {
     ///
     /// The number of requests that were cancelled
     pub async fn cancel_all_requests(&self, reason: &str) -> usize {
-        let mut channels = self.abort_channels.lock().await;
+        let channels = {
+            let mut channels = self.abort_channels.lock().await;
+            std::mem::take(&mut *channels)
+        };
         let count = channels.len();
+        let reason = reason.to_string();
 
-        // Send cancellation signal to all active requests
-        for (_request_id, sender) in channels.drain() {
-            let _ = sender.send(reason.to_string());
+        // Send cancellation signal to all active requests after releasing the mutex.
+        for sender in channels.into_values() {
+            let _ = sender.send(reason.clone());
         }
 
         count
@@ -141,13 +156,12 @@ impl ActiveRequests {
         // Register the cancellation channel
         self.register(request_id.clone(), abort_tx).await;
 
-        let tool_name = tool_name.to_string();
+        let tool_name = tool_name.to_owned();
         let active_requests = self.clone();
 
         let runtime_handle = tokio::runtime::Handle::current();
-
         tokio::task::spawn_blocking(move || {
-            // Use current runtime handle instead of creating a new one
+            // `execute_tool_request` may hold non-`Send` audio state across `.await`.
             runtime_handle.block_on(async move {
                 let result =
                     tools::execute_tool_request(&tool_name, arguments, Some(abort_rx)).await;
@@ -157,14 +171,9 @@ impl ActiveRequests {
 
                 // Send response
                 let response = match result {
-                    Ok(tool_result) => match serde_json::to_value(tool_result) {
-                        Ok(value) => JsonRpcResponse::success(id, value),
-                        Err(_) => JsonRpcResponse::error(
-                            id,
-                            INTERNAL_ERROR,
-                            "Failed to serialize response".to_string(),
-                        ),
-                    },
+                    Ok(tool_result) => {
+                        serialize_result_response(id, tool_result, "Failed to serialize response")
+                    }
                     Err(e) => {
                         let error_result = ToolCallResult {
                             content: vec![ToolContent {
@@ -173,20 +182,17 @@ impl ActiveRequests {
                             }],
                             is_error: Some(true),
                         };
-                        match serde_json::to_value(error_result) {
-                            Ok(value) => JsonRpcResponse::success(id, value),
-                            Err(_) => JsonRpcResponse::error(
-                                id,
-                                INTERNAL_ERROR,
-                                "Failed to serialize error response".to_string(),
-                            ),
-                        }
+                        serialize_result_response(
+                            id,
+                            error_result,
+                            "Failed to serialize error response",
+                        )
                     }
                 };
 
                 // Send response via channel
                 let _ = active_requests.response_sender.send(response);
-            })
+            });
         });
     }
 }

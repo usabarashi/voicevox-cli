@@ -1,10 +1,31 @@
 use crate::daemon::{DaemonError, DaemonResult};
 use anyhow::Result;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process;
 
-pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> DaemonResult<()> {
+fn current_uid_string() -> String {
+    // SAFETY: `getuid` is thread-safe and has no preconditions.
+    unsafe { libc::getuid() }.to_string()
+}
+
+fn parse_other_pids(stdout: &[u8]) -> Vec<u32> {
+    let current_pid = process::id();
+
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .filter(|&pid| pid != current_pid)
+        .collect()
+}
+
+/// Checks for stale sockets and duplicate daemon processes before startup.
+///
+/// # Errors
+///
+/// Returns an error if another daemon instance is already running, a stale socket
+/// cannot be removed, or daemon process detection reports a startup conflict.
+pub async fn check_and_prevent_duplicate(socket_path: &Path) -> DaemonResult<()> {
     if socket_path.exists() {
         handle_existing_socket(socket_path).await?;
     }
@@ -13,28 +34,25 @@ pub async fn check_and_prevent_duplicate(socket_path: &PathBuf) -> DaemonResult<
     Ok(())
 }
 
-async fn handle_existing_socket(socket_path: &PathBuf) -> DaemonResult<()> {
+async fn handle_existing_socket(socket_path: &Path) -> DaemonResult<()> {
     match tokio::net::UnixStream::connect(socket_path).await {
         Ok(_) => {
-            let pid = match find_daemon_processes() {
-                Ok(pids) => pids.first().copied().unwrap_or(0),
-                Err(_) => 0,
-            };
+            let pid = find_daemon_processes().map_or(0, |pids| pids.first().copied().unwrap_or(0));
             Err(DaemonError::AlreadyRunning { pid })
         }
         Err(_) => remove_stale_socket(socket_path),
     }
 }
 
-fn remove_stale_socket(socket_path: &PathBuf) -> DaemonResult<()> {
+fn remove_stale_socket(socket_path: &Path) -> DaemonResult<()> {
     println!("Removing stale socket file: {}", socket_path.display());
 
     fs::remove_file(socket_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::PermissionDenied => DaemonError::SocketPermissionDenied {
-            path: socket_path.clone(),
+            path: socket_path.to_path_buf(),
         },
         _ => DaemonError::StartupFailed {
-            message: format!("Failed to remove stale socket: {}", e),
+            message: format!("Failed to remove stale socket: {e}"),
         },
     })
 }
@@ -43,7 +61,7 @@ fn check_for_other_daemons() -> DaemonResult<()> {
     let output = process::Command::new("pgrep")
         .arg("-x")
         .arg("-u")
-        .arg(format!("{}", unsafe { libc::getuid() }))
+        .arg(current_uid_string())
         .arg("voicevox-daemon")
         .output();
 
@@ -60,15 +78,7 @@ fn check_for_other_daemons() -> DaemonResult<()> {
 }
 
 fn check_pgrep_output(stdout: &[u8]) -> DaemonResult<()> {
-    let pids = String::from_utf8_lossy(stdout);
-    let current_pid = process::id();
-
-    let other_pids: Vec<u32> = pids
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|pid| pid.trim().parse::<u32>().ok())
-        .filter(|&pid| pid != current_pid)
-        .collect();
+    let other_pids = parse_other_pids(stdout);
 
     match other_pids.first() {
         Some(&pid) => Err(DaemonError::AlreadyRunning { pid }),
@@ -76,32 +86,24 @@ fn check_pgrep_output(stdout: &[u8]) -> DaemonResult<()> {
     }
 }
 
+/// Finds running `voicevox-daemon` process IDs for the current user.
+///
+/// # Errors
+///
+/// Returns an error only if `pgrep` execution fails unexpectedly in a way surfaced by
+/// the process API. Missing processes are reported as an empty list.
 pub fn find_daemon_processes() -> Result<Vec<u32>> {
     let output = process::Command::new("pgrep")
         .arg("-f")
         .arg("-u")
-        .arg(unsafe { libc::getuid() }.to_string())
+        .arg(current_uid_string())
         .arg("voicevox-daemon")
         .output();
 
     match output {
         Ok(output) if output.status.success() && !output.stdout.is_empty() => {
-            parse_daemon_pids(&output.stdout)
+            Ok(parse_other_pids(&output.stdout))
         }
-        _ => Ok(vec![]),
+        _ => Ok(Vec::new()),
     }
-}
-
-fn parse_daemon_pids(stdout: &[u8]) -> Result<Vec<u32>> {
-    let pids = String::from_utf8_lossy(stdout);
-    let current_pid = process::id();
-
-    let pids: Vec<u32> = pids
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|pid| pid.trim().parse::<u32>().ok())
-        .filter(|&pid| pid != current_pid)
-        .collect();
-
-    Ok(pids)
 }

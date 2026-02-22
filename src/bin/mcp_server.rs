@@ -51,9 +51,10 @@ async fn start_daemon_process(socket_path: &std::path::Path) -> DaemonResult<()>
         .output()
         .await?;
 
-    match output.status.success() {
-        true => Ok(()),
-        false => handle_daemon_error(output, socket_path).await,
+    if output.status.success() {
+        Ok(())
+    } else {
+        handle_daemon_error(output, socket_path).await
     }
 }
 
@@ -84,14 +85,8 @@ async fn handle_daemon_error(
 }
 
 async fn handle_already_running(socket_path: &std::path::Path) -> DaemonResult<()> {
-    let mut retry_delay = startup::initial_retry_delay();
-
-    for _ in 0..startup::ALREADY_RUNNING_RETRIES {
-        tokio::time::sleep(retry_delay).await;
-        match tokio::net::UnixStream::connect(socket_path).await.is_ok() {
-            true => return Ok(()),
-            false => retry_delay *= 2,
-        }
+    if wait_for_socket_ready(socket_path, startup::ALREADY_RUNNING_RETRIES, true).await {
+        return Ok(());
     }
 
     match voicevox_cli::daemon::find_daemon_processes() {
@@ -105,29 +100,44 @@ async fn handle_already_running(socket_path: &std::path::Path) -> DaemonResult<(
             }
         }
         Err(e) => Err(DaemonError::StartupFailed {
-            message: format!("Failed to find daemon processes: {}", e),
+            message: format!("Failed to find daemon processes: {e}"),
         }),
     }
 }
 
 async fn wait_for_daemon_ready(socket_path: &std::path::Path) -> DaemonResult<()> {
     let max_attempts = startup::MAX_CONNECT_ATTEMPTS;
-    let mut retry_delay = startup::initial_retry_delay();
-
-    for attempt in 0..max_attempts {
-        match tokio::net::UnixStream::connect(socket_path).await.is_ok() {
-            true => return Ok(()),
-            false if attempt < max_attempts - 1 => {
-                tokio::time::sleep(retry_delay).await;
-                retry_delay = (retry_delay * 2).min(startup::max_retry_delay());
-            }
-            _ => {}
-        }
+    if wait_for_socket_ready(socket_path, max_attempts, false).await {
+        return Ok(());
     }
 
     Err(DaemonError::NotResponding {
         attempts: max_attempts,
     })
+}
+
+async fn wait_for_socket_ready(
+    socket_path: &std::path::Path,
+    attempts: u32,
+    sleep_before_first_check: bool,
+) -> bool {
+    let mut retry_delay = startup::initial_retry_delay();
+
+    for attempt in 0..attempts {
+        if sleep_before_first_check || attempt > 0 {
+            tokio::time::sleep(retry_delay).await;
+        }
+
+        if tokio::net::UnixStream::connect(socket_path).await.is_ok() {
+            return true;
+        }
+
+        if attempt + 1 < attempts {
+            retry_delay = (retry_delay * 2).min(startup::max_retry_delay());
+        }
+    }
+
+    false
 }
 
 #[tokio::main]
@@ -137,10 +147,7 @@ async fn main() -> Result<()> {
     if let Err(e) = ensure_daemon_running().await {
         match e {
             DaemonError::AlreadyRunning { pid } => {
-                eprintln!(
-                    "Warning: Daemon is running (PID: {}) but may not be responsive.",
-                    pid
-                );
+                eprintln!("Warning: Daemon is running (PID: {pid}) but may not be responsive.");
             }
             DaemonError::SocketPermissionDenied { path } => {
                 eprintln!("Warning: Permission denied when starting daemon.");
@@ -152,17 +159,16 @@ async fn main() -> Result<()> {
             }
             DaemonError::NotResponding { attempts } => {
                 eprintln!(
-                    "Warning: Daemon started but is not responding after {} attempts.",
-                    attempts
+                    "Warning: Daemon started but is not responding after {attempts} attempts."
                 );
                 eprintln!("Audio synthesis may not be available.");
             }
             DaemonError::StartupFailed { message } => {
-                eprintln!("Warning: Failed to start daemon: {}", message);
+                eprintln!("Warning: Failed to start daemon: {message}");
                 eprintln!("Audio synthesis may not be available.");
             }
             _ => {
-                eprintln!("Warning: {}", e);
+                eprintln!("Warning: {e}");
                 eprintln!("Audio synthesis may not be available.");
             }
         }

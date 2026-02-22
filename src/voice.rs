@@ -65,6 +65,32 @@ pub struct AvailableModel {
     pub speakers: Vec<Speaker>,
 }
 
+pub type StyleModelMapBuildResult = (
+    std::collections::HashMap<u32, u32>,
+    Vec<Speaker>,
+    Vec<AvailableModel>,
+);
+
+fn record_new_style_ids<I>(
+    style_map: &mut std::collections::HashMap<u32, u32>,
+    cumulative_style_ids: &mut std::collections::HashSet<u32>,
+    model_id: u32,
+    style_ids: I,
+) where
+    I: IntoIterator<Item = u32>,
+{
+    style_ids.into_iter().for_each(|style_id| {
+        if cumulative_style_ids.insert(style_id) {
+            style_map.insert(style_id, model_id);
+        }
+    });
+}
+
+/// Scans the configured models directory for available VOICEVOX model files.
+///
+/// # Errors
+///
+/// Returns an error if the models directory cannot be resolved or directory traversal fails.
 pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     use crate::paths::find_models_dir_client;
 
@@ -133,13 +159,13 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
 ///     println!("Please download models first");
 /// }
 /// ```
+#[must_use]
 pub fn has_available_models() -> bool {
     use crate::paths::find_models_dir_client;
 
     find_models_dir_client()
         .ok()
-        .map(|dir| has_any_vvm_file(&dir))
-        .unwrap_or(false)
+        .is_some_and(|dir| has_any_vvm_file(&dir))
 }
 
 /// Quickly checks if any .vvm file exists in the given directory (recursively).
@@ -149,43 +175,37 @@ fn has_any_vvm_file(dir: &Path) -> bool {
         return false;
     }
 
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.filter_map(Result::ok) {
-            if let Ok(file_type) = entry.file_type() {
-                let path = entry.path();
-                if file_type.is_dir() {
-                    if has_any_vvm_file(&path) {
-                        return true;
-                    }
-                } else if file_type.is_file() && path.extension().is_some_and(|ext| ext == "vvm") {
-                    return true;
-                }
-            }
-        }
-    }
-    false
+    std::fs::read_dir(dir).ok().is_some_and(|entries| {
+        entries.filter_map(Result::ok).any(|entry| {
+            let Ok(file_type) = entry.file_type() else {
+                return false;
+            };
+            let path = entry.path();
+            (file_type.is_file() && path.extension().is_some_and(|ext| ext == "vvm"))
+                || (file_type.is_dir() && has_any_vvm_file(&path))
+        })
+    })
 }
 
-fn find_vvm_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
+fn find_vvm_files(dir: &Path) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Ok(Vec::new());
     }
 
-    let mut vvm_files = Vec::new();
-
-    let entries = std::fs::read_dir(dir)
+    let mut entries = std::fs::read_dir(dir)
         .map_err(|e| anyhow!("Failed to read directory {}: {e}", dir.display()))?;
 
-    for entry in entries.filter_map(Result::ok) {
+    entries.try_fold(Vec::new(), |mut files, entry_result| {
+        let entry =
+            entry_result.map_err(|e| anyhow!("Failed to read entry in {}: {e}", dir.display()))?;
         let path = entry.path();
-        if path.is_file() && path.extension().map(|ext| ext == "vvm").unwrap_or(false) {
-            vvm_files.push(path);
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "vvm") {
+            files.push(path);
         } else if path.is_dir() {
-            vvm_files.extend(find_vvm_files(&path)?);
+            files.extend(find_vvm_files(&path)?);
         }
-    }
-
-    Ok(vvm_files)
+        Ok(files)
+    })
 }
 
 fn extract_model_id_from_path(path: &Path) -> Option<u32> {
@@ -196,9 +216,30 @@ fn extract_model_id_from_path(path: &Path) -> Option<u32> {
         .filter(|&id| id < 10000)
 }
 
+/// Resolves a CLI voice input string into a style/model ID and description.
+///
+/// # Errors
+///
+/// Returns an error if model discovery fails or the provided voice/model specifier cannot
+/// be resolved to an available voice.
 pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
     if voice_input == "?" {
-        const HELP_TEXT: &str = r#"Available VOICEVOX voices:
+        return Err(anyhow!(
+            "Voice help is a CLI concern. Call `print_voice_help()` before resolving."
+        ));
+    }
+
+    voice_input
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|&id| id > 0 && id < 1000)
+        .map(|style_id| (style_id, format!("Style ID {style_id}")))
+        .map_or_else(|| try_resolve_from_available_models(voice_input), Ok)
+}
+
+pub fn print_voice_help() {
+    const HELP_TEXT: &str = r#"Available VOICEVOX voices:
 
   Use one of these options to discover voices:
     --list-models        - Show available VVM models
@@ -210,18 +251,7 @@ pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
     voicevox-say --speaker-id 3 "text"
     voicevox-say --model 3 "text"
 "#;
-        println!("{HELP_TEXT}");
-        std::process::exit(0);
-    }
-
-    voice_input
-        .trim()
-        .parse::<u32>()
-        .ok()
-        .filter(|&id| id > 0 && id < 1000)
-        .map(|style_id| (style_id, format!("Style ID {style_id}")))
-        .map(Ok)
-        .unwrap_or_else(|| try_resolve_from_available_models(voice_input))
+    println!("{HELP_TEXT}");
 }
 
 fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
@@ -242,28 +272,31 @@ fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)>
         .ok()
         .filter(|&model_id| available_models.iter().any(|m| m.model_id == model_id))
         .map(|model_id| (model_id, format!("Model {model_id} (Default Style)")))
-        .map(Ok)
-        .unwrap_or_else(|| {
-            let model_suggestions = available_models
-                .iter()
-                .take(3)
-                .map(|m| format!("--model {}", m.model_id))
-                .collect::<Vec<_>>()
-                .join(", ");
+        .map_or_else(
+            || {
+                let model_suggestions = available_models
+                    .iter()
+                    .take(3)
+                    .map(|m| format!("--model {}", m.model_id))
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-            Err(anyhow!(
-                "Voice '{voice_input}' not found. Available options:\n  \
-                Use --speaker-id N for direct style ID\n  \
-                Use --model N for model selection (e.g., {model_suggestions})\n  \
-                Use --list-models to see all {} available models\n  \
-                Use --list-speakers for detailed speaker information",
-                available_models.len()
-            ))
-        })
+                Err(anyhow!(
+                    "Voice '{voice_input}' not found. Available options:\n  \
+                    Use --speaker-id N for direct style ID\n  \
+                    Use --model N for model selection (e.g., {model_suggestions})\n  \
+                    Use --list-models to see all {} available models\n  \
+                    Use --list-speakers for detailed speaker information",
+                    available_models.len()
+                ))
+            },
+            Ok,
+        )
 }
 
+#[must_use]
 pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
-    if let Ok(available_models) = scan_available_models() {
+    scan_available_models().ok().and_then(|available_models| {
         available_models
             .iter()
             .find(|model| {
@@ -272,30 +305,30 @@ pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
             })
             .map(|model| model.model_id)
             .or_else(|| available_models.first().map(|model| model.model_id))
-    } else {
-        None
-    }
+    })
 }
 
 /// Build style-to-model mapping by scanning all available models dynamically
-pub async fn build_style_to_model_map_async(
+///
+/// # Errors
+///
+/// Returns an error if model directory scanning fails or model metadata extraction fails.
+pub fn build_style_to_model_map_async(
     core: &crate::core::VoicevoxCore,
-) -> Result<(
-    std::collections::HashMap<u32, u32>,
-    Vec<Speaker>,
-    Vec<AvailableModel>,
-)> {
-    build_style_to_model_map_async_with_progress(core, |_, _, _| {}).await
+) -> Result<StyleModelMapBuildResult> {
+    build_style_to_model_map_async_with_progress(core, |_, _, _| {})
 }
 
-pub async fn build_style_to_model_map_async_with_progress<F>(
+/// Builds a style-to-model map while reporting progress for each scanned model file.
+///
+/// # Errors
+///
+/// Returns an error if model directory scanning fails or core speaker metadata cannot be
+/// queried for the initial state.
+pub fn build_style_to_model_map_async_with_progress<F>(
     core: &crate::core::VoicevoxCore,
     mut progress_callback: F,
-) -> Result<(
-    std::collections::HashMap<u32, u32>,
-    Vec<Speaker>,
-    Vec<AvailableModel>,
-)>
+) -> Result<StyleModelMapBuildResult>
 where
     F: FnMut(usize, usize, &str),
 {
@@ -305,30 +338,21 @@ where
     let mut style_map = HashMap::new();
     let models_dir = crate::paths::find_models_dir()?;
 
-    let initial_speakers = core.get_speakers().unwrap_or_default();
+    let initial_speakers = core.get_speakers()?;
     let initial_style_ids: HashSet<u32> = initial_speakers
         .iter()
         .flat_map(|s| s.styles.iter().map(|style| style.id))
         .collect();
 
-    let mut model_files: Vec<_> = std::fs::read_dir(&models_dir)?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("vvm"))
-        .collect();
+    let mut model_files = find_vvm_files(&models_dir)?;
     model_files.sort();
 
     let total_models = model_files.len();
-    let mut cumulative_style_ids = initial_style_ids.clone();
+    let mut cumulative_style_ids = initial_style_ids;
 
     for (index, path) in model_files.iter().enumerate() {
-        let model_id = match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u32>().ok())
-        {
-            Some(id) => id,
-            None => continue,
+        let Some(model_id) = extract_model_id_from_path(path) else {
+            continue;
         };
 
         let model_filename = path
@@ -342,70 +366,39 @@ where
             continue;
         }
 
-        let current_speakers = match core.get_speakers() {
-            Ok(speakers) => speakers,
-            Err(_) => {
-                let path_str = match path.to_str() {
-                    Some(s) => s,
-                    None => {
-                        continue;
-                    }
-                };
-                let _ = core.unload_voice_model_by_path(path_str);
-                continue;
-            }
+        let Ok(current_speakers) = core.get_speakers() else {
+            let _ = core.unload_voice_model_by_path(path);
+            continue;
         };
 
-        for speaker in current_speakers {
-            for style in speaker.styles {
-                if cumulative_style_ids.contains(&style.id) {
-                    continue;
-                }
-                style_map.insert(style.id, model_id);
-                cumulative_style_ids.insert(style.id);
-            }
-        }
+        record_new_style_ids(
+            &mut style_map,
+            &mut cumulative_style_ids,
+            model_id,
+            current_speakers
+                .into_iter()
+                .flat_map(|speaker| speaker.styles.into_iter().map(|style| style.id)),
+        );
 
-        let path_str = match path.to_str() {
-            Some(s) => s,
-            None => {
-                continue;
-            }
-        };
-        let _ = core.unload_voice_model_by_path(path_str);
+        let _ = core.unload_voice_model_by_path(path);
     }
 
-    let mut all_speakers = Vec::new();
-
     for path in &model_files {
-        let model_id = match path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u32>().ok())
-        {
-            Some(id) => id,
-            None => continue,
+        let Some(model_id) = extract_model_id_from_path(path) else {
+            continue;
         };
 
         let _ = core.load_specific_model(&model_id.to_string());
     }
 
-    if let Ok(speakers) = core.get_speakers() {
-        all_speakers = speakers;
-    }
+    let all_speakers = core.get_speakers()?;
 
     for path in &model_files {
-        let path_str = match path.to_str() {
-            Some(s) => s,
-            None => {
-                continue;
-            }
-        };
-        let _ = core.unload_voice_model_by_path(path_str);
+        let _ = core.unload_voice_model_by_path(path);
     }
 
     // Build available models list using existing scan function
-    let available_models = scan_available_models().unwrap_or_default();
+    let available_models = scan_available_models()?;
 
     Ok((style_map, all_speakers, available_models))
 }

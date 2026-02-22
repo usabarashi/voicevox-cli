@@ -3,7 +3,7 @@ pub mod daemon_client;
 pub mod download;
 pub mod input;
 
-pub use audio::play_audio_from_memory;
+pub use audio::{emit_synthesized_audio, play_audio_from_memory};
 pub use daemon_client::{daemon_mode, list_speakers_daemon, DaemonClient};
 pub use download::{
     cleanup_unnecessary_files, count_vvm_files_recursive, ensure_models_available,

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::path::Path;
 use voicevox_core::{
     blocking::{Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile},
     AccelerationMode,
@@ -16,8 +17,18 @@ pub trait CoreSynthesis {
     where
         Self: 'a;
 
+    /// Synthesizes audio for the given text and style.
+    ///
+    /// # Errors
+    ///
+    /// Returns an implementation-specific error if synthesis fails.
     fn synthesize<'a>(&'a self, text: &str, style_id: u32)
         -> Result<Self::Output<'a>, Self::Error>;
+    /// Returns speaker metadata currently visible to the core instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an implementation-specific error if metadata retrieval fails.
     fn get_speakers(&self) -> Result<Self::SpeakerData<'_>, Self::Error>;
 }
 
@@ -26,15 +37,23 @@ pub struct VoicevoxCore {
 }
 
 impl VoicevoxCore {
+    /// Creates a `VoicevoxCore` instance and initializes ONNX Runtime/OpenJTalk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if runtime libraries, dictionary resources, or the synthesizer
+    /// builder cannot be initialized.
     pub fn new() -> Result<Self> {
-        let onnxruntime = if let Ok(ort_path) = find_onnxruntime() {
-            Onnxruntime::load_once()
-                .filename(ort_path)
-                .perform()
-        } else {
-            Onnxruntime::load_once()
-                .perform()
-        }.map_err(|_| anyhow!("Failed to initialize ONNX Runtime. Please run 'voicevox-setup' to download required resources."))?;
+        let onnxruntime = find_onnxruntime()
+            .map_or_else(
+                |_| Onnxruntime::load_once().perform(),
+                |ort_path| Onnxruntime::load_once().filename(ort_path).perform(),
+            )
+            .map_err(|_| {
+                anyhow!(
+                    "Failed to initialize ONNX Runtime. Please run 'voicevox-setup' to download required resources."
+                )
+            })?;
 
         let dict_path = find_openjtalk_dict()?;
 
@@ -52,7 +71,7 @@ impl VoicevoxCore {
             .build()
             .map_err(|e| anyhow!("Failed to create synthesizer: {e}"))?;
 
-        Ok(VoicevoxCore { synthesizer })
+        Ok(Self { synthesizer })
     }
 }
 
@@ -125,6 +144,12 @@ impl CoreSynthesis for VoicevoxCore {
 }
 
 impl VoicevoxCore {
+    /// Loads a specific `.vvm` voice model by model file stem (e.g. `"3"`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model directory cannot be found, the model file does not
+    /// exist, or the core fails to load the model.
     pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
         let models_dir = find_models_dir()?;
         let model_path = models_dir.join(format!("{model_name}.vvm"));
@@ -144,9 +169,14 @@ impl VoicevoxCore {
             .map_err(|e| anyhow!("Failed to load model {model_name}: {e}"))
     }
 
-    pub fn unload_voice_model_by_path(&self, model_path: &str) -> Result<()> {
+    /// Unloads a voice model by file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model file cannot be opened or the core fails to unload it.
+    pub fn unload_voice_model_by_path(&self, model_path: &Path) -> Result<()> {
         let model = VoiceModelFile::open(model_path)
-            .map_err(|e| anyhow!("Failed to open model file: {e}"))?;
+            .map_err(|e| anyhow!("Failed to open model file {}: {e}", model_path.display()))?;
         let voice_model_id = model.id();
 
         self.synthesizer

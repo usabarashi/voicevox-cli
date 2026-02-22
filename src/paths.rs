@@ -9,39 +9,110 @@ const ONNXRUNTIME_SUBDIR: &str = "onnxruntime/lib";
 const DICT_SUBDIR: &str = "dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
 
+fn xdg_app_data_dirs() -> [Option<PathBuf>; 3] {
+    [
+        std::env::var("XDG_DATA_HOME")
+            .ok()
+            .map(|p| PathBuf::from(p).join(APP_NAME)),
+        dirs::data_local_dir().map(|d| d.join(APP_NAME)),
+        dirs::home_dir().map(|h| h.join(".local/share").join(APP_NAME)),
+    ]
+}
+
+fn existing_dir_from_env(var: &str) -> Option<PathBuf> {
+    std::env::var(var)
+        .ok()
+        .map(PathBuf::from)
+        .filter(|path| path.exists() && path.is_dir())
+}
+
+fn dir_contains_vvm_files(dir: &Path) -> bool {
+    std::fs::read_dir(dir).ok().is_some_and(|entries| {
+        entries.filter_map(Result::ok).any(|entry| {
+            entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext == "vvm")
+        })
+    })
+}
+
+fn preferred_models_dir(base_dir: &Path) -> Option<PathBuf> {
+    let candidate = base_dir.join(MODELS_SUBDIR);
+    if !(candidate.exists() && candidate.is_dir()) {
+        return None;
+    }
+
+    let vvms_dir = candidate.join(VVM_SUBDIR);
+    if vvms_dir.exists() && vvms_dir.is_dir() && dir_contains_vvm_files(&vvms_dir) {
+        Some(vvms_dir)
+    } else {
+        Some(candidate)
+    }
+}
+
+fn has_extension_ignore_ascii_case(filename: &str, expected: &str) -> bool {
+    Path::new(filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(expected))
+}
+
+fn is_valid_onnxruntime_filename(filename: &str) -> bool {
+    if cfg!(target_os = "macos") {
+        filename == "libonnxruntime.dylib"
+            || (filename.starts_with("libvoicevox_onnxruntime.")
+                && has_extension_ignore_ascii_case(filename, "dylib"))
+    } else if cfg!(target_os = "linux") {
+        filename == "libonnxruntime.so"
+            || (filename.starts_with("libvoicevox_onnxruntime.")
+                && has_extension_ignore_ascii_case(filename, "so"))
+    } else {
+        filename == "onnxruntime.dll"
+            || filename == "libonnxruntime.dll"
+            || (filename.starts_with("libvoicevox_onnxruntime.")
+                && has_extension_ignore_ascii_case(filename, "dll"))
+    }
+}
+
 /// Get the default VOICEVOX data directory path using XDG Base Directory specification
-/// Priority: $XDG_DATA_HOME/voicevox > ~/.local/share/voicevox
+/// Priority: $`XDG_DATA_HOME/voicevox` > ~/.local/share/voicevox
+#[must_use]
 pub fn get_default_voicevox_dir() -> PathBuf {
     if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
         return PathBuf::from(xdg_data_home).join(APP_NAME);
     }
 
-    dirs::data_local_dir()
-        .map(|d| d.join(APP_NAME))
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .map(|h| h.join(".local/share").join(APP_NAME))
-                .unwrap_or_else(|| PathBuf::from(".").join(APP_NAME))
-        })
+    dirs::data_local_dir().map_or_else(
+        || {
+            dirs::home_dir().map_or_else(
+                || PathBuf::from(".").join(APP_NAME),
+                |h| h.join(".local/share").join(APP_NAME),
+            )
+        },
+        |d| d.join(APP_NAME),
+    )
 }
 
+#[must_use]
 pub fn get_socket_path() -> PathBuf {
-    let env_socket_paths = [
-        ("VOICEVOX_SOCKET_PATH", ""),
-        ("XDG_RUNTIME_DIR", SOCKET_FILENAME),
-        ("XDG_STATE_HOME", SOCKET_FILENAME),
-        ("HOME", &format!(".local/state/{SOCKET_FILENAME}")),
-    ];
+    if let Ok(path) = std::env::var("VOICEVOX_SOCKET_PATH") {
+        return PathBuf::from(path);
+    }
 
-    for (env_var, suffix) in &env_socket_paths {
-        if let Ok(value) = std::env::var(env_var) {
-            let path = PathBuf::from(&value);
-            return if suffix.is_empty() {
-                path
-            } else {
-                path.join(suffix)
-            };
-        }
+    if let Ok(path) = std::env::var("XDG_RUNTIME_DIR") {
+        return PathBuf::from(path).join(SOCKET_FILENAME);
+    }
+
+    if let Ok(path) = std::env::var("XDG_STATE_HOME") {
+        return PathBuf::from(path).join(SOCKET_FILENAME);
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home)
+            .join(".local/state")
+            .join(SOCKET_FILENAME);
     }
 
     dirs::state_dir()
@@ -49,6 +120,11 @@ pub fn get_socket_path() -> PathBuf {
         .join(SOCKET_FILENAME)
 }
 
+/// Finds the VOICEVOX models directory, honoring environment overrides first.
+///
+/// # Errors
+///
+/// Returns an error if no plausible models directory can be found.
 pub fn find_models_dir() -> Result<PathBuf> {
     let env_model_paths = [
         "VOICEVOX_MODELS_DIR",
@@ -58,60 +134,22 @@ pub fn find_models_dir() -> Result<PathBuf> {
         "VOICEVOX_MODELS",
     ];
 
-    for env_var in &env_model_paths {
-        if let Ok(path) = std::env::var(env_var) {
-            let models_dir = PathBuf::from(path);
-            if models_dir.exists() && models_dir.is_dir() {
-                return Ok(models_dir);
-            }
-        }
+    if let Some(models_dir) = env_model_paths.into_iter().find_map(existing_dir_from_env) {
+        return Ok(models_dir);
     }
 
     // Search directories following XDG Base Directory specification
-    let mut search_dirs = Vec::new();
+    let search_dirs: Vec<_> = xdg_app_data_dirs().into_iter().flatten().collect();
 
-    // Priority 1: XDG_DATA_HOME/voicevox
-    if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
-        search_dirs.push(PathBuf::from(xdg_data_home).join(APP_NAME));
+    if let Some(models_dir) = search_dirs.iter().find_map(|dir| preferred_models_dir(dir)) {
+        return Ok(models_dir);
     }
 
-    // Priority 2: Standard XDG data directory
-    if let Some(data_dir) = dirs::data_local_dir() {
-        search_dirs.push(data_dir.join(APP_NAME));
-    }
-
-    // Priority 3: Fallback to ~/.local/share/voicevox
-    if let Some(home) = dirs::home_dir() {
-        search_dirs.push(home.join(".local/share").join(APP_NAME));
-    }
-
-    for dir in &search_dirs {
-        let candidate = dir.join(MODELS_SUBDIR);
-        if candidate.exists() && candidate.is_dir() {
-            let vvms_dir = candidate.join(VVM_SUBDIR);
-            if vvms_dir.exists() && vvms_dir.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&vvms_dir) {
-                    let has_vvm = entries.filter_map(Result::ok).any(|entry| {
-                        entry
-                            .path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            .map(|ext| ext == "vvm")
-                            .unwrap_or(false)
-                    });
-                    if has_vvm {
-                        return Ok(vvms_dir);
-                    }
-                }
-            }
-            return Ok(candidate);
-        }
-    }
-
-    for dir in &search_dirs {
-        if dir.exists() && dir.is_dir() {
-            return Ok(dir.clone());
-        }
+    if let Some(dir) = search_dirs
+        .into_iter()
+        .find(|dir| dir.exists() && dir.is_dir())
+    {
+        return Ok(dir);
     }
 
     Err(anyhow!(
@@ -119,23 +157,30 @@ pub fn find_models_dir() -> Result<PathBuf> {
     ))
 }
 
+/// Finds the models directory with a more permissive client-side fallback.
+///
+/// # Errors
+///
+/// Returns an error only if fallback path construction fails unexpectedly.
 pub fn find_models_dir_client() -> Result<PathBuf> {
-    match find_models_dir() {
-        Ok(dir) => Ok(dir),
-        Err(_) => {
-            // Use XDG Base Directory for client fallback
-            let base_dir = get_default_voicevox_dir();
-            let default_path = base_dir.join(MODELS_SUBDIR);
+    find_models_dir().or_else(|_| {
+        // Use XDG Base Directory for client fallback
+        let base_dir = get_default_voicevox_dir();
+        let default_path = base_dir.join(MODELS_SUBDIR);
 
-            if base_dir.exists() && base_dir.is_dir() {
-                Ok(base_dir)
-            } else {
-                Ok(default_path)
-            }
+        if base_dir.exists() && base_dir.is_dir() {
+            Ok(base_dir)
+        } else {
+            Ok(default_path)
         }
-    }
+    })
 }
 
+/// Finds the `OpenJTalk` dictionary directory used by VOICEVOX.
+///
+/// # Errors
+///
+/// Returns an error if no installed dictionary can be located.
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
     if let Ok(path) = std::env::var("VOICEVOX_OPENJTALK_DICT") {
         let dict_path = PathBuf::from(path);
@@ -155,15 +200,7 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         }
     }
 
-    let search_dirs = [
-        std::env::var("XDG_DATA_HOME")
-            .ok()
-            .map(|p| PathBuf::from(p).join(APP_NAME)),
-        dirs::data_local_dir().map(|d| d.join(APP_NAME)),
-        dirs::home_dir().map(|h| h.join(".local/share").join(APP_NAME)),
-    ];
-
-    for dir in search_dirs.iter().flatten() {
+    for dir in xdg_app_data_dirs().into_iter().flatten() {
         // Check the old location first for backward compatibility
         let dict_path = dir.join(OPENJTALK_DICT_SUBDIR);
         if dict_path.exists() && dict_path.is_dir() {
@@ -175,16 +212,13 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         if dict_dir.exists() && dict_dir.is_dir() {
             // Look for open_jtalk_dic_* directories
             if let Ok(entries) = std::fs::read_dir(&dict_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        if let Some(name) = path.file_name() {
-                            let name_str = name.to_string_lossy();
-                            if name_str.starts_with("open_jtalk_dic_") {
-                                return Ok(path);
-                            }
-                        }
-                    }
+                if let Some(path) = entries.flatten().map(|entry| entry.path()).find(|path| {
+                    path.is_dir()
+                        && path.file_name().is_some_and(|name| {
+                            name.to_string_lossy().starts_with("open_jtalk_dic_")
+                        })
+                }) {
+                    return Ok(path);
                 }
             }
         }
@@ -198,35 +232,19 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
 
 /// Helper function to find ONNX Runtime libraries in a directory
 fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<(PathBuf, bool)> {
-    let mut candidates = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(lib_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(filename) = path.file_name() {
-                let filename_str = filename.to_string_lossy();
-                let matches = if cfg!(target_os = "macos") {
-                    filename_str == "libonnxruntime.dylib"
-                        || (filename_str.starts_with("libvoicevox_onnxruntime.")
-                            && filename_str.ends_with(".dylib"))
-                } else if cfg!(target_os = "linux") {
-                    filename_str == "libonnxruntime.so"
-                        || (filename_str.starts_with("libvoicevox_onnxruntime.")
-                            && filename_str.ends_with(".so"))
-                } else {
-                    filename_str == "onnxruntime.dll"
-                        || filename_str == "libonnxruntime.dll"
-                        || (filename_str.starts_with("libvoicevox_onnxruntime.")
-                            && filename_str.ends_with(".dll"))
-                };
-
-                if matches && path.is_file() {
-                    let is_original = filename_str.starts_with("libvoicevox_onnxruntime.");
-                    candidates.push((path, is_original));
-                }
-            }
-        }
-    }
+    let mut candidates = std::fs::read_dir(lib_dir)
+        .ok()
+        .into_iter()
+        .flat_map(std::iter::Iterator::flatten)
+        .map(|entry| entry.path())
+        .filter_map(|path| {
+            let filename = path.file_name()?.to_string_lossy().into_owned();
+            (path.is_file() && is_valid_onnxruntime_filename(&filename)).then(|| {
+                let is_original = filename.starts_with("libvoicevox_onnxruntime.");
+                (path, is_original)
+            })
+        })
+        .collect::<Vec<_>>();
 
     // Sort to prioritize original voicevox libraries over symlinks
     // After fixing the rpath, the original library should work directly
@@ -234,7 +252,19 @@ fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<(PathBuf, bool)> {
     candidates
 }
 
-/// Find ONNX Runtime library
+fn first_onnx_library_in(lib_dir: &Path) -> Option<PathBuf> {
+    lib_dir
+        .exists()
+        .then(|| find_onnx_libraries_in_dir(lib_dir))
+        .and_then(|candidates| candidates.into_iter().next())
+        .map(|(path, _)| path)
+}
+
+/// Finds the ONNX Runtime dynamic library path used by VOICEVOX Core.
+///
+/// # Errors
+///
+/// Returns an error if no valid ONNX Runtime library candidate can be found.
 pub fn find_onnxruntime() -> Result<PathBuf> {
     if let Ok(path) = std::env::var("ORT_DYLIB_PATH") {
         let lib_path = PathBuf::from(path);
@@ -242,22 +272,7 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
             // Security validation for ORT_DYLIB_PATH
             if let Some(filename) = lib_path.file_name() {
                 let filename_str = filename.to_string_lossy();
-                let is_valid = if cfg!(target_os = "macos") {
-                    filename_str == "libonnxruntime.dylib"
-                        || filename_str.starts_with("libvoicevox_onnxruntime.")
-                            && filename_str.ends_with(".dylib")
-                } else if cfg!(target_os = "linux") {
-                    filename_str == "libonnxruntime.so"
-                        || filename_str.starts_with("libvoicevox_onnxruntime.")
-                            && filename_str.ends_with(".so")
-                } else {
-                    filename_str == "onnxruntime.dll"
-                        || filename_str == "libonnxruntime.dll"
-                        || (filename_str.starts_with("libvoicevox_onnxruntime.")
-                            && filename_str.ends_with(".dll"))
-                };
-
-                if is_valid {
+                if is_valid_onnxruntime_filename(&filename_str) {
                     // Resolve symlinks and verify the resolved path exists
                     match std::fs::canonicalize(&lib_path) {
                         Ok(canonical_path) => {
@@ -269,47 +284,28 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                             return Ok(lib_path);
                         }
                     }
-                } else {
-                    let _expected_patterns = if cfg!(target_os = "macos") {
-                        "libonnxruntime.dylib or libvoicevox_onnxruntime.*.dylib"
-                    } else if cfg!(target_os = "linux") {
-                        "libonnxruntime.so or libvoicevox_onnxruntime.*.so"
-                    } else {
-                        "onnxruntime.dll, libonnxruntime.dll, or libvoicevox_onnxruntime.*.dll"
-                    };
                 }
             }
         }
     }
 
-    let search_dirs = [
-        std::env::var("XDG_DATA_HOME")
-            .ok()
-            .map(|p| PathBuf::from(p).join(APP_NAME)),
-        dirs::data_local_dir().map(|d| d.join(APP_NAME)),
-        dirs::home_dir().map(|h| h.join(".local/share").join(APP_NAME)),
-    ];
-
-    for dir in search_dirs.iter().flatten() {
-        let lib_dir = dir.join(ONNXRUNTIME_SUBDIR);
-        if lib_dir.exists() {
-            let candidates = find_onnx_libraries_in_dir(&lib_dir);
-            if let Some((path, _)) = candidates.first() {
-                return Ok(path.clone());
-            }
-        }
+    if let Some(path) = xdg_app_data_dirs()
+        .into_iter()
+        .flatten()
+        .map(|dir| dir.join(ONNXRUNTIME_SUBDIR))
+        .find_map(|lib_dir| first_onnx_library_in(&lib_dir))
+    {
+        return Ok(path);
     }
 
     let system_paths = ["/usr/local/share/voicevox/lib", "/opt/voicevox/lib"];
 
-    for path in &system_paths {
-        let lib_dir = Path::new(path);
-        if lib_dir.exists() {
-            let candidates = find_onnx_libraries_in_dir(lib_dir);
-            if let Some((path, _)) = candidates.first() {
-                return Ok(path.clone());
-            }
-        }
+    if let Some(path) = system_paths
+        .into_iter()
+        .map(Path::new)
+        .find_map(first_onnx_library_in)
+    {
+        return Ok(path);
     }
 
     Err(anyhow!(

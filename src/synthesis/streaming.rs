@@ -11,6 +11,11 @@ pub struct StreamingSynthesizer {
 }
 
 impl StreamingSynthesizer {
+    /// Creates a streaming synthesizer backed by a daemon client and splitter config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the daemon cannot be reached.
     pub async fn new() -> Result<Self> {
         let daemon_client = DaemonClient::connect_with_retry().await?;
         let config = Config::default();
@@ -21,6 +26,11 @@ impl StreamingSynthesizer {
         })
     }
 
+    /// Synthesizes text in segments and appends decoded audio to the provided sink.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if segment synthesis fails or any audio segment cannot be decoded.
     pub async fn synthesize_streaming(
         &mut self,
         text: &str,
@@ -29,6 +39,7 @@ impl StreamingSynthesizer {
         sink: &Sink,
     ) -> Result<()> {
         let segments = self.text_splitter.split(text);
+        let mut playback_started = false;
 
         for (i, segment) in segments.iter().enumerate() {
             if segment.trim().is_empty() {
@@ -48,8 +59,9 @@ impl StreamingSynthesizer {
 
             sink.append(source);
 
-            if i == 0 {
+            if !playback_started {
                 sink.play();
+                playback_started = true;
             }
         }
 
@@ -73,34 +85,35 @@ impl Default for TextSplitter {
 }
 
 impl TextSplitter {
+    #[must_use]
     pub fn from_config(config: &crate::config::TextSplitterConfig) -> Self {
-        // Convert string delimiters to chars
-        let delimiters: Vec<char> = config
-            .delimiters
-            .iter()
-            .filter_map(|s| s.chars().next())
-            .collect();
-
         Self {
-            delimiters,
+            delimiters: config
+                .delimiters
+                .iter()
+                .filter_map(|s| s.chars().next())
+                .collect(),
             max_length: config.max_length,
         }
     }
 
+    #[must_use]
     pub fn split(&self, text: &str) -> Vec<String> {
         let mut segments = Vec::new();
         let mut current_segment = String::new();
+        let mut current_len = 0;
         let mut chars = text.chars().peekable();
 
         while let Some(ch) = chars.next() {
             current_segment.push(ch);
+            current_len += 1;
 
             if self.delimiters.contains(&ch) {
                 self.consume_consecutive_delimiters(&mut chars, &mut current_segment);
-                segments.push(current_segment.clone());
-                current_segment.clear();
-            } else if current_segment.chars().count() >= self.max_length {
-                self.handle_long_segment(&mut segments, &mut current_segment);
+                segments.push(std::mem::take(&mut current_segment));
+                current_len = 0;
+            } else if current_len >= self.max_length {
+                current_len = self.handle_long_segment(&mut segments, &mut current_segment);
             }
         }
 
@@ -126,26 +139,29 @@ impl TextSplitter {
         }
     }
 
-    fn handle_long_segment(&self, segments: &mut Vec<String>, current_segment: &mut String) {
+    fn handle_long_segment(
+        &self,
+        segments: &mut Vec<String>,
+        current_segment: &mut String,
+    ) -> usize {
         if let Some(break_pos) = self.find_break_position(current_segment) {
-            let (first, rest) = current_segment.split_at(break_pos);
-            segments.push(first.to_string());
-            *current_segment = rest.to_string();
+            let rest = current_segment.split_off(break_pos);
+            segments.push(std::mem::replace(current_segment, rest));
+            current_segment.chars().count()
         } else {
-            segments.push(current_segment.clone());
-            current_segment.clear();
+            segments.push(std::mem::take(current_segment));
+            0
         }
     }
 
     fn find_break_position(&self, text: &str) -> Option<usize> {
-        let chars: Vec<char> = text.chars().collect();
-        let search_end = chars.len().min(self.max_length);
-        for i in (0..search_end).rev() {
-            if chars[i] == ' ' || chars[i] == '、' || chars[i] == ',' {
-                return Some(text.char_indices().nth(i + 1)?.0);
-            }
-        }
-        None
+        text.char_indices()
+            .enumerate()
+            .take_while(|(i, _)| *i < self.max_length)
+            .filter_map(|(_, (byte_idx, ch))| {
+                matches!(ch, ' ' | '、' | ',').then_some(byte_idx + ch.len_utf8())
+            })
+            .last()
     }
 }
 

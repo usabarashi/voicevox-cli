@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fmt::Write as _;
 use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
@@ -44,6 +45,28 @@ pub struct ToolContent {
     pub text: String,
 }
 
+fn text_content(text: impl Into<String>) -> ToolContent {
+    ToolContent {
+        content_type: "text".to_string(),
+        text: text.into(),
+    }
+}
+
+fn text_result(text: impl Into<String>, is_error: bool) -> ToolCallResult {
+    ToolCallResult {
+        content: vec![text_content(text)],
+        is_error: Some(is_error),
+    }
+}
+
+fn json_object(value: Value) -> serde_json::Map<String, Value> {
+    match value {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    }
+}
+
+#[must_use]
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
@@ -51,7 +74,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             description: "Convert Japanese text to speech with VOICEVOX. Splits long messages automatically for client compatibility.".to_string(),
             input_schema: ToolInputSchema {
                 schema_type: "object".to_string(),
-                properties: json!({
+                properties: json_object(json!({
                     "text": {
                         "type": "string",
                         "description": "Japanese text (15-50 chars optimal, 100+ may need splitting)"
@@ -72,10 +95,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "description": "Lower latency mode",
                         "default": true
                     }
-                })
-                .as_object()
-                .unwrap_or(&serde_json::Map::new())
-                .clone(),
+                })),
                 required: Some(vec!["text".to_string(), "style_id".to_string()]),
             },
         },
@@ -84,7 +104,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             description: "Get available VOICEVOX voice styles for text_to_speech. Use this before synthesizing speech to discover available style_ids and their characteristics. Filter by speaker_name or style_name (e.g., 'ノーマル', 'ささやき', 'なみだめ') to find appropriate voices. Returns style_id, speaker name, and style type for each voice. Call this when users ask about available voices or when you need to select an appropriate voice style based on context.".to_string(),
             input_schema: ToolInputSchema {
                 schema_type: "object".to_string(),
-                properties: json!({
+                properties: json_object(json!({
                     "speaker_name": {
                         "type": "string",
                         "description": "Filter by speaker name (partial match)"
@@ -93,10 +113,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "description": "Filter by style name (partial match)"
                     }
-                })
-                .as_object()
-                .unwrap_or(&serde_json::Map::new())
-                .clone(),
+                })),
                 required: None,
             },
         },
@@ -123,6 +140,11 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 ///
 /// - `Ok(ToolCallResult)`: Successful tool execution result
 /// - `Err(anyhow::Error)`: Tool execution error or unknown tool
+///
+/// # Errors
+///
+/// Returns an error if request dispatch fails or a tool handler returns an error.
+#[allow(clippy::future_not_send)]
 pub async fn execute_tool_request(
     tool_name: &str,
     arguments: Value,
@@ -131,11 +153,12 @@ pub async fn execute_tool_request(
     match tool_name {
         "text_to_speech" => handle_text_to_speech_cancellable(arguments, cancel_rx).await,
         "list_voice_styles" => handle_list_voice_styles(arguments).await,
-        _ => Err(anyhow!("Unknown tool: {}", tool_name)),
+        _ => Err(anyhow!("Unknown tool: {tool_name}")),
     }
 }
 
 const MAX_STYLE_ID: u32 = 1000;
+const MAX_TEXT_LENGTH: usize = 10_000;
 
 #[derive(Debug, Deserialize)]
 struct SynthesizeParams {
@@ -147,11 +170,11 @@ struct SynthesizeParams {
     streaming: bool,
 }
 
-fn default_rate() -> f32 {
+const fn default_rate() -> f32 {
     1.0
 }
 
-fn default_streaming() -> bool {
+const fn default_streaming() -> bool {
     true
 }
 
@@ -161,10 +184,31 @@ struct ListVoiceStylesParams {
     style_name: Option<String>,
 }
 
+fn cancelled_message(reason: &str) -> String {
+    if reason.is_empty() {
+        "Audio playback cancelled by client".to_string()
+    } else {
+        format!("Audio playback cancelled: {reason}")
+    }
+}
+
+/// Executes the `text_to_speech` tool without external cancellation.
+///
+/// # Errors
+///
+/// Returns an error if parameter validation, synthesis, or playback setup fails.
+#[allow(clippy::future_not_send)]
 pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
     handle_text_to_speech_cancellable(arguments, None).await
 }
 
+/// Executes the `text_to_speech` tool with optional cancellation support.
+///
+/// # Errors
+///
+/// Returns an error if parameters are invalid, synthesis fails, playback fails, or
+/// daemon communication fails in non-streaming mode.
+#[allow(clippy::future_not_send)]
 pub async fn handle_text_to_speech_cancellable(
     arguments: Value,
     cancel_rx: Option<oneshot::Receiver<String>>,
@@ -177,7 +221,6 @@ pub async fn handle_text_to_speech_cancellable(
         .then_some(())
         .ok_or_else(|| anyhow!("Text cannot be empty"))?;
 
-    const MAX_TEXT_LENGTH: usize = 10_000;
     (text.len() <= MAX_TEXT_LENGTH)
         .then_some(())
         .ok_or_else(|| {
@@ -210,10 +253,17 @@ pub async fn handle_text_to_speech_cancellable(
     }
 }
 
+#[allow(clippy::future_not_send)]
 async fn handle_streaming_synthesis_cancellable(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<ToolCallResult> {
+    let SynthesizeParams {
+        text,
+        style_id,
+        rate,
+        streaming: _,
+    } = params;
     let stream = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to create audio output stream")?;
     let sink = Arc::new(Sink::connect_new(stream.mixer()));
@@ -222,12 +272,12 @@ async fn handle_streaming_synthesis_cancellable(
         .await
         .context("Failed to create streaming synthesizer")?;
 
-    let text = params.text.clone();
     let sink_clone = Arc::clone(&sink);
+    let text_len = text.len();
 
     let synthesis_and_playback_fut = async move {
         synthesizer
-            .synthesize_streaming(&text, params.style_id, params.rate, &sink_clone)
+            .synthesize_streaming(&text, style_id, rate, &sink_clone)
             .await
             .context("Streaming synthesis failed")?;
 
@@ -247,38 +297,24 @@ async fn handle_streaming_synthesis_cancellable(
             }
             reason = &mut cancel_rx => {
                 sink.stop();
-                let detail = reason.unwrap_or_default();
-                let message = if detail.is_empty() {
-                    "Audio playback cancelled by client".to_string()
-                } else {
-                    format!("Audio playback cancelled: {detail}")
-                };
-                return Ok(ToolCallResult {
-                    content: vec![ToolContent {
-                        content_type: "text".to_string(),
-                        text: message,
-                    }],
-                    is_error: Some(true),
-                });
+                let reason = reason.unwrap_or_default();
+                let message = cancelled_message(&reason);
+                return Ok(text_result(message, true));
             }
         }
     } else {
         synthesis_and_playback_fut.await?;
     }
 
-    Ok(ToolCallResult {
-        content: vec![ToolContent {
-            content_type: "text".to_string(),
-            text: format!(
-                "Successfully synthesized {} characters using style ID {} in streaming mode",
-                params.text.len(),
-                params.style_id
-            ),
-        }],
-        is_error: Some(false),
-    })
+    Ok(text_result(
+        format!(
+            "Successfully synthesized {text_len} characters using style ID {style_id} in streaming mode",
+        ),
+        false,
+    ))
 }
 
+#[allow(clippy::future_not_send)]
 async fn handle_daemon_synthesis(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
@@ -287,13 +323,10 @@ async fn handle_daemon_synthesis(
     let mut client = match DaemonClient::connect_with_retry().await {
         Ok(client) => client,
         Err(e) => {
-            return Ok(ToolCallResult {
-                content: vec![ToolContent {
-                    content_type: "text".to_string(),
-                    text: format!("Failed to connect to VOICEVOX daemon: {e}"),
-                }],
-                is_error: Some(true),
-            });
+            return Ok(text_result(
+                format!("Failed to connect to VOICEVOX daemon: {e}"),
+                true,
+            ));
         }
     };
 
@@ -309,30 +342,13 @@ async fn handle_daemon_synthesis(
     let style_id = params.style_id;
 
     match play_daemon_audio_with_cancellation(wav_data, cancel_rx).await? {
-        PlaybackOutcome::Completed => Ok(ToolCallResult {
-            content: vec![ToolContent {
-                content_type: "text".to_string(),
-                text: format!(
-                    "Successfully synthesized {text_len} characters using style ID {style_id} (audio size: {audio_size} bytes)"
-                ),
-            }],
-            is_error: Some(false),
-        }),
-        PlaybackOutcome::Cancelled(reason) => {
-            let message = if reason.is_empty() {
-                "Audio playback cancelled by client".to_string()
-            } else {
-                format!("Audio playback cancelled: {reason}")
-            };
-
-            Ok(ToolCallResult {
-                content: vec![ToolContent {
-                    content_type: "text".to_string(),
-                    text: message,
-                }],
-                is_error: Some(true),
-            })
-        }
+        PlaybackOutcome::Completed => Ok(text_result(
+            format!(
+                "Successfully synthesized {text_len} characters using style ID {style_id} (audio size: {audio_size} bytes)"
+            ),
+            false,
+        )),
+        PlaybackOutcome::Cancelled(reason) => Ok(text_result(cancelled_message(&reason), true)),
     }
 }
 
@@ -341,6 +357,7 @@ enum PlaybackOutcome {
     Cancelled(String),
 }
 
+#[allow(clippy::future_not_send)]
 async fn play_daemon_audio_with_cancellation(
     wav_data: Vec<u8>,
     cancel_rx: Option<oneshot::Receiver<String>>,
@@ -357,6 +374,7 @@ async fn play_daemon_audio_with_cancellation(
     }
 }
 
+#[allow(clippy::future_not_send)]
 async fn play_low_latency_with_cancel(
     wav_data: Vec<u8>,
     cancel_rx: &mut oneshot::Receiver<String>,
@@ -402,12 +420,10 @@ async fn play_system_player_with_cancel(
     let temp_file = create_temp_wav_file(wav_data)?;
     let temp_path = temp_file.path().to_owned();
 
-    if let Some(outcome) = run_player_with_cancel("afplay", &temp_path, cancel_rx).await? {
-        return Ok(outcome);
-    }
-
-    if let Some(outcome) = run_player_with_cancel("play", &temp_path, cancel_rx).await? {
-        return Ok(outcome);
+    for command in ["afplay", "play"] {
+        if let Some(outcome) = run_player_with_cancel(command, &temp_path, cancel_rx).await? {
+            return Ok(outcome);
+        }
     }
 
     Err(anyhow!(
@@ -419,9 +435,8 @@ async fn run_player_with_cancel(
     temp_path: &Path,
     cancel_rx: &mut oneshot::Receiver<String>,
 ) -> Result<Option<PlaybackOutcome>> {
-    let mut child = match tokio::process::Command::new(command).arg(temp_path).spawn() {
-        Ok(child) => child,
-        Err(_) => return Ok(None),
+    let Ok(mut child) = tokio::process::Command::new(command).arg(temp_path).spawn() else {
+        return Ok(None);
     };
 
     tokio::select! {
@@ -442,6 +457,11 @@ async fn run_player_with_cancel(
     }
 }
 
+/// Executes the `list_voice_styles` tool with optional speaker/style filters.
+///
+/// # Errors
+///
+/// Returns an error if parameters are invalid or the daemon cannot be contacted.
 pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult> {
     let params: ListVoiceStylesParams =
         serde_json::from_value(arguments).context("Invalid parameters for list_voice_styles")?;
@@ -452,66 +472,78 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
 
     let speakers = client.list_speakers().await?;
 
-    let mut filtered_results = Vec::new();
+    let speaker_name_filter = params.speaker_name.as_ref().map(|s| s.to_lowercase());
+    let style_name_filter = params.style_name.as_ref().map(|s| s.to_lowercase());
+    let filtered_results: Vec<_> = speakers
+        .into_iter()
+        .filter_map(|speaker| {
+            let crate::voice::Speaker { name, styles, .. } = speaker;
 
-    for speaker in speakers {
-        if let Some(name_filter) = &params.speaker_name {
-            if !speaker
-                .name
-                .to_lowercase()
-                .contains(&name_filter.to_lowercase())
-            {
-                continue;
+            if let Some(name_filter) = &speaker_name_filter {
+                if !name.to_lowercase().contains(name_filter) {
+                    return None;
+                }
             }
-        }
 
-        let filtered_styles = if let Some(style_filter) = &params.style_name {
-            speaker
-                .styles
+            let filtered_styles = styles
                 .into_iter()
                 .filter(|style| {
-                    style
-                        .name
-                        .to_lowercase()
-                        .contains(&style_filter.to_lowercase())
+                    style_name_filter
+                        .as_ref()
+                        .is_none_or(|style_filter| style.name.to_lowercase().contains(style_filter))
                 })
-                .collect::<Vec<_>>()
-        } else {
-            speaker.styles.to_vec()
-        };
+                .collect::<Vec<_>>();
 
-        if !filtered_styles.is_empty() {
-            filtered_results.push((speaker.name, filtered_styles));
-        }
+            (!filtered_styles.is_empty()).then_some((name, filtered_styles))
+        })
+        .collect();
+
+    let result_text = render_voice_styles_result(&filtered_results);
+    Ok(text_result(result_text, false))
+}
+
+fn render_voice_styles_result<Name>(filtered_results: &[(Name, Vec<crate::voice::Style>)]) -> String
+where
+    Name: std::fmt::Display,
+{
+    if filtered_results.is_empty() {
+        return "No speakers found matching the criteria.".to_string();
     }
 
     let mut result_text = String::new();
-    if filtered_results.is_empty() {
-        result_text.push_str("No speakers found matching the criteria.");
-    } else {
-        for (speaker_name, styles) in &filtered_results {
-            result_text.push_str(&format!("Speaker: {}\n", speaker_name));
-            result_text.push_str("Styles:\n");
-            for style in styles {
-                result_text.push_str(&format!("  - {} (ID: {})\n", style.name, style.id));
-            }
-            result_text.push('\n');
+    for (speaker_name, styles) in filtered_results {
+        let _ = writeln!(result_text, "Speaker: {speaker_name}");
+        result_text.push_str("Styles:\n");
+        for style in styles {
+            let _ = writeln!(result_text, "  - {} (ID: {})", style.name, style.id);
         }
-        result_text.push_str(&format!("Total speakers found: {}", filtered_results.len()));
+        result_text.push('\n');
     }
-    Ok(ToolCallResult {
-        content: vec![ToolContent {
-            content_type: "text".to_string(),
-            text: result_text.trim().to_string(),
-        }],
-        is_error: Some(false),
-    })
+    let _ = write!(
+        result_text,
+        "Total speakers found: {}",
+        filtered_results.len()
+    );
+    result_text.trim().to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[allow(clippy::future_not_send)]
+    async fn assert_tts_error_contains(args: Value, expected: &str) {
+        let error_text = match handle_text_to_speech(args).await {
+            Ok(result) => panic!("expected error, got success: {result:?}"),
+            Err(error) => error.to_string(),
+        };
+
+        assert!(
+            error_text.contains(expected),
+            "expected error containing '{expected}', got '{error_text}'"
+        );
+    }
 
     #[tokio::test]
     async fn test_text_to_speech_empty_text() {
@@ -521,12 +553,7 @@ mod tests {
             "streaming": false
         });
 
-        let result = handle_text_to_speech(args).await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Text cannot be empty"));
+        assert_tts_error_contains(args, "Text cannot be empty").await;
     }
 
     #[tokio::test]
@@ -538,9 +565,7 @@ mod tests {
             "streaming": false
         });
 
-        let result = handle_text_to_speech(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Text too long"));
+        assert_tts_error_contains(args, "Text too long").await;
     }
 
     #[tokio::test]
@@ -552,12 +577,7 @@ mod tests {
             "streaming": false
         });
 
-        let result = handle_text_to_speech(args).await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Rate must be between 0.5 and 2.0"));
+        assert_tts_error_contains(args, "Rate must be between 0.5 and 2.0").await;
     }
 
     #[tokio::test]
@@ -568,8 +588,6 @@ mod tests {
             "streaming": false
         });
 
-        let result = handle_text_to_speech(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid style_id"));
+        assert_tts_error_contains(args, "Invalid style_id").await;
     }
 }

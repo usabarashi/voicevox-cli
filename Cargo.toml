@@ -6,6 +6,8 @@ authors = ["usabarashi"]
 description = "VOICEVOX CLI tool for text-to-speech synthesis"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/usabarashi/voicevox-cli"
+keywords = ["voicevox", "tts", "cli", "speech", "audio"]
+categories = ["command-line-utilities", "multimedia::audio"]
 
 [[bin]]
 name = "voicevox-say"
@@ -26,28 +28,24 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = "1.0"
 thiserror = "2.0"
-clap = { version = "4.5", features = ["derive", "env", "unicode", "wrap_help"] }
+clap = { version = "4.5", features = ["derive", "unicode", "wrap_help"] }
 
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 bincode = { version = "2.0", features = ["serde"] }
 dirs = "6.0"
-tempfile = "3.23"
+tempfile = "=3.23.0"
 
 # MCP Server dependencies
-jsonrpc-lite = "0.6"
-[target.'cfg(unix)'.dependencies]
-nix = { version = "0.30", features = ["signal", "socket", "uio", "fs"] }
 
 rodio = { version = "0.21", default-features = false, features = ["playback", "wav"] }
 
-tokio = { version = "1.47", features = [
+tokio = { version = "1.47", default-features = false, features = [
     "net", "process", "time", "signal", "sync",
     "io-util", "io-std", "fs",
     "rt-multi-thread", "macros",
-    "tracing",
 ] }
-tokio-util = { version = "0.7", features = ["codec", "io-util"] }
+tokio-util = { version = "0.7", default-features = false, features = ["codec"] }
 futures-util = { version = "0.3", features = ["sink"] }
 
 voicevox_core = { git = "https://github.com/VOICEVOX/voicevox_core.git", rev = "89f1e942ce6b239e1cead4aede0d101f2956043a", features = ["load-onnxruntime"], default-features = false }
@@ -86,4 +84,3 @@ incremental = true
 inherits = "release"
 debug = true
 strip = false
-

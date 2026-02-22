@@ -5,48 +5,74 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
-use tokio::sync::Mutex;
-use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
+use tokio::sync::{Mutex, RwLock};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::core::{CoreSynthesis, VoicevoxCore};
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 
 pub struct DaemonState {
-    core: VoicevoxCore,
-    style_to_model_map: Arc<Mutex<HashMap<u32, u32>>>,
-    all_speakers: Arc<Mutex<Vec<crate::voice::Speaker>>>,
-    available_models: Arc<Mutex<Vec<crate::voice::AvailableModel>>>,
+    core: Mutex<VoicevoxCore>,
+    style_to_model_map: RwLock<HashMap<u32, u32>>,
+    all_speakers: RwLock<Vec<crate::voice::Speaker>>,
+    available_models: RwLock<Vec<crate::voice::AvailableModel>>,
 }
 
 impl DaemonState {
-    pub async fn new() -> Result<Self> {
+    /// Builds daemon state and precomputes model/style metadata used by requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if VOICEVOX core initialization fails, model discovery fails,
+    /// or the style-to-model mapping cannot be constructed.
+    pub fn new() -> Result<Self> {
         let core = VoicevoxCore::new()?;
-        let style_to_model_map = Arc::new(Mutex::new(HashMap::new()));
-
         let (mapping, speakers, models) =
-            crate::voice::build_style_to_model_map_async_with_progress(&core, |_, _, _| {}).await?;
-        *style_to_model_map.lock().await = mapping;
-        let all_speakers = Arc::new(Mutex::new(speakers));
-        let available_models = Arc::new(Mutex::new(models));
+            crate::voice::build_style_to_model_map_async_with_progress(&core, |_, _, _| {})?;
 
-        Ok(DaemonState {
-            core,
-            style_to_model_map,
-            all_speakers,
-            available_models,
+        Ok(Self {
+            core: Mutex::new(core),
+            style_to_model_map: RwLock::new(mapping),
+            all_speakers: RwLock::new(speakers),
+            available_models: RwLock::new(models),
         })
     }
 
     async fn get_model_id_from_style(&self, style_id: u32) -> u32 {
-        let map = self.style_to_model_map.lock().await;
+        self.style_to_model_map
+            .read()
+            .await
+            .get(&style_id)
+            .copied()
+            .unwrap_or_else(|| {
+                eprintln!(
+                    "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
+                );
+                style_id
+            })
+    }
 
-        if let Some(&model_id) = map.get(&style_id) {
-            return model_id;
+    async fn get_model_path(&self, model_id: u32) -> Option<PathBuf> {
+        self.available_models
+            .read()
+            .await
+            .iter()
+            .find(|model| model.model_id == model_id)
+            .map(|model| model.file_path.clone())
+    }
+
+    async fn speakers_list_response(&self) -> OwnedResponse {
+        let speakers = self.all_speakers.read().await.clone();
+        let style_to_model = self.style_to_model_map.read().await.clone();
+        OwnedResponse::SpeakersListWithModels {
+            speakers,
+            style_to_model,
         }
-        eprintln!(
-            "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
-        );
-        style_id
+    }
+
+    async fn models_list_response(&self) -> OwnedResponse {
+        let models = self.available_models.read().await.clone();
+        OwnedResponse::ModelsList { models }
     }
 
     pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
@@ -59,34 +85,28 @@ impl DaemonState {
                 options: _,
             } => {
                 let model_id = self.get_model_id_from_style(style_id).await;
+                let model_path = self.get_model_path(model_id).await;
 
-                if let Err(e) = self.core.load_specific_model(&model_id.to_string()) {
-                    eprintln!("Failed to load model {model_id}: {e}");
-                    return OwnedResponse::Error {
-                        message: format!("Failed to load model {model_id} for synthesis: {e}"),
-                    };
-                }
+                let synthesis_result = {
+                    let core = self.core.lock().await;
 
-                let synthesis_result = self.core.synthesize(&text, style_id);
-                let available_models = self.available_models.lock().await;
-                if let Some(model) = available_models.iter().find(|m| m.model_id == model_id) {
-                    let path_str = match model.file_path.to_str() {
-                        Some(s) => s,
-                        None => {
-                            eprintln!("Model path contains invalid UTF-8: {:?}", model.file_path);
-                            return OwnedResponse::Error {
-                                message: format!(
-                                    "Model path contains invalid UTF-8: {:?}",
-                                    model.file_path
-                                ),
-                            };
-                        }
-                    };
-                    match self.core.unload_voice_model_by_path(path_str) {
-                        Ok(_) => {}
-                        Err(e) => eprintln!("Failed to unload model {model_id}: {e}"),
+                    if let Err(e) = core.load_specific_model(&model_id.to_string()) {
+                        eprintln!("Failed to load model {model_id}: {e}");
+                        return OwnedResponse::Error {
+                            message: format!("Failed to load model {model_id} for synthesis: {e}"),
+                        };
                     }
-                } else {
+
+                    let synthesis_result = core.synthesize(&text, style_id);
+                    if let Some(model_path) = model_path.as_deref() {
+                        if let Err(e) = core.unload_voice_model_by_path(model_path) {
+                            eprintln!("Failed to unload model {model_id}: {e}");
+                        }
+                    }
+                    synthesis_result
+                };
+
+                if model_path.is_none() {
                     eprintln!("Model {model_id} not found in available models");
                 }
 
@@ -98,68 +118,58 @@ impl DaemonState {
                 }
             }
 
-            OwnedRequest::ListSpeakers => {
-                let all_speakers = self.all_speakers.lock().await.clone();
-                let style_to_model = self.style_to_model_map.lock().await.clone();
-                OwnedResponse::SpeakersListWithModels {
-                    speakers: all_speakers,
-                    style_to_model,
-                }
-            }
+            OwnedRequest::ListSpeakers => self.speakers_list_response().await,
 
-            OwnedRequest::ListModels => {
-                let models = self.available_models.lock().await.clone();
-                OwnedResponse::ModelsList { models }
-            }
+            OwnedRequest::ListModels => self.models_list_response().await,
         }
     }
 }
 
-pub async fn handle_client(mut stream: UnixStream, state: Arc<Mutex<DaemonState>>) -> Result<()> {
-    loop {
-        let request = {
-            let (reader, _writer) = stream.split();
-            let mut framed_reader = FramedRead::new(reader, LengthDelimitedCodec::new());
+/// Handles a single connected daemon client until the stream closes or decoding fails.
+///
+/// # Errors
+///
+/// Returns an error if reading from or writing to the framed Unix stream fails.
+pub async fn handle_client(stream: UnixStream, state: Arc<DaemonState>) -> Result<()> {
+    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
-            match framed_reader.next().await {
-                Some(Ok(data)) => match bincode::serde::decode_from_slice::<DaemonRequest, _>(
-                    &data,
-                    bincode::config::standard(),
-                ) {
-                    Ok((req, _)) => req,
-                    Err(_) => {
-                        break;
-                    }
-                },
-                _ => break,
-            }
+    while let Some(frame) = framed.next().await {
+        let Ok(data) = frame else { break };
+
+        let Ok((request, _)) = bincode::serde::decode_from_slice::<DaemonRequest, _>(
+            &data,
+            bincode::config::standard(),
+        ) else {
+            break;
         };
 
-        let response = {
-            let state = state.lock().await;
-            state.handle_request(request).await
+        let response = state.handle_request(request).await;
+        let Ok(response_data) =
+            bincode::serde::encode_to_vec(&response, bincode::config::standard())
+        else {
+            break;
         };
 
-        {
-            let (_reader, writer) = stream.split();
-            let mut framed_writer = FramedWrite::new(writer, LengthDelimitedCodec::new());
-
-            match bincode::serde::encode_to_vec(&response, bincode::config::standard()) {
-                Ok(response_data) => {
-                    if framed_writer.send(response_data.into()).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => {
-                    break;
-                }
-            }
+        if framed.send(response_data.into()).await.is_err() {
+            break;
         }
     }
 
     Ok(())
 }
 
+async fn wait_for_shutdown_signal() -> Result<()> {
+    signal::ctrl_c().await?;
+    println!("\nShutting down daemon...");
+    Ok(())
+}
+
+/// Runs the daemon accept loop and serves requests over a Unix domain socket.
+///
+/// # Errors
+///
+/// Returns an error if socket cleanup/bind fails, daemon state initialization fails,
+/// socket accept fails, or final socket cleanup fails during shutdown.
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
@@ -169,31 +179,27 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     println!("VOICEVOX daemon started successfully");
     println!("Listening on: {}", socket_path.display());
 
-    let state = Arc::new(Mutex::new(DaemonState::new().await?));
+    let state = Arc::new(DaemonState::new()?);
 
     if !foreground {
         println!("Running in background mode. Use Ctrl+C to stop gracefully.");
     }
 
-    let shutdown = async {
-        signal::ctrl_c().await.expect("Failed to listen for ctrl-c");
-        println!("\nShutting down daemon...");
-    };
-
     let server = async {
         loop {
-            if let Ok((stream, _)) = listener.accept().await {
-                let state_clone = Arc::clone(&state);
-                tokio::spawn(async move {
-                    let _ = handle_client(stream, state_clone).await;
-                });
-            }
+            let (stream, _) = listener.accept().await?;
+            let state_clone = Arc::clone(&state);
+            tokio::spawn(async move {
+                let _ = handle_client(stream, state_clone).await;
+            });
         }
+        #[allow(unreachable_code)]
+        Ok::<(), anyhow::Error>(())
     };
 
     tokio::select! {
-        _ = server => {},
-        _ = shutdown => {},
+        result = server => result?,
+        result = wait_for_shutdown_signal() => result?,
     }
 
     if socket_path.exists() {

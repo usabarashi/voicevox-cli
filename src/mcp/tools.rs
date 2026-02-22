@@ -494,23 +494,29 @@ async fn play_system_player_with_cancel(
     let temp_file = create_temp_wav_file(wav_data)?;
     let temp_path = temp_file.path().to_owned();
 
+    let mut last_error = None;
+
     for command in ["afplay", "play"] {
-        if let Some(outcome) = run_player_with_cancel(command, &temp_path, cancel_rx).await? {
-            return Ok(outcome);
+        match run_player_with_cancel(command, &temp_path, cancel_rx).await {
+            Ok(Some(outcome)) => return Ok(outcome),
+            Ok(None) => {}
+            Err(error) => last_error = Some(error),
         }
     }
 
-    Err(anyhow!(
-        "No audio player found. Install sox or use -o to save file"
-    ))
+    Err(last_error
+        .unwrap_or_else(|| anyhow!("No audio player found. Install sox or use -o to save file")))
 }
+
 async fn run_player_with_cancel(
     command: &str,
     temp_path: &Path,
     cancel_rx: &mut oneshot::Receiver<String>,
 ) -> Result<Option<PlaybackOutcome>> {
-    let Ok(mut child) = tokio::process::Command::new(command).arg(temp_path).spawn() else {
-        return Ok(None);
+    let mut child = match tokio::process::Command::new(command).arg(temp_path).spawn() {
+        Ok(child) => child,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("Failed to spawn {command}")),
     };
 
     tokio::select! {
@@ -519,7 +525,12 @@ async fn run_player_with_cancel(
             if status.success() {
                 Ok(Some(PlaybackOutcome::Completed))
             } else {
-                Ok(None)
+                Err(anyhow!(
+                    "{command} exited with status {}",
+                    status
+                        .code()
+                        .map_or_else(|| "terminated by signal".to_string(), |code| code.to_string())
+                ))
             }
         }
         reason = cancel_rx => {
@@ -563,21 +574,31 @@ where
         return "No speakers found matching the criteria.".to_string();
     }
 
-    let mut result_text = String::new();
-    for (speaker_name, styles) in filtered_results {
-        let _ = writeln!(result_text, "Speaker: {speaker_name}");
-        result_text.push_str("Styles:\n");
-        for style in styles {
-            let _ = writeln!(result_text, "  - {} (ID: {})", style.name, style.id);
-        }
-        result_text.push('\n');
-    }
+    let mut result_text = filtered_results
+        .iter()
+        .map(render_voice_styles_block)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _ = writeln!(result_text);
     let _ = write!(
         result_text,
         "Total speakers found: {}",
         filtered_results.len()
     );
-    result_text.trim().to_string()
+    result_text
+}
+
+fn render_voice_styles_block<Name>(
+    (speaker_name, styles): &(Name, Vec<crate::voice::Style>),
+) -> String
+where
+    Name: std::fmt::Display,
+{
+    let mut block = format!("Speaker: {speaker_name}\nStyles:\n");
+    for style in styles {
+        let _ = writeln!(block, "  - {} (ID: {})", style.name, style.id);
+    }
+    block.trim_end().to_string()
 }
 
 #[cfg(test)]

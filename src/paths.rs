@@ -26,6 +26,10 @@ fn existing_dir_from_env(var: &str) -> Option<PathBuf> {
         .filter(|path| path.exists() && path.is_dir())
 }
 
+fn is_existing_dir(path: &Path) -> bool {
+    path.exists() && path.is_dir()
+}
+
 fn dir_contains_vvm_files(dir: &Path) -> bool {
     std::fs::read_dir(dir).ok().is_some_and(|entries| {
         entries.filter_map(Result::ok).any(|entry| {
@@ -138,16 +142,20 @@ pub fn find_models_dir() -> Result<PathBuf> {
         return Ok(models_dir);
     }
 
-    // Search directories following XDG Base Directory specification
-    let search_dirs: Vec<_> = xdg_app_data_dirs().into_iter().flatten().collect();
+    let xdg_dirs = xdg_app_data_dirs();
 
-    if let Some(models_dir) = search_dirs.iter().find_map(|dir| preferred_models_dir(dir)) {
+    if let Some(models_dir) = xdg_dirs
+        .iter()
+        .flatten()
+        .find_map(|dir| preferred_models_dir(dir))
+    {
         return Ok(models_dir);
     }
 
-    if let Some(dir) = search_dirs
+    if let Some(dir) = xdg_dirs
         .into_iter()
-        .find(|dir| dir.exists() && dir.is_dir())
+        .flatten()
+        .find(|dir| is_existing_dir(dir))
     {
         return Ok(dir);
     }
@@ -189,45 +197,54 @@ pub fn find_openjtalk_dict() -> Result<PathBuf> {
         }
     }
 
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            let installed_path = exe_dir
-                .join("../share/voicevox")
-                .join(OPENJTALK_DICT_SUBDIR);
-            if installed_path.exists() && installed_path.is_dir() {
-                return Ok(installed_path);
-            }
-        }
+    if let Some(installed_path) = std::env::current_exe()
+        .ok()
+        .and_then(|current_exe| {
+            current_exe.parent().map(|exe_dir| {
+                exe_dir
+                    .join("../share/voicevox")
+                    .join(OPENJTALK_DICT_SUBDIR)
+            })
+        })
+        .filter(|path| is_existing_dir(path))
+    {
+        return Ok(installed_path);
     }
 
-    for dir in xdg_app_data_dirs().into_iter().flatten() {
-        // Check the old location first for backward compatibility
-        let dict_path = dir.join(OPENJTALK_DICT_SUBDIR);
-        if dict_path.exists() && dict_path.is_dir() {
-            return Ok(dict_path);
-        }
-
-        // Check the new location used by voicevox-download
-        let dict_dir = dir.join(DICT_SUBDIR);
-        if dict_dir.exists() && dict_dir.is_dir() {
-            // Look for open_jtalk_dic_* directories
-            if let Ok(entries) = std::fs::read_dir(&dict_dir) {
-                if let Some(path) = entries.flatten().map(|entry| entry.path()).find(|path| {
-                    path.is_dir()
-                        && path.file_name().is_some_and(|name| {
-                            name.to_string_lossy().starts_with("open_jtalk_dic_")
-                        })
-                }) {
-                    return Ok(path);
-                }
-            }
-        }
+    if let Some(dict_path) = xdg_app_data_dirs()
+        .into_iter()
+        .flatten()
+        .find_map(|dir| find_openjtalk_dict_in_xdg_dir(&dir))
+    {
+        return Ok(dict_path);
     }
 
     Err(anyhow!(
         "OpenJTalk dictionary not found. Please run 'voicevox-setup' to download required resources, \
          or set VOICEVOX_OPENJTALK_DICT environment variable"
     ))
+}
+
+fn find_openjtalk_dict_in_xdg_dir(dir: &Path) -> Option<PathBuf> {
+    let legacy_dict = dir.join(OPENJTALK_DICT_SUBDIR);
+    if is_existing_dir(&legacy_dict) {
+        return Some(legacy_dict);
+    }
+
+    let dict_dir = dir.join(DICT_SUBDIR);
+    is_existing_dir(&dict_dir)
+        .then(|| std::fs::read_dir(&dict_dir).ok())
+        .flatten()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.is_dir()
+                && path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("open_jtalk_dic_"))
+        })
 }
 
 /// Helper function to find ONNX Runtime libraries in a directory

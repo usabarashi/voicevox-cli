@@ -39,13 +39,13 @@ impl StreamingSynthesizer {
         sink: &Sink,
     ) -> Result<()> {
         let segments = self.text_splitter.split(text);
-        let mut playback_started = false;
+        sink.play();
 
-        for (i, segment) in segments.iter().enumerate() {
-            if segment.trim().is_empty() {
-                continue;
-            }
-
+        for (i, segment) in segments
+            .iter()
+            .enumerate()
+            .filter(|(_, segment)| !segment.trim().is_empty())
+        {
             let options = crate::ipc::OwnedSynthesizeOptions { rate };
             let wav_data = self
                 .daemon_client
@@ -58,11 +58,6 @@ impl StreamingSynthesizer {
                 .with_context(|| format!("Failed to decode audio for segment {i}"))?;
 
             sink.append(source);
-
-            if !playback_started {
-                sink.play();
-                playback_started = true;
-            }
         }
 
         Ok(())

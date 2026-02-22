@@ -192,20 +192,22 @@ fn find_vvm_files(dir: &Path) -> Result<Vec<PathBuf>> {
         return Ok(Vec::new());
     }
 
-    let mut entries = std::fs::read_dir(dir)
-        .map_err(|e| anyhow!("Failed to read directory {}: {e}", dir.display()))?;
-
-    entries.try_fold(Vec::new(), |mut files, entry_result| {
-        let entry =
-            entry_result.map_err(|e| anyhow!("Failed to read entry in {}: {e}", dir.display()))?;
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "vvm") {
-            files.push(path);
-        } else if path.is_dir() {
-            files.extend(find_vvm_files(&path)?);
-        }
-        Ok(files)
-    })
+    std::fs::read_dir(dir)
+        .map_err(|e| anyhow!("Failed to read directory {}: {e}", dir.display()))?
+        .try_fold(Vec::new(), |mut files, entry_result| {
+            let entry = entry_result
+                .map_err(|e| anyhow!("Failed to read entry in {}: {e}", dir.display()))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|e| anyhow!("Failed to inspect entry in {}: {e}", dir.display()))?;
+            let path = entry.path();
+            if file_type.is_file() && path.extension().is_some_and(|ext| ext == "vvm") {
+                files.push(path);
+            } else if file_type.is_dir() {
+                files.extend(find_vvm_files(&path)?);
+            }
+            Ok(files)
+        })
 }
 
 fn extract_model_id_from_path(path: &Path) -> Option<u32> {

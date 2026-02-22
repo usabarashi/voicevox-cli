@@ -80,20 +80,30 @@ enum ExecutionDecision {
     Exit(i32),
 }
 
+fn socket_path_from_matches(matches: &clap::ArgMatches) -> PathBuf {
+    matches
+        .get_one::<String>("socket-path")
+        .map_or_else(get_socket_path, PathBuf::from)
+}
+
+fn parse_control_command(matches: &clap::ArgMatches) -> ControlCommand {
+    if matches.get_flag("stop") {
+        ControlCommand::Stop
+    } else if matches.get_flag("status") {
+        ControlCommand::Status
+    } else if matches.get_flag("restart") {
+        ControlCommand::Restart
+    } else {
+        ControlCommand::None
+    }
+}
+
 fn parse_flags(matches: &clap::ArgMatches) -> DaemonFlags {
     DaemonFlags {
         foreground: matches.get_flag("foreground"),
         detach: matches.get_flag("detach"),
         start: matches.get_flag("start"),
-        control: if matches.get_flag("stop") {
-            ControlCommand::Stop
-        } else if matches.get_flag("status") {
-            ControlCommand::Status
-        } else if matches.get_flag("restart") {
-            ControlCommand::Restart
-        } else {
-            ControlCommand::None
-        },
+        control: parse_control_command(matches),
     }
 }
 
@@ -219,13 +229,37 @@ fn print_daemon_start_banner(socket_path: &Path) {
     println!("Models: Load and unload per request (no caching)");
 }
 
+async fn daemon_is_responsive(socket_path: &Path) -> bool {
+    UnixStream::connect(socket_path).await.is_ok()
+}
+
+fn print_socket_path_line(socket_path: &Path) {
+    println!("Socket: {}", socket_path.display());
+}
+
+fn print_pid_memory_info(pid_num: u32) {
+    let ps_output = std::process::Command::new("ps")
+        .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
+        .output();
+
+    let Ok(ps_output) = ps_output else {
+        return;
+    };
+    if !ps_output.status.success() {
+        return;
+    }
+
+    let info = String::from_utf8_lossy(&ps_output.stdout);
+    if let Some(line) = info.lines().nth(1).map(str::trim) {
+        println!("Memory Info: {line}");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = build_cli().get_matches();
 
-    let socket_path = matches
-        .get_one::<String>("socket-path")
-        .map_or_else(get_socket_path, PathBuf::from);
+    let socket_path = socket_path_from_matches(&matches);
     let flags = parse_flags(&matches);
 
     if maybe_handle_control_commands(&socket_path, flags).await? {
@@ -246,7 +280,7 @@ async fn main() -> Result<()> {
 async fn handle_stop_daemon(socket_path: &Path) -> Result<()> {
     println!("Stopping VOICEVOX daemon...");
 
-    if UnixStream::connect(socket_path).await.is_err() {
+    if !daemon_is_responsive(socket_path).await {
         println!("Daemon is not running");
         println!("   Socket: {}", socket_path.display());
         return Ok(());
@@ -285,7 +319,7 @@ async fn stop_daemon_process(pid: u32, socket_path: &Path) {
 
             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
-            if UnixStream::connect(socket_path).await.is_err() {
+            if !daemon_is_responsive(socket_path).await {
                 println!("Socket cleanup confirmed");
             } else {
                 println!("Daemon may still be running");
@@ -302,32 +336,19 @@ async fn handle_status_daemon(socket_path: &Path) -> Result<()> {
     println!("VOICEVOX Daemon Status");
     println!("========================");
 
-    if UnixStream::connect(socket_path).await.is_ok() {
+    if daemon_is_responsive(socket_path).await {
         println!("Status:  Running and responsive");
-        println!("Socket: {}", socket_path.display());
+        print_socket_path_line(socket_path);
 
         if let Ok(pids) = voicevox_cli::daemon::process::find_daemon_processes() {
             for pid_num in pids {
                 println!("Process ID: {pid_num}");
-
-                let ps_output = std::process::Command::new("ps")
-                    .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
-                    .output();
-
-                if let Ok(ps_output) = ps_output {
-                    if ps_output.status.success() {
-                        let info = String::from_utf8_lossy(&ps_output.stdout);
-                        let lines: Vec<&str> = info.lines().collect();
-                        if lines.len() > 1 {
-                            println!("Memory Info: {}", lines[1].trim());
-                        }
-                    }
-                }
+                print_pid_memory_info(pid_num);
             }
         }
     } else {
         println!("Status:  Not running");
-        println!("Socket: {}", socket_path.display());
+        print_socket_path_line(socket_path);
     }
 
     Ok(())

@@ -273,32 +273,25 @@ pub async fn ensure_resources_available() -> Result<()> {
 
 /// Clean up incomplete downloads (temporary files, partial downloads)
 fn cleanup_incomplete_downloads(target_dir: &std::path::Path) {
-    if let Ok(entries) = std::fs::read_dir(target_dir) {
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            let path = entry.path();
+    let Ok(entries) = std::fs::read_dir(target_dir) else {
+        return;
+    };
 
-            if is_temporary_download_file(&path) {
-                log_remove_file(&path, "temporary file", "Cleaned up temporary file");
-                continue;
-            }
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
 
-            if file_type.is_file() && is_likely_incomplete_download_file(&path) {
-                log_remove_file(&path, "incomplete file", "Cleaned up incomplete file");
-            }
+        if is_temporary_download_file(&path) {
+            log_remove_file(&path, "temporary file", "Cleaned up temporary file");
+            continue;
+        }
+
+        if file_type.is_file() && is_likely_incomplete_download_file(&path) {
+            log_remove_file(&path, "incomplete file", "Cleaned up incomplete file");
         }
     }
-}
-
-fn list_dir_paths(dir: &Path) -> Vec<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()
-        .into_iter()
-        .flat_map(|entries| entries.filter_map(Result::ok))
-        .map(|entry| entry.path())
-        .collect()
 }
 
 fn is_temporary_download_file(path: &Path) -> bool {
@@ -426,15 +419,18 @@ pub async fn launch_downloader_for_user() -> Result<()> {
 
 #[must_use]
 pub fn count_vvm_files_recursive(dir: &Path) -> usize {
-    list_dir_paths(dir)
-        .into_iter()
-        .map(|path| {
-            if path.is_file() {
-                count_vvm_file(&path)
-            } else if path.is_dir() {
-                count_vvm_files_recursive(&path)
-            } else {
-                0
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+
+    entries
+        .flatten()
+        .map(|entry| {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(file_type) if file_type.is_file() => count_vvm_file(&path),
+                Ok(file_type) if file_type.is_dir() => count_vvm_files_recursive(&path),
+                _ => 0,
             }
         })
         .sum()
@@ -454,12 +450,21 @@ fn count_vvm_file(path: &Path) -> usize {
 pub fn cleanup_unnecessary_files(dir: &Path) {
     let unnecessary_extensions = [".zip", ".tgz", ".tar.gz", ".tar", ".gz"];
 
-    for path in list_dir_paths(dir) {
-        if path.is_file() {
-            process_cleanup_file(&path, &unnecessary_extensions);
-        } else if path.is_dir() {
-            cleanup_unnecessary_files(&path);
-            try_remove_empty_directory(&path);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(file_type) if file_type.is_file() => {
+                process_cleanup_file(&path, &unnecessary_extensions);
+            }
+            Ok(file_type) if file_type.is_dir() => {
+                cleanup_unnecessary_files(&path);
+                try_remove_empty_directory(&path);
+            }
+            _ => {}
         }
     }
 }

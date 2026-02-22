@@ -36,6 +36,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        lib = pkgs.lib;
 
         # Fenix stable toolchain used for local builds/checks
         rustToolchain = fenix.packages.${system}.stable;
@@ -51,7 +52,7 @@
         };
 
         # Shared source filter
-        srcFiltered = pkgs.lib.cleanSourceWith {
+        srcFiltered = lib.cleanSourceWith {
           src = ./.;
           filter =
             path: type:
@@ -59,8 +60,8 @@
               baseName = baseNameOf path;
             in
             !(
-              (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
-              || (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+              (type == "directory" && lib.hasSuffix "-extract" baseName)
+              || (type == "regular" && lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
             );
         };
 
@@ -153,7 +154,6 @@
 
         voicevoxCli = mkRustPackage {
           pname = "voicevox-cli";
-          src = srcFiltered;
 
           postInstall = ''
             # Install download utility
@@ -179,11 +179,11 @@
 
       in
       {
-        packages = {
+        packages = rec {
           default = voicevoxCli;
-          voicevox-cli = voicevoxCli;
-          voicevox-say = voicevoxCli;
-          voicevoxResources = voicevoxResources;
+          voicevox-cli = default;
+          voicevox-say = default;
+          inherit voicevoxResources;
         };
 
         checks = {

@@ -3,6 +3,15 @@ use std::collections::HashMap;
 
 use crate::voice::{AvailableModel, Speaker};
 
+pub const DEFAULT_SYNTHESIS_RATE: f32 = 1.0;
+pub const MIN_SYNTHESIS_RATE: f32 = 0.5;
+pub const MAX_SYNTHESIS_RATE: f32 = 2.0;
+
+#[must_use]
+pub const fn is_valid_synthesis_rate(rate: f32) -> bool {
+    rate >= MIN_SYNTHESIS_RATE && rate <= MAX_SYNTHESIS_RATE
+}
+
 /// Request messages sent from client to daemon
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DaemonRequest {
@@ -24,7 +33,9 @@ pub struct SynthesizeOptions {
 
 impl Default for SynthesizeOptions {
     fn default() -> Self {
-        Self { rate: 1.0 }
+        Self {
+            rate: DEFAULT_SYNTHESIS_RATE,
+        }
     }
 }
 

@@ -122,6 +122,12 @@ fn unload_model_quietly(core: &crate::core::VoicevoxCore, model_path: &Path) {
     }
 }
 
+fn is_vvm_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("vvm"))
+}
+
 /// Scans the configured models directory for available VOICEVOX model files.
 ///
 /// # Errors
@@ -180,7 +186,7 @@ fn has_any_vvm_file(dir: &Path) -> bool {
                 return false;
             };
             let path = entry.path();
-            (file_type.is_file() && path.extension().is_some_and(|ext| ext == "vvm"))
+            (file_type.is_file() && is_vvm_path(&path))
                 || (file_type.is_dir() && has_any_vvm_file(&path))
         })
     })
@@ -191,22 +197,34 @@ fn find_vvm_files(dir: &Path) -> Result<Vec<PathBuf>> {
         return Ok(Vec::new());
     }
 
-    std::fs::read_dir(dir)
-        .map_err(|e| anyhow!("Failed to read directory {}: {e}", dir.display()))?
-        .try_fold(Vec::new(), |mut files, entry_result| {
-            let entry = entry_result
-                .map_err(|e| anyhow!("Failed to read entry in {}: {e}", dir.display()))?;
-            let file_type = entry
-                .file_type()
-                .map_err(|e| anyhow!("Failed to inspect entry in {}: {e}", dir.display()))?;
-            let path = entry.path();
-            if file_type.is_file() && path.extension().is_some_and(|ext| ext == "vvm") {
-                files.push(path);
-            } else if file_type.is_dir() {
-                files.extend(find_vvm_files(&path)?);
-            }
-            Ok(files)
-        })
+    let mut files = Vec::new();
+    collect_vvm_files(dir, &mut files)?;
+    Ok(files)
+}
+
+fn collect_vvm_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| anyhow!("Failed to read directory {}: {e}", dir.display()))?;
+
+    for entry_result in entries {
+        let entry =
+            entry_result.map_err(|e| anyhow!("Failed to read entry in {}: {e}", dir.display()))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| anyhow!("Failed to inspect entry in {}: {e}", dir.display()))?;
+        let path = entry.path();
+
+        if file_type.is_file() && is_vvm_path(&path) {
+            files.push(path);
+            continue;
+        }
+
+        if file_type.is_dir() {
+            collect_vvm_files(&path, files)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn extract_model_id_from_path(path: &Path) -> Option<u32> {

@@ -23,7 +23,7 @@ struct SocketFileGuard {
 }
 
 impl SocketFileGuard {
-    fn new(path: PathBuf) -> Self {
+    const fn new(path: PathBuf) -> Self {
         Self { path }
     }
 }
@@ -122,6 +122,7 @@ impl DaemonState {
 
             let synthesis_result = core.synthesize_with_rate(&text, style_id, rate);
             Self::unload_model_if_known(&core, model_id, model_path);
+            drop(core);
             synthesis_result
         };
 

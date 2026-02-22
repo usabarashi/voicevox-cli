@@ -9,6 +9,9 @@ use crate::client::{
     audio::{create_temp_wav_file, play_audio_from_memory},
     DaemonClient,
 };
+use crate::ipc::{
+    is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
+};
 use crate::synthesis::StreamingSynthesizer;
 
 // Tool Definition Types
@@ -170,7 +173,7 @@ struct SynthesizeParams {
 }
 
 const fn default_rate() -> f32 {
-    1.0
+    DEFAULT_SYNTHESIS_RATE
 }
 
 const fn default_streaming() -> bool {
@@ -226,9 +229,9 @@ fn filter_speakers(
 
             let filtered_styles = styles
                 .into_iter()
-                .filter(|style| match style_name_filter {
-                    Some(style_filter) => style.name.to_lowercase().contains(style_filter),
-                    None => true,
+                .filter(|style| {
+                    style_name_filter
+                        .is_none_or(|style_filter| style.name.to_lowercase().contains(style_filter))
                 })
                 .collect::<Vec<_>>();
 
@@ -282,17 +285,14 @@ fn validate_synthesize_params(params: &SynthesizeParams) -> Result<()> {
     (text_char_count <= MAX_TEXT_LENGTH)
         .then_some(())
         .ok_or_else(|| {
-            anyhow!(
-                "Text too long: {} characters (max: {})",
-                text_char_count,
-                MAX_TEXT_LENGTH
-            )
+            anyhow!("Text too long: {text_char_count} characters (max: {MAX_TEXT_LENGTH})")
         })?;
 
-    (0.5..=2.0)
-        .contains(&params.rate)
+    is_valid_synthesis_rate(params.rate)
         .then_some(())
-        .ok_or_else(|| anyhow!("Rate must be between 0.5 and 2.0"))?;
+        .ok_or_else(|| {
+            anyhow!("Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}")
+        })?;
 
     (params.style_id <= MAX_STYLE_ID)
         .then_some(())

@@ -5,6 +5,9 @@ use voicevox_core::{
     AccelerationMode, StyleId,
 };
 
+use crate::ipc::{
+    is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
+};
 use crate::paths::{find_models_dir, find_onnxruntime, find_openjtalk_dict};
 use crate::voice::Speaker;
 
@@ -88,8 +91,10 @@ impl VoicevoxCore {
             return Err(anyhow!("Empty text provided for synthesis"));
         }
 
-        if !(0.5..=2.0).contains(&rate) {
-            return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
+        if !is_valid_synthesis_rate(rate) {
+            return Err(anyhow!(
+                "Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}, got: {rate}"
+            ));
         }
 
         let style_id = StyleId::new(style_id);
@@ -122,7 +127,7 @@ impl CoreSynthesis for VoicevoxCore {
         text: &str,
         style_id: u32,
     ) -> Result<Self::Output<'a>, Self::Error> {
-        self.synthesize_with_rate(text, style_id, 1.0)
+        self.synthesize_with_rate(text, style_id, DEFAULT_SYNTHESIS_RATE)
             .map_err(|e| anyhow!("Speech synthesis failed for style_id {style_id}: {e}"))
     }
 

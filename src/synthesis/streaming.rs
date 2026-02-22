@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn test_text_splitter_long_text() {
         let splitter = TextSplitter {
-            delimiters: ['。'].into_iter().collect(),
+            delimiters: std::iter::once('。').collect(),
             max_length: 10,
         };
 

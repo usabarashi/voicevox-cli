@@ -6,7 +6,10 @@ use voicevox_cli::client::{
     emit_synthesized_audio, ensure_models_available, get_input_text, list_speakers_daemon,
     DaemonClient,
 };
-use voicevox_cli::ipc::OwnedSynthesizeOptions;
+use voicevox_cli::ipc::{
+    is_valid_synthesis_rate, OwnedSynthesizeOptions, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE,
+    MIN_SYNTHESIS_RATE,
+};
 use voicevox_cli::paths::{find_openjtalk_dict, get_socket_path};
 use voicevox_cli::voice::{print_voice_help, resolve_voice_dynamic, scan_available_models};
 
@@ -294,11 +297,16 @@ async fn run_synthesis_command(matches: &clap::ArgMatches) -> Result<()> {
     }
 
     let style_id = resolve_voice_from_args(matches)?;
-    let rate = matches.get_one::<f32>("rate").copied().unwrap_or(1.0);
+    let rate = matches
+        .get_one::<f32>("rate")
+        .copied()
+        .unwrap_or(DEFAULT_SYNTHESIS_RATE);
     let quiet = matches.get_flag("quiet");
     let output_file = matches.get_one::<String>("output-file").map(Path::new);
-    if !(0.5..=2.0).contains(&rate) {
-        return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
+    if !is_valid_synthesis_rate(rate) {
+        return Err(anyhow!(
+            "Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}, got: {rate}"
+        ));
     }
 
     let socket_path = socket_path_from_matches(matches);

@@ -61,14 +61,52 @@ fn unexpected_daemon_response(context: &str) -> anyhow::Error {
     anyhow!("Unexpected response {context}")
 }
 
-async fn connect_daemon_with_timeout(
+async fn connect_socket_with_timeout(
     socket_path: &Path,
     timeout_duration: Duration,
 ) -> Result<UnixStream> {
     timeout(timeout_duration, UnixStream::connect(socket_path))
         .await
-        .map_err(|_| anyhow!("Daemon connection timeout"))?
-        .map_err(|e| anyhow!("Failed to connect to daemon: {e}"))
+        .map_err(|_| anyhow!("Timeout connecting to daemon"))?
+        .map_err(|e| {
+            anyhow!(
+                "Failed to connect to daemon at {}: {e}",
+                socket_path.display()
+            )
+        })
+}
+
+async fn connect_daemon_with_timeout(
+    socket_path: &Path,
+    timeout_duration: Duration,
+) -> Result<UnixStream> {
+    connect_socket_with_timeout(socket_path, timeout_duration)
+        .await
+        .map_err(|_| anyhow!("Daemon connection timeout"))
+}
+
+async fn wait_for_daemon_startup(socket_path: &Path) -> Result<()> {
+    use std::io::Write as _;
+
+    let max_retries = DAEMON_STARTUP_MAX_RETRIES;
+    let mut retry_delay = DAEMON_STARTUP_INITIAL_DELAY;
+
+    for attempt in 0..max_retries {
+        match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(socket_path)).await {
+            Ok(Ok(_)) => return Ok(()),
+            Ok(Err(_)) | Err(_) if attempt < max_retries - 1 => {
+                print!(".");
+                std::io::stdout().flush()?;
+                tokio::time::sleep(retry_delay).await;
+                retry_delay = (retry_delay * 2).min(DAEMON_STARTUP_MAX_DELAY);
+            }
+            Ok(Err(_)) | Err(_) => {}
+        }
+    }
+
+    Err(anyhow!(
+        "Daemon not responding after {max_retries} attempts (~{DAEMON_STARTUP_TOTAL_TIME_ESTIMATE}s total)"
+    ))
 }
 
 async fn request_daemon_once(
@@ -231,30 +269,10 @@ async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
     match output {
         Ok(output) => {
             if output.status.success() {
-                let max_retries = DAEMON_STARTUP_MAX_RETRIES;
-                let mut retry_delay = DAEMON_STARTUP_INITIAL_DELAY;
-
-                for attempt in 0..max_retries {
-                    match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(socket_path)).await
-                    {
-                        Ok(Ok(_)) => {
-                            println!(" done!");
-                            println!("VOICEVOX daemon started successfully");
-                            return Ok(());
-                        }
-                        Ok(Err(_)) | Err(_) if attempt < max_retries - 1 => {
-                            print!(".");
-                            std::io::stdout().flush()?;
-                            tokio::time::sleep(retry_delay).await;
-                            retry_delay = (retry_delay * 2).min(DAEMON_STARTUP_MAX_DELAY);
-                        }
-                        Ok(Err(_)) | Err(_) => {}
-                    }
-                }
-
-                Err(anyhow!(
-                    "Daemon not responding after {max_retries} attempts (~{DAEMON_STARTUP_TOTAL_TIME_ESTIMATE}s total)"
-                ))
+                wait_for_daemon_startup(socket_path).await?;
+                println!(" done!");
+                println!("VOICEVOX daemon started successfully");
+                Ok(())
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 Err(anyhow!("Daemon failed to start: {}", stderr.trim()))
@@ -368,8 +386,8 @@ impl DaemonClient {
     ///
     /// Returns an error if no models are available, daemon startup fails, or connection fails.
     pub async fn new_with_auto_start_at(socket_path: &Path) -> Result<Self> {
-        if let Ok(Ok(stream)) =
-            timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(socket_path)).await
+        if let Ok(stream) =
+            connect_socket_with_timeout(socket_path, DAEMON_CONNECTION_TIMEOUT).await
         {
             return Ok(Self { stream });
         }
@@ -383,18 +401,14 @@ impl DaemonClient {
 
         tokio::time::sleep(DAEMON_STARTUP_GRACE_PERIOD).await;
 
-        let stream = timeout(
-            DAEMON_FINAL_CONNECTION_TIMEOUT,
-            UnixStream::connect(socket_path),
-        )
-        .await
-        .map_err(|_| anyhow!("Timeout connecting to daemon"))?
-        .map_err(|e| {
-            anyhow!(
-                "Daemon started but failed to connect at {}: {e}",
-                socket_path.display()
-            )
-        })?;
+        let stream = connect_socket_with_timeout(socket_path, DAEMON_FINAL_CONNECTION_TIMEOUT)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Daemon started but failed to connect at {}: {e}",
+                    socket_path.display()
+                )
+            })?;
         Ok(Self { stream })
     }
 
@@ -405,14 +419,13 @@ impl DaemonClient {
         let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())?;
         let mut framed = Framed::new(&mut self.stream, LengthDelimitedCodec::new());
         framed.send(request_data.into()).await?;
-        if let Some(response_frame) = framed.next().await {
-            let response_data = response_frame?;
-            let response: OwnedResponse =
-                bincode::serde::decode_from_slice(&response_data, bincode::config::standard())?.0;
-            Ok(response)
-        } else {
-            Err(anyhow!("No response from daemon"))
-        }
+        let response_data = framed
+            .next()
+            .await
+            .ok_or_else(|| anyhow!("No response from daemon"))??;
+        let (response, _) =
+            bincode::serde::decode_from_slice(&response_data, bincode::config::standard())?;
+        Ok(response)
     }
 
     /// Sends a synthesis request and returns the generated WAV bytes.

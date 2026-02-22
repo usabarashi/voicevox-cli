@@ -155,11 +155,18 @@ fn print_list_models_output(models: &[voicevox_cli::voice::AvailableModel]) {
 async fn handle_list_models_command(matches: &clap::ArgMatches) -> Result<bool> {
     let socket_path = socket_path_from_matches(matches);
 
-    if let Ok(mut client) = DaemonClient::new_with_auto_start_at(&socket_path).await {
-        let models = client.list_models().await?;
-        print_list_models_output(&models);
-    } else {
-        print_no_models_message();
+    match DaemonClient::new_with_auto_start_at(&socket_path).await {
+        Ok(mut client) => {
+            let models = client.list_models().await?;
+            print_list_models_output(&models);
+        }
+        Err(error) => {
+            if voicevox_cli::paths::find_models_dir().is_err() {
+                print_no_models_message();
+            } else {
+                return Err(error);
+            }
+        }
     }
     Ok(true)
 }
@@ -253,8 +260,12 @@ async fn handle_list_speakers_command(matches: &clap::ArgMatches) -> Result<bool
             let speakers = client.list_speakers().await?;
             print_speakers(&speakers);
         }
-        Err(_) => {
-            print_no_models_message();
+        Err(error) => {
+            if voicevox_cli::paths::find_models_dir().is_err() {
+                print_no_models_message();
+            } else {
+                return Err(error);
+            }
         }
     }
 

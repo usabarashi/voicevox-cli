@@ -26,7 +26,7 @@ pub fn get_input_text(matches: &clap::ArgMatches) -> Result<String> {
         matches.get_one::<String>("text"),
         matches.get_one::<String>("input-file"),
     ) {
-        (Some(text), _) => Ok(text.clone()),
+        (Some(text), _) => Ok(text.to_owned()),
         (None, Some(file_path)) => read_input_file(file_path),
         (None, None) => read_stdin_trimmed(),
     }

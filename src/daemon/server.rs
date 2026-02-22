@@ -227,8 +227,10 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
         result = wait_for_shutdown_signal() => result?,
     }
 
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
+    match std::fs::remove_file(&socket_path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
 
     println!("VOICEVOX daemon stopped");

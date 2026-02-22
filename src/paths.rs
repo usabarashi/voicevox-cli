@@ -8,6 +8,7 @@ const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
 const ONNXRUNTIME_SUBDIR: &str = "onnxruntime/lib";
 const DICT_SUBDIR: &str = "dict";
 const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
+const MODELS_DIR_ENV_VAR: &str = "VOICEVOX_MODELS_DIR";
 
 fn xdg_app_data_dirs() -> [Option<PathBuf>; 3] {
     [
@@ -101,22 +102,24 @@ pub fn get_default_voicevox_dir() -> PathBuf {
 
 #[must_use]
 pub fn get_socket_path() -> PathBuf {
-    if let Ok(path) = std::env::var("VOICEVOX_SOCKET_PATH") {
-        return PathBuf::from(path);
+    if let Some(path) = std::env::var("VOICEVOX_SOCKET_PATH")
+        .ok()
+        .map(PathBuf::from)
+    {
+        return path;
     }
 
-    if let Ok(path) = std::env::var("XDG_RUNTIME_DIR") {
-        return PathBuf::from(path).join(SOCKET_FILENAME);
+    if let Some(base_dir) = ["XDG_RUNTIME_DIR", "XDG_STATE_HOME"]
+        .into_iter()
+        .filter_map(|var| std::env::var(var).ok())
+        .map(PathBuf::from)
+        .next()
+    {
+        return base_dir.join(SOCKET_FILENAME);
     }
 
-    if let Ok(path) = std::env::var("XDG_STATE_HOME") {
-        return PathBuf::from(path).join(SOCKET_FILENAME);
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home)
-            .join(".local/state")
-            .join(SOCKET_FILENAME);
+    if let Some(home_dir) = std::env::var("HOME").ok().map(PathBuf::from) {
+        return home_dir.join(".local/state").join(SOCKET_FILENAME);
     }
 
     dirs::state_dir()
@@ -130,15 +133,7 @@ pub fn get_socket_path() -> PathBuf {
 ///
 /// Returns an error if no plausible models directory can be found.
 pub fn find_models_dir() -> Result<PathBuf> {
-    let env_model_paths = [
-        "VOICEVOX_MODELS_DIR",
-        "VOICEVOX_MODEL_DIR",
-        "VOICEVOX_MODELS_PATH",
-        "VOICEVOX_MODEL_PATH",
-        "VOICEVOX_MODELS",
-    ];
-
-    if let Some(models_dir) = env_model_paths.into_iter().find_map(existing_dir_from_env) {
+    if let Some(models_dir) = existing_dir_from_env(MODELS_DIR_ENV_VAR) {
         return Ok(models_dir);
     }
 
@@ -190,11 +185,8 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
 ///
 /// Returns an error if no installed dictionary can be located.
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
-    if let Ok(path) = std::env::var("VOICEVOX_OPENJTALK_DICT") {
-        let dict_path = PathBuf::from(path);
-        if dict_path.exists() && dict_path.is_dir() {
-            return Ok(dict_path);
-        }
+    if let Some(dict_path) = existing_dir_from_env("VOICEVOX_OPENJTALK_DICT") {
+        return Ok(dict_path);
     }
 
     if let Some(installed_path) = std::env::current_exe()

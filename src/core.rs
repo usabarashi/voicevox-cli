@@ -36,6 +36,23 @@ pub struct VoicevoxCore {
     synthesizer: Synthesizer<OpenJtalk>,
 }
 
+fn initialize_onnxruntime() -> Result<&'static Onnxruntime> {
+    find_onnxruntime()
+        .map_or_else(
+            |_| Onnxruntime::load_once().perform(),
+            |ort_path| Onnxruntime::load_once().filename(ort_path).perform(),
+        )
+        .map_err(|_| {
+            anyhow!(
+                "Failed to initialize ONNX Runtime. Please run 'voicevox-setup' to download required resources."
+            )
+        })
+}
+
+fn path_to_str<'a>(path: &'a Path, label: &str) -> Result<&'a str> {
+    path.to_str().ok_or_else(|| anyhow!("Invalid {label} path"))
+}
+
 impl VoicevoxCore {
     /// Creates a `VoicevoxCore` instance and initializes ONNX Runtime/OpenJTalk.
     ///
@@ -44,25 +61,11 @@ impl VoicevoxCore {
     /// Returns an error if runtime libraries, dictionary resources, or the synthesizer
     /// builder cannot be initialized.
     pub fn new() -> Result<Self> {
-        let onnxruntime = find_onnxruntime()
-            .map_or_else(
-                |_| Onnxruntime::load_once().perform(),
-                |ort_path| Onnxruntime::load_once().filename(ort_path).perform(),
-            )
-            .map_err(|_| {
-                anyhow!(
-                    "Failed to initialize ONNX Runtime. Please run 'voicevox-setup' to download required resources."
-                )
-            })?;
+        let onnxruntime = initialize_onnxruntime()?;
 
         let dict_path = find_openjtalk_dict()?;
-
-        let open_jtalk = OpenJtalk::new(
-            dict_path
-                .to_str()
-                .ok_or_else(|| anyhow!("Invalid OpenJTalk dictionary path"))?,
-        )
-        .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {e}"))?;
+        let open_jtalk = OpenJtalk::new(path_to_str(&dict_path, "OpenJTalk dictionary")?)
+            .map_err(|e| anyhow!("Failed to initialize OpenJTalk: {e}"))?;
 
         let synthesizer = Synthesizer::builder(onnxruntime)
             .text_analyzer(open_jtalk)

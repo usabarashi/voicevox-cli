@@ -76,25 +76,19 @@ async fn parse_json_request(line: &str, stdout: &mut tokio::io::Stdout) -> Optio
     if let Ok(request) = serde_json::from_str(line) {
         Some(request)
     } else {
-        let id = extract_id_from_invalid_json(line);
+        let id = extract_id_from_invalid_json();
         let error_response = JsonRpcResponse::error(id, PARSE_ERROR, "Parse error".to_string());
         send_response(&error_response, stdout).await;
         None
     }
 }
 
-fn extract_id_from_invalid_json(line: &str) -> Value {
-    serde_json::from_str::<Value>(line)
-        .ok()
-        .and_then(|v| v.get("id").cloned())
-        .unwrap_or(Value::Number(serde_json::Number::from(0)))
+const fn extract_id_from_invalid_json() -> Value {
+    Value::Null
 }
 
 async fn send_invalid_request_error(raw_request: &Value, stdout: &mut tokio::io::Stdout) {
-    let id = raw_request
-        .get("id")
-        .cloned()
-        .unwrap_or(Value::Number(serde_json::Number::from(0)));
+    let id = raw_request.get("id").cloned().unwrap_or(Value::Null);
     let response = JsonRpcResponse::error(id, INVALID_REQUEST, "Invalid request".to_string());
     send_response(&response, stdout).await;
 }

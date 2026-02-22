@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use voicevox_core::{
     blocking::{Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile},
-    AccelerationMode,
+    AccelerationMode, StyleId,
 };
 
 use crate::paths::{find_models_dir, find_onnxruntime, find_openjtalk_dict};
@@ -73,6 +73,34 @@ impl VoicevoxCore {
 
         Ok(Self { synthesizer })
     }
+
+    /// Synthesizes speech while applying a speech-rate multiplier via `AudioQuery`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if text is empty, rate is outside the supported range, or
+    /// query generation/synthesis fails.
+    pub fn synthesize_with_rate(&self, text: &str, style_id: u32, rate: f32) -> Result<Vec<u8>> {
+        if text.trim().is_empty() {
+            return Err(anyhow!("Empty text provided for synthesis"));
+        }
+
+        if !(0.5..=2.0).contains(&rate) {
+            return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
+        }
+
+        let style_id = StyleId::new(style_id);
+        let mut query = self
+            .synthesizer
+            .create_audio_query(text, style_id)
+            .map_err(|e| anyhow!("Failed to create audio query: {e}"))?;
+        query.speed_scale = rate;
+
+        self.synthesizer
+            .synthesis(&query, style_id)
+            .perform()
+            .map_err(|e| anyhow!("Speech synthesis failed: {e}"))
+    }
 }
 
 impl CoreSynthesis for VoicevoxCore {
@@ -91,15 +119,7 @@ impl CoreSynthesis for VoicevoxCore {
         text: &str,
         style_id: u32,
     ) -> Result<Self::Output<'a>, Self::Error> {
-        use voicevox_core::StyleId;
-
-        if text.trim().is_empty() {
-            return Err(anyhow!("Empty text provided for synthesis"));
-        }
-
-        self.synthesizer
-            .tts(text, StyleId::new(style_id))
-            .perform()
+        self.synthesize_with_rate(text, style_id, 1.0)
             .map_err(|e| anyhow!("Speech synthesis failed for style_id {style_id}: {e}"))
     }
 

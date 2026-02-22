@@ -8,7 +8,7 @@ use tokio::signal;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-use crate::core::{CoreSynthesis, VoicevoxCore};
+use crate::core::VoicevoxCore;
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 
 pub struct DaemonState {
@@ -82,7 +82,7 @@ impl DaemonState {
             OwnedRequest::Synthesize {
                 text,
                 style_id,
-                options: _,
+                options,
             } => {
                 let model_id = self.get_model_id_from_style(style_id).await;
                 let model_path = self.get_model_path(model_id).await;
@@ -97,7 +97,7 @@ impl DaemonState {
                         };
                     }
 
-                    let synthesis_result = core.synthesize(&text, style_id);
+                    let synthesis_result = core.synthesize_with_rate(&text, style_id, options.rate);
                     if let Some(model_path) = model_path.as_deref() {
                         if let Err(e) = core.unload_voice_model_by_path(model_path) {
                             eprintln!("Failed to unload model {model_id}: {e}");

@@ -66,24 +66,44 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
 fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
     let temp_file = create_temp_wav_file(wav_data)?;
     let temp_path = temp_file.path();
+    let mut last_error = None;
 
-    if ["afplay", "play"]
-        .into_iter()
-        .any(|cmd| try_system_player(cmd, temp_path))
-    {
-        return Ok(());
+    for command in ["afplay", "play"] {
+        match try_system_player(command, temp_path) {
+            Ok(Some(())) => return Ok(()),
+            Ok(None) => {}
+            Err(error) => last_error = Some(error),
+        }
     }
 
-    Err(anyhow!(
-        "No audio player found. Install sox or use -o to save file"
-    ))
+    Err(last_error
+        .unwrap_or_else(|| anyhow!("No audio player found. Install sox or use -o to save file")))
 }
 
-fn try_system_player(command: &str, temp_path: &std::path::Path) -> bool {
-    matches!(
-        Command::new(command).arg(temp_path).output(),
-        Ok(output) if output.status.success()
-    )
+fn try_system_player(command: &str, temp_path: &std::path::Path) -> Result<Option<()>> {
+    let output = match Command::new(command).arg(temp_path).output() {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("Failed to launch {command}")),
+    };
+
+    if output.status.success() {
+        return Ok(Some(()));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let message = stderr.trim();
+    if message.is_empty() {
+        Err(anyhow!(
+            "{command} exited with status {}",
+            output.status.code().map_or_else(
+                || "terminated by signal".to_string(),
+                |code| code.to_string()
+            )
+        ))
+    } else {
+        Err(anyhow!("{command} failed: {message}"))
+    }
 }
 
 pub(crate) fn create_temp_wav_file(wav_data: &[u8]) -> Result<NamedTempFile> {

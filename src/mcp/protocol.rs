@@ -350,10 +350,7 @@ pub async fn process_request(
     request: Value,
     active_requests: &ActiveRequests,
 ) -> Option<JsonRpcResponse> {
-    let id = request
-        .get("id")
-        .cloned()
-        .unwrap_or(Value::Number(serde_json::Number::from(0)));
+    let id = request.get("id").cloned().unwrap_or(Value::Null);
     let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
     let params = request.get("params").cloned();
 

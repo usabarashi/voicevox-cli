@@ -21,8 +21,9 @@ async fn ensure_daemon_running() -> DaemonResult<()> {
         return Ok(());
     }
 
-    if socket_path.exists() {
-        let _ = tokio::fs::remove_file(&socket_path).await;
+    match tokio::fs::remove_file(&socket_path).await {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(()) | Err(_) => {}
     }
 
     start_daemon_process(&socket_path).await?;
@@ -31,16 +32,10 @@ async fn ensure_daemon_running() -> DaemonResult<()> {
 
 async fn try_connect_existing(socket_path: &std::path::Path) -> bool {
     let connect_timeout = startup::connect_timeout();
-
-    match timeout(
-        connect_timeout,
-        tokio::net::UnixStream::connect(socket_path),
+    matches!(
+        timeout(connect_timeout, tokio::net::UnixStream::connect(socket_path)).await,
+        Ok(Ok(_))
     )
-    .await
-    {
-        Ok(Ok(_)) => true,
-        Ok(Err(_)) | Err(_) => false,
-    }
 }
 
 async fn start_daemon_process(socket_path: &std::path::Path) -> DaemonResult<()> {

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -82,7 +82,7 @@ async fn connect_daemon_with_timeout(
 ) -> Result<UnixStream> {
     connect_socket_with_timeout(socket_path, timeout_duration)
         .await
-        .map_err(|_| anyhow!("Daemon connection timeout"))
+        .with_context(|| format!("Daemon connection failed at {}", socket_path.display()))
 }
 
 async fn wait_for_daemon_startup(socket_path: &Path) -> Result<()> {

@@ -18,6 +18,22 @@ pub struct DaemonState {
     available_models: Vec<crate::voice::AvailableModel>,
 }
 
+struct SocketFileGuard {
+    path: PathBuf,
+}
+
+impl SocketFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl Drop for SocketFileGuard {
+    fn drop(&mut self) {
+        let _ = remove_socket_if_exists(&self.path);
+    }
+}
+
 fn remove_socket_if_exists(socket_path: &Path) -> Result<()> {
     match std::fs::remove_file(socket_path) {
         Ok(()) => Ok(()),
@@ -59,11 +75,11 @@ impl DaemonState {
         )
     }
 
-    fn get_model_path(&self, model_id: u32) -> Option<PathBuf> {
+    fn get_model_path(&self, model_id: u32) -> Option<&Path> {
         self.available_models
             .iter()
             .find(|model| model.model_id == model_id)
-            .map(|model| model.file_path.clone())
+            .map(|model| model.file_path.as_path())
     }
 
     fn speakers_list_response(&self) -> OwnedResponse {
@@ -105,7 +121,7 @@ impl DaemonState {
             }
 
             let synthesis_result = core.synthesize_with_rate(&text, style_id, rate);
-            Self::unload_model_if_known(&core, model_id, model_path.as_deref());
+            Self::unload_model_if_known(&core, model_id, model_path);
             synthesis_result
         };
 
@@ -199,6 +215,7 @@ async fn wait_for_shutdown_signal() -> Result<()> {
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     remove_socket_if_exists(&socket_path)?;
 
+    let _socket_guard = SocketFileGuard::new(socket_path.clone());
     let listener = UnixListener::bind(&socket_path)?;
     println!("VOICEVOX daemon started successfully");
     println!("Listening on: {}", socket_path.display());

@@ -86,10 +86,12 @@ fn empty_json_object() -> Value {
     Value::Object(serde_json::Map::new())
 }
 
-fn parse_tool_call_arguments(params_obj: &serde_json::Map<String, Value>) -> Result<Value, String> {
-    match params_obj.get("arguments") {
+fn take_tool_call_arguments(
+    params_obj: &mut serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    match params_obj.remove("arguments") {
         None => Ok(empty_json_object()),
-        Some(Value::Object(arguments)) => Ok(Value::Object(arguments.clone())),
+        Some(Value::Object(arguments)) => Ok(Value::Object(arguments)),
         Some(_) => Err("Invalid arguments: expected object".to_string()),
     }
 }
@@ -306,7 +308,7 @@ pub async fn process_tools_call(
         ));
     };
 
-    let Some(params_obj) = params.as_object() else {
+    let Value::Object(mut params_obj) = params else {
         return Some(JsonRpcResponse::error(
             id,
             INVALID_PARAMS,
@@ -314,7 +316,11 @@ pub async fn process_tools_call(
         ));
     };
 
-    let Some(tool_name) = params_obj.get("name").and_then(|v| v.as_str()) else {
+    let Some(tool_name) = params_obj
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+    else {
         return Some(JsonRpcResponse::error(
             id,
             INVALID_PARAMS,
@@ -322,13 +328,13 @@ pub async fn process_tools_call(
         ));
     };
 
-    let arguments = match parse_tool_call_arguments(params_obj) {
+    let arguments = match take_tool_call_arguments(&mut params_obj) {
         Ok(arguments) => arguments,
         Err(message) => return Some(JsonRpcResponse::error(id, INVALID_PARAMS, message)),
     };
 
     active_requests
-        .spawn_execution(request_id, id, tool_name, arguments)
+        .spawn_execution(request_id, id, &tool_name, arguments)
         .await;
     None
 }

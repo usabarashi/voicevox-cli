@@ -374,6 +374,9 @@ where
         }
 
         let Ok(current_speakers) = core.get_speakers() else {
+            eprintln!(
+                "Warning: failed to read speakers after loading model {model_id} ({model_filename})"
+            );
             unload_model_quietly(core, path);
             continue;
         };

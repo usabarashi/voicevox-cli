@@ -130,17 +130,11 @@ impl ActiveRequests {
             std::mem::take(&mut *channels)
         };
         let count = channels.len();
-        let mut senders = channels.into_values().peekable();
-        let mut final_reason = Some(reason.to_string());
+        let reason = reason.to_string();
 
-        // Send cancellation signal to all active requests after releasing the mutex.
-        while let Some(sender) = senders.next() {
-            let reason_to_send = if senders.peek().is_some() {
-                final_reason.as_deref().unwrap_or_default().to_owned()
-            } else {
-                final_reason.take().unwrap_or_default()
-            };
-            let _ = sender.send(reason_to_send);
+        // Send cancellation signals after releasing the mutex.
+        for sender in channels.into_values() {
+            let _ = sender.send(reason.clone());
         }
 
         count

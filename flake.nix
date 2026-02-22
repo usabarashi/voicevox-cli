@@ -113,43 +113,47 @@
           platforms = [ "aarch64-darwin" ];
         };
 
-        voicevoxCli = pkgs.rustPlatform.buildRustPackage {
+        mkRustPackage =
+          extraAttrs:
+          pkgs.rustPlatform.buildRustPackage (
+            {
+              version = "0.1.0";
+
+              src = srcFiltered;
+              cargoLock = cargoLockConfig;
+
+              doCheck = false;
+
+              # Force offline mode to ensure reproducible builds
+              CARGO_NET_OFFLINE = true;
+
+              # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
+              ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
+
+              # Minimal pre-configure setup
+              preConfigure = ''
+                # Create a temporary HOME for build process
+                export HOME=$PWD/build-home
+                mkdir -p $HOME
+              '';
+
+              nativeBuildInputs = commonNativeBuildInputs;
+
+              # Build-time environment variables
+              preBuild = ''
+                # Git SSL configuration
+                export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              '';
+
+              meta = packageMeta;
+            }
+            // extraAttrs
+          );
+
+        voicevoxCli = mkRustPackage {
           pname = "voicevox-cli";
-          version = "0.1.0";
-
           src = srcFiltered;
-          cargoLock = cargoLockConfig;
-
-          doCheck = false;
-
-          # Force offline mode to ensure reproducible builds
-          CARGO_NET_OFFLINE = true;
-
-          # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
-          ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
-
-          # Minimal pre-configure setup
-          preConfigure = ''
-            # Create a temporary HOME for build process
-            export HOME=$PWD/build-home
-            mkdir -p $HOME
-          '';
-
-          nativeBuildInputs = commonNativeBuildInputs;
-
-          # Build-time environment variables
-          preBuild = ''
-            # Git SSL configuration
-            export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-          '';
-
-          # Clippy analysis runs after cargo build --release completes.
-          # Reuses build artifacts from the same sandbox environment,
-          # avoiding double compilation from a separate checks.clippy derivation.
-          postBuild = ''
-            cargo clippy --release --all-targets --all-features -- -D warnings
-          '';
 
           postInstall = ''
             # Install download utility
@@ -162,7 +166,6 @@
             install -m644 ${./VOICEVOX.md} $out/bin/VOICEVOX.md
           '';
 
-          meta = packageMeta;
         };
 
         # Development utility: reset daemon state
@@ -221,6 +224,21 @@
 
           # Build verification
           build = voicevoxCli;
+
+          # Static analysis (kept separate from package build for clearer check/package responsibilities)
+          clippy = mkRustPackage {
+            pname = "voicevox-cli-clippy";
+
+            buildPhase = ''
+              runHook preBuild
+              cargo clippy --release --all-targets --all-features -- -D warnings
+              runHook postBuild
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+            '';
+          };
         };
 
         apps = {

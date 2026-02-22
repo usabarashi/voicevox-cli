@@ -1,6 +1,7 @@
 use crate::daemon::{DaemonError, DaemonResult};
 use anyhow::Result;
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::process;
 
@@ -17,6 +18,31 @@ fn parse_other_pids(stdout: &[u8]) -> Vec<u32> {
         .filter_map(|line| line.trim().parse::<u32>().ok())
         .filter(|&pid| pid != current_pid)
         .collect()
+}
+
+fn pgrep_voicevox_daemon_output(match_mode: PgrepMatchMode) -> io::Result<process::Output> {
+    let mut command = process::Command::new("pgrep");
+    command
+        .arg(match_mode.flag())
+        .arg("-u")
+        .arg(current_uid_string());
+    command.arg("voicevox-daemon");
+    command.output()
+}
+
+#[derive(Clone, Copy)]
+enum PgrepMatchMode {
+    Exact,
+    FullCommandLine,
+}
+
+impl PgrepMatchMode {
+    const fn flag(self) -> &'static str {
+        match self {
+            Self::Exact => "-x",
+            Self::FullCommandLine => "-f",
+        }
+    }
 }
 
 /// Checks for stale sockets and duplicate daemon processes before startup.
@@ -61,12 +87,7 @@ fn remove_stale_socket(socket_path: &Path) -> DaemonResult<()> {
 }
 
 fn check_for_other_daemons() -> DaemonResult<()> {
-    let output = process::Command::new("pgrep")
-        .arg("-x")
-        .arg("-u")
-        .arg(current_uid_string())
-        .arg("voicevox-daemon")
-        .output();
+    let output = pgrep_voicevox_daemon_output(PgrepMatchMode::Exact);
 
     match output {
         Ok(output) if output.status.success() && !output.stdout.is_empty() => {
@@ -96,15 +117,10 @@ fn check_pgrep_output(stdout: &[u8]) -> DaemonResult<()> {
 /// Returns an error only if `pgrep` execution fails unexpectedly in a way surfaced by
 /// the process API. Missing processes are reported as an empty list.
 pub fn find_daemon_processes() -> Result<Vec<u32>> {
-    let output = process::Command::new("pgrep")
-        .arg("-f")
-        .arg("-u")
-        .arg(current_uid_string())
-        .arg("voicevox-daemon")
-        .output();
+    let output = pgrep_voicevox_daemon_output(PgrepMatchMode::FullCommandLine)?;
 
     match output {
-        Ok(output) if output.status.success() && !output.stdout.is_empty() => {
+        output if output.status.success() && !output.stdout.is_empty() => {
             Ok(parse_other_pids(&output.stdout))
         }
         _ => Ok(Vec::new()),

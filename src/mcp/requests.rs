@@ -17,6 +17,16 @@ fn serialize_result_response(
     }
 }
 
+fn tool_execution_error_result(error: &anyhow::Error) -> ToolCallResult {
+    ToolCallResult {
+        content: vec![ToolContent {
+            content_type: "text".to_string(),
+            text: format!("Tool execution error: {error}"),
+        }],
+        is_error: Some(true),
+    }
+}
+
 /// Manages active requests and their cancellation tokens.
 ///
 /// This structure implements the server-side cancellation management for MCP requests.
@@ -174,20 +184,11 @@ impl ActiveRequests {
                     Ok(tool_result) => {
                         serialize_result_response(id, tool_result, "Failed to serialize response")
                     }
-                    Err(e) => {
-                        let error_result = ToolCallResult {
-                            content: vec![ToolContent {
-                                content_type: "text".to_string(),
-                                text: format!("Tool execution error: {e}"),
-                            }],
-                            is_error: Some(true),
-                        };
-                        serialize_result_response(
-                            id,
-                            error_result,
-                            "Failed to serialize error response",
-                        )
-                    }
+                    Err(error) => serialize_result_response(
+                        id,
+                        tool_execution_error_result(&error),
+                        "Failed to serialize error response",
+                    ),
                 };
 
                 // Send response via channel

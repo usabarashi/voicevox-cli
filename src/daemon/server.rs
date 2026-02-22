@@ -18,6 +18,14 @@ pub struct DaemonState {
     available_models: RwLock<Vec<crate::voice::AvailableModel>>,
 }
 
+fn remove_socket_if_exists(socket_path: &Path) -> Result<()> {
+    match std::fs::remove_file(socket_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 impl DaemonState {
     /// Builds daemon state and precomputes model/style metadata used by requests.
     ///
@@ -100,7 +108,6 @@ impl DaemonState {
 
             let synthesis_result = core.synthesize_with_rate(&text, style_id, rate);
             Self::unload_model_if_known(&core, model_id, model_path.as_deref());
-            drop(core);
             synthesis_result
         };
 
@@ -192,11 +199,7 @@ async fn wait_for_shutdown_signal() -> Result<()> {
 /// Returns an error if socket cleanup/bind fails, daemon state initialization fails,
 /// socket accept fails, or final socket cleanup fails during shutdown.
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
-    match std::fs::remove_file(&socket_path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
+    remove_socket_if_exists(&socket_path)?;
 
     let listener = UnixListener::bind(&socket_path)?;
     println!("VOICEVOX daemon started successfully");
@@ -227,11 +230,7 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
         result = wait_for_shutdown_signal() => result?,
     }
 
-    match std::fs::remove_file(&socket_path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
+    remove_socket_if_exists(&socket_path)?;
 
     println!("VOICEVOX daemon stopped");
     Ok(())

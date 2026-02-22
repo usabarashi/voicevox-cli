@@ -33,7 +33,11 @@ async fn ensure_daemon_running() -> DaemonResult<()> {
 async fn try_connect_existing(socket_path: &std::path::Path) -> bool {
     let connect_timeout = startup::connect_timeout();
     matches!(
-        timeout(connect_timeout, tokio::net::UnixStream::connect(socket_path)).await,
+        timeout(
+            connect_timeout,
+            tokio::net::UnixStream::connect(socket_path)
+        )
+        .await,
         Ok(Ok(_))
     )
 }

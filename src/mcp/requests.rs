@@ -136,10 +136,7 @@ impl ActiveRequests {
         // Send cancellation signal to all active requests after releasing the mutex.
         while let Some(sender) = senders.next() {
             let reason_to_send = if senders.peek().is_some() {
-                final_reason
-                    .as_deref()
-                    .unwrap_or_default()
-                    .to_owned()
+                final_reason.as_deref().unwrap_or_default().to_owned()
             } else {
                 final_reason.take().unwrap_or_default()
             };

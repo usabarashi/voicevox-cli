@@ -34,7 +34,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Read rust-toolchain.toml to ensure consistency
+        # Fenix stable toolchain used for local builds/checks
         rustToolchain = fenix.packages.${system}.stable;
 
         # Shared cargo lock configuration (used by build and checks)
@@ -107,7 +107,6 @@
             mit
             asl20
           ];
-          maintainers = [ "usabarashi" ];
           platforms = [ "aarch64-darwin" ];
         };
 
@@ -134,9 +133,6 @@
           '';
 
           nativeBuildInputs = commonNativeBuildInputs;
-
-
-          buildInputs = [ ];
 
           # Build-time environment variables
           preBuild = ''
@@ -187,7 +183,7 @@
           } ''
             cd $src
             export HOME=$TMPDIR
-            cargo fmt --check
+            cargo fmt --all --check
             touch $out
           '';
 
@@ -279,7 +275,7 @@
       }
     )
     // {
-      overlays.default = final: prev: {
+      overlays.default = final: _prev: {
         voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;
       };

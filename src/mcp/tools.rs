@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::fmt::Write as _;
 use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
@@ -589,12 +588,13 @@ fn render_voice_styles_block<Name>(
 where
     Name: std::fmt::Display,
 {
-    let mut block = format!("Speaker: {speaker_name}\nStyles:\n");
-    for style in styles {
-        let _ = writeln!(block, "  - {} (ID: {})", style.name, style.id);
-    }
-    block.pop();
-    block
+    let style_lines = styles
+        .iter()
+        .map(|style| format!("  - {} (ID: {})", style.name, style.id))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!("Speaker: {speaker_name}\nStyles:\n{style_lines}")
 }
 
 #[cfg(test)]

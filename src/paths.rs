@@ -24,11 +24,11 @@ fn existing_dir_from_env(var: &str) -> Option<PathBuf> {
     std::env::var(var)
         .ok()
         .map(PathBuf::from)
-        .filter(|path| path.exists() && path.is_dir())
+        .filter(|path| path.is_dir())
 }
 
 fn is_existing_dir(path: &Path) -> bool {
-    path.exists() && path.is_dir()
+    path.is_dir()
 }
 
 fn dir_contains_vvm_files(dir: &Path) -> bool {
@@ -45,12 +45,12 @@ fn dir_contains_vvm_files(dir: &Path) -> bool {
 
 fn preferred_models_dir(base_dir: &Path) -> Option<PathBuf> {
     let candidate = base_dir.join(MODELS_SUBDIR);
-    if !(candidate.exists() && candidate.is_dir()) {
+    if !candidate.is_dir() {
         return None;
     }
 
     let vvms_dir = candidate.join(VVM_SUBDIR);
-    if vvms_dir.exists() && vvms_dir.is_dir() && dir_contains_vvm_files(&vvms_dir) {
+    if vvms_dir.is_dir() && dir_contains_vvm_files(&vvms_dir) {
         Some(vvms_dir)
     } else {
         Some(candidate)
@@ -110,6 +110,7 @@ pub fn get_socket_path() -> PathBuf {
         .into_iter()
         .find_map(std::env::var_os)
         .map(PathBuf::from)
+        .filter(|path| path.is_dir())
     {
         return base_dir.join(SOCKET_FILENAME);
     }
@@ -167,7 +168,7 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
         let base_dir = get_default_voicevox_dir();
         let default_path = base_dir.join(MODELS_SUBDIR);
 
-        if base_dir.exists() && base_dir.is_dir() {
+        if base_dir.is_dir() {
             Ok(base_dir)
         } else {
             Ok(default_path)
@@ -274,7 +275,7 @@ fn first_onnx_library_in(lib_dir: &Path) -> Option<PathBuf> {
 pub fn find_onnxruntime() -> Result<PathBuf> {
     if let Ok(path) = std::env::var("ORT_DYLIB_PATH") {
         let lib_path = PathBuf::from(path);
-        if lib_path.exists() {
+        if lib_path.is_file() {
             // Security validation for ORT_DYLIB_PATH
             if let Some(filename) = lib_path.file_name() {
                 let filename_str = filename.to_string_lossy();
@@ -282,7 +283,7 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                     // Resolve symlinks and verify the resolved path exists
                     match std::fs::canonicalize(&lib_path) {
                         Ok(canonical_path) => {
-                            if canonical_path.exists() {
+                            if canonical_path.is_file() {
                                 return Ok(canonical_path);
                             }
                         }

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::core::VoicevoxCore;
@@ -13,9 +13,9 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 
 pub struct DaemonState {
     core: Mutex<VoicevoxCore>,
-    style_to_model_map: RwLock<HashMap<u32, u32>>,
-    all_speakers: RwLock<Vec<crate::voice::Speaker>>,
-    available_models: RwLock<Vec<crate::voice::AvailableModel>>,
+    style_to_model_map: HashMap<u32, u32>,
+    all_speakers: Vec<crate::voice::Speaker>,
+    available_models: Vec<crate::voice::AvailableModel>,
 }
 
 fn remove_socket_if_exists(socket_path: &Path) -> Result<()> {
@@ -40,14 +40,14 @@ impl DaemonState {
 
         Ok(Self {
             core: Mutex::new(core),
-            style_to_model_map: RwLock::new(mapping),
-            all_speakers: RwLock::new(speakers),
-            available_models: RwLock::new(models),
+            style_to_model_map: mapping,
+            all_speakers: speakers,
+            available_models: models,
         })
     }
 
-    async fn get_model_id_from_style(&self, style_id: u32) -> u32 {
-        let model_id = self.style_to_model_map.read().await.get(&style_id).copied();
+    fn get_model_id_from_style(&self, style_id: u32) -> u32 {
+        let model_id = self.style_to_model_map.get(&style_id).copied();
         model_id.map_or_else(
             || {
                 eprintln!(
@@ -59,26 +59,24 @@ impl DaemonState {
         )
     }
 
-    async fn get_model_path(&self, model_id: u32) -> Option<PathBuf> {
+    fn get_model_path(&self, model_id: u32) -> Option<PathBuf> {
         self.available_models
-            .read()
-            .await
             .iter()
             .find(|model| model.model_id == model_id)
             .map(|model| model.file_path.clone())
     }
 
-    async fn speakers_list_response(&self) -> OwnedResponse {
-        let speakers = self.all_speakers.read().await.clone();
-        let style_to_model = self.style_to_model_map.read().await.clone();
+    fn speakers_list_response(&self) -> OwnedResponse {
+        let speakers = self.all_speakers.clone();
+        let style_to_model = self.style_to_model_map.clone();
         OwnedResponse::SpeakersListWithModels {
             speakers,
             style_to_model,
         }
     }
 
-    async fn models_list_response(&self) -> OwnedResponse {
-        let models = self.available_models.read().await.clone();
+    fn models_list_response(&self) -> OwnedResponse {
+        let models = self.available_models.clone();
         OwnedResponse::ModelsList { models }
     }
 
@@ -94,8 +92,8 @@ impl DaemonState {
     }
 
     async fn synthesize_response(&self, text: String, style_id: u32, rate: f32) -> OwnedResponse {
-        let model_id = self.get_model_id_from_style(style_id).await;
-        let model_path = self.get_model_path(model_id).await;
+        let model_id = self.get_model_id_from_style(style_id);
+        let model_path = self.get_model_path(model_id);
 
         let synthesis_result = {
             let core = self.core.lock().await;
@@ -127,8 +125,8 @@ impl DaemonState {
                 style_id,
                 options,
             } => self.synthesize_response(text, style_id, options.rate).await,
-            OwnedRequest::ListSpeakers => self.speakers_list_response().await,
-            OwnedRequest::ListModels => self.models_list_response().await,
+            OwnedRequest::ListSpeakers => self.speakers_list_response(),
+            OwnedRequest::ListModels => self.models_list_response(),
         }
     }
 }

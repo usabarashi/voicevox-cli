@@ -368,7 +368,8 @@ where
 
         progress_callback(index + 1, total_models, model_filename);
 
-        if core.load_specific_model(&model_id.to_string()).is_err() {
+        if let Err(error) = core.load_specific_model(&model_id.to_string()) {
+            eprintln!("Warning: failed to load model {model_id} ({model_filename}): {error}");
             continue;
         }
 
@@ -391,14 +392,29 @@ where
 
     let loaded_model_paths = model_entries
         .iter()
-        .filter_map(|(model_id, path)| {
-            core.load_specific_model(&model_id.to_string())
-                .ok()
-                .map(|()| path)
-        })
+        .filter_map(
+            |(model_id, path)| match core.load_specific_model(&model_id.to_string()) {
+                Ok(()) => Some(path),
+                Err(error) => {
+                    eprintln!(
+                        "Warning: failed to load model {model_id} ({}): {error}",
+                        path.display()
+                    );
+                    None
+                }
+            },
+        )
         .collect::<Vec<_>>();
 
-    let all_speakers = core.get_speakers()?;
+    let all_speakers = match core.get_speakers() {
+        Ok(speakers) => speakers,
+        Err(error) => {
+            for path in &loaded_model_paths {
+                unload_model_quietly(core, path);
+            }
+            return Err(error);
+        }
+    };
 
     for path in loaded_model_paths {
         unload_model_quietly(core, path);

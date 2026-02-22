@@ -231,8 +231,6 @@
         };
 
         devShells.default = pkgs.mkShell {
-          CARGO_HOME = "./.project-home/.cargo";
-
           # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
           ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
 
@@ -253,6 +251,7 @@
           shellHook = ''
             # Create project-home directory for CARGO_HOME
             mkdir -p .project-home
+            export CARGO_HOME="$PWD/.project-home/.cargo"
 
             echo "VOICEVOX CLI Development Environment (Apple Silicon)"
             echo "Available commands:"

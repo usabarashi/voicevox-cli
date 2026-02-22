@@ -45,8 +45,8 @@ impl StreamingSynthesizer {
 
         for (i, segment) in segments
             .iter()
+            .filter(|segment| !segment.trim().is_empty())
             .enumerate()
-            .filter(|(_, segment)| !segment.trim().is_empty())
         {
             let wav_data = self
                 .daemon_client
@@ -119,7 +119,8 @@ impl TextSplitter {
                 segments.push(std::mem::take(&mut current_segment));
                 current_len = 0;
             } else if current_len >= self.max_length {
-                current_len = self.handle_long_segment(&mut segments, &mut current_segment);
+                current_len =
+                    self.handle_long_segment(&mut segments, &mut current_segment, current_len);
             }
         }
 
@@ -149,23 +150,24 @@ impl TextSplitter {
         &self,
         segments: &mut Vec<String>,
         current_segment: &mut String,
+        current_len: usize,
     ) -> usize {
-        if let Some(break_pos) = self.find_break_position(current_segment) {
+        if let Some((break_pos, head_len)) = self.find_break_position(current_segment) {
             let rest = current_segment.split_off(break_pos);
             segments.push(std::mem::replace(current_segment, rest));
-            current_segment.chars().count()
+            current_len.saturating_sub(head_len)
         } else {
             segments.push(std::mem::take(current_segment));
             0
         }
     }
 
-    fn find_break_position(&self, text: &str) -> Option<usize> {
+    fn find_break_position(&self, text: &str) -> Option<(usize, usize)> {
         text.char_indices()
             .enumerate()
             .take_while(|(i, _)| *i < self.max_length)
-            .filter_map(|(_, (byte_idx, ch))| {
-                matches!(ch, ' ' | '、' | ',').then_some(byte_idx + ch.len_utf8())
+            .filter_map(|(char_idx, (byte_idx, ch))| {
+                matches!(ch, ' ' | '、' | ',').then_some((byte_idx + ch.len_utf8(), char_idx + 1))
             })
             .last()
     }

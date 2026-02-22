@@ -125,6 +125,10 @@ fn print_no_models_message() {
     println!("{NO_MODELS_MESSAGE}");
 }
 
+fn default_voice_selection() -> (u32, String) {
+    (3, "Default (Zundamon Normal)".to_string())
+}
+
 fn print_list_models_output(models: &[voicevox_cli::voice::AvailableModel]) {
     if models.is_empty() {
         print_no_models_message();
@@ -291,21 +295,19 @@ async fn run_synthesis_command(matches: &clap::ArgMatches) -> Result<()> {
 }
 
 fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
-    matches
-        .get_one::<u32>("speaker-id")
-        .map(|&id| (id, format!("Style ID {id}")))
-        .or_else(|| {
-            matches
-                .get_one::<u32>("model")
-                .map(|&id| (id, format!("Model {id} (Default Style)")))
-        })
-        .map(Ok)
-        .or_else(|| {
-            matches
-                .get_one::<String>("voice")
-                .map(|voice_name| resolve_voice_dynamic(voice_name))
-        })
-        .unwrap_or_else(|| Ok((3, "Default (Zundamon Normal)".to_string())))
+    if let Some(&id) = matches.get_one::<u32>("speaker-id") {
+        return Ok((id, format!("Style ID {id}")));
+    }
+
+    if let Some(&id) = matches.get_one::<u32>("model") {
+        return Ok((id, format!("Model {id} (Default Style)")));
+    }
+
+    if let Some(voice_name) = matches.get_one::<String>("voice") {
+        return resolve_voice_dynamic(voice_name);
+    }
+
+    Ok(default_voice_selection())
 }
 
 async fn try_daemon_with_retry(

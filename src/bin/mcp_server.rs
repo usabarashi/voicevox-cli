@@ -106,14 +106,11 @@ async fn handle_already_running(socket_path: &std::path::Path) -> DaemonResult<(
 }
 
 async fn wait_for_daemon_ready(socket_path: &std::path::Path) -> DaemonResult<()> {
-    let max_attempts = startup::MAX_CONNECT_ATTEMPTS;
-    if wait_for_socket_ready(socket_path, max_attempts, false).await {
-        return Ok(());
-    }
-
-    Err(DaemonError::NotResponding {
-        attempts: max_attempts,
-    })
+    let attempts = startup::MAX_CONNECT_ATTEMPTS;
+    wait_for_socket_ready(socket_path, attempts, false)
+        .await
+        .then_some(())
+        .ok_or(DaemonError::NotResponding { attempts })
 }
 
 async fn wait_for_socket_ready(
@@ -140,6 +137,11 @@ async fn wait_for_socket_ready(
     false
 }
 
+fn print_mcp_warning(message: &str) {
+    eprintln!("Warning: {message}");
+    eprintln!("Audio synthesis may not be available.");
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let _args = Args::parse();
@@ -158,18 +160,15 @@ async fn main() -> Result<()> {
                 eprintln!("Audio synthesis may not be available.");
             }
             DaemonError::NotResponding { attempts } => {
-                eprintln!(
-                    "Warning: Daemon started but is not responding after {attempts} attempts."
-                );
-                eprintln!("Audio synthesis may not be available.");
+                print_mcp_warning(&format!(
+                    "Daemon started but is not responding after {attempts} attempts."
+                ));
             }
             DaemonError::StartupFailed { message } => {
-                eprintln!("Warning: Failed to start daemon: {message}");
-                eprintln!("Audio synthesis may not be available.");
+                print_mcp_warning(&format!("Failed to start daemon: {message}"));
             }
             _ => {
-                eprintln!("Warning: {e}");
-                eprintln!("Audio synthesis may not be available.");
+                print_mcp_warning(&e.to_string());
             }
         }
     }

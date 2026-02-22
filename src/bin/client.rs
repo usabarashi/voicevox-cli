@@ -128,6 +128,15 @@ fn print_no_models_message() {
     println!("{NO_MODELS_MESSAGE}");
 }
 
+fn handle_missing_models_error(error: anyhow::Error) -> Result<bool> {
+    if voicevox_cli::paths::find_models_dir().is_err() {
+        print_no_models_message();
+        return Ok(true);
+    }
+
+    Err(error)
+}
+
 const DEFAULT_STYLE_ID: u32 = 3;
 
 const fn default_voice_selection() -> u32 {
@@ -164,11 +173,7 @@ async fn handle_list_models_command(matches: &clap::ArgMatches) -> Result<bool> 
             print_list_models_output(&models);
         }
         Err(error) => {
-            if voicevox_cli::paths::find_models_dir().is_err() {
-                print_no_models_message();
-            } else {
-                return Err(error);
-            }
+            return handle_missing_models_error(error);
         }
     }
     Ok(true)
@@ -264,28 +269,38 @@ async fn handle_list_speakers_command(matches: &clap::ArgMatches) -> Result<bool
             print_speakers(&speakers);
         }
         Err(error) => {
-            if voicevox_cli::paths::find_models_dir().is_err() {
-                print_no_models_message();
-            } else {
-                return Err(error);
-            }
+            return handle_missing_models_error(error);
         }
     }
 
     Ok(true)
 }
 
-async fn maybe_handle_meta_commands(matches: &clap::ArgMatches) -> Result<bool> {
+enum MetaCommand {
+    ListModels,
+    Status,
+    ListSpeakers,
+}
+
+fn selected_meta_command(matches: &clap::ArgMatches) -> Option<MetaCommand> {
     if matches.get_flag("list-models") {
-        return handle_list_models_command(matches).await;
+        Some(MetaCommand::ListModels)
+    } else if matches.get_flag("status") {
+        Some(MetaCommand::Status)
+    } else if matches.get_flag("list-speakers") {
+        Some(MetaCommand::ListSpeakers)
+    } else {
+        None
     }
-    if matches.get_flag("status") {
-        return Ok(handle_status_command());
+}
+
+async fn maybe_handle_meta_commands(matches: &clap::ArgMatches) -> Result<bool> {
+    match selected_meta_command(matches) {
+        Some(MetaCommand::ListModels) => handle_list_models_command(matches).await,
+        Some(MetaCommand::Status) => Ok(handle_status_command()),
+        Some(MetaCommand::ListSpeakers) => handle_list_speakers_command(matches).await,
+        None => Ok(false),
     }
-    if matches.get_flag("list-speakers") {
-        return handle_list_speakers_command(matches).await;
-    }
-    Ok(false)
 }
 
 async fn run_synthesis_command(matches: &clap::ArgMatches) -> Result<()> {

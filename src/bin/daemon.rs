@@ -80,6 +80,12 @@ enum ExecutionDecision {
     Exit(i32),
 }
 
+impl ExecutionDecision {
+    const fn exit(code: i32) -> Self {
+        Self::Exit(code)
+    }
+}
+
 fn socket_path_from_matches(matches: &clap::ArgMatches) -> PathBuf {
     matches
         .get_one::<String>("socket-path")
@@ -175,21 +181,21 @@ async fn maybe_detach(socket_path: &Path, flags: DaemonFlags) -> ExecutionDecisi
                 Ok(None) => {
                     println!("VOICEVOX daemon started successfully in background");
                     println!("   Socket: {}", socket_path.display());
-                    ExecutionDecision::Exit(0)
+                    ExecutionDecision::exit(0)
                 }
                 Ok(Some(status)) => {
                     eprintln!("Daemon failed to start: exit code {status}");
-                    ExecutionDecision::Exit(1)
+                    ExecutionDecision::exit(1)
                 }
                 Err(e) => {
                     eprintln!("Failed to check daemon status: {e}");
-                    ExecutionDecision::Exit(1)
+                    ExecutionDecision::exit(1)
                 }
             }
         }
         Err(e) => {
             eprintln!("Failed to spawn daemon process: {e}");
-            ExecutionDecision::Exit(1)
+            ExecutionDecision::exit(1)
         }
     }
 }
@@ -198,28 +204,31 @@ async fn ensure_startup_preconditions(socket_path: &Path) -> Result<(), DaemonEr
     check_and_prevent_duplicate(socket_path).await
 }
 
+const fn startup_error_exit_code(error: &DaemonError) -> i32 {
+    match error {
+        DaemonError::AlreadyRunning { .. } => exit_daemon::ALREADY_RUNNING,
+        DaemonError::SocketPermissionDenied { .. } => exit_daemon::PERMISSION_DENIED,
+        DaemonError::NoModelsAvailable => exit_daemon::NO_MODELS,
+        _ => exit_daemon::FAILURE,
+    }
+}
+
 fn report_startup_error(error: &DaemonError) -> i32 {
     match error {
         DaemonError::AlreadyRunning { pid } => {
             eprintln!("VOICEVOX daemon is already running (PID: {pid})");
             eprintln!("   Use 'voicevox-daemon --stop' to stop it.");
-            exit_daemon::ALREADY_RUNNING
         }
         DaemonError::SocketPermissionDenied { path } => {
             eprintln!("Permission denied: Socket file is owned by another user");
             eprintln!("   Socket path: {}", path.display());
             eprintln!("   Please remove the file manually and try again.");
-            exit_daemon::PERMISSION_DENIED
-        }
-        DaemonError::NoModelsAvailable => {
-            eprintln!("{error}");
-            exit_daemon::NO_MODELS
         }
         _ => {
             eprintln!("{error}");
-            exit_daemon::FAILURE
         }
     }
+    startup_error_exit_code(error)
 }
 
 fn print_daemon_start_banner(socket_path: &Path) {
@@ -235,6 +244,11 @@ async fn daemon_is_responsive(socket_path: &Path) -> bool {
 
 fn print_socket_path_line(socket_path: &Path) {
     println!("Socket: {}", socket_path.display());
+}
+
+fn print_socket_not_running(socket_path: &Path) {
+    println!("Daemon is not running");
+    println!("   Socket: {}", socket_path.display());
 }
 
 fn print_pid_memory_info(pid_num: u32) {
@@ -281,8 +295,7 @@ async fn handle_stop_daemon(socket_path: &Path) -> Result<()> {
     println!("Stopping VOICEVOX daemon...");
 
     if !daemon_is_responsive(socket_path).await {
-        println!("Daemon is not running");
-        println!("   Socket: {}", socket_path.display());
+        print_socket_not_running(socket_path);
         return Ok(());
     }
 

@@ -44,32 +44,42 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
     use rodio::{Decoder, Sink};
     use std::io::Cursor;
 
-    rodio::OutputStreamBuilder::open_default_stream().map_or_else(
-        |_| play_audio_via_system(wav_data),
-        |stream| {
-            let wav_data_owned = wav_data.to_vec();
-            let cursor = Cursor::new(wav_data_owned);
-            Decoder::new(cursor).map_or_else(
-                |_| play_audio_via_system(wav_data),
-                |source| {
-                    let sink = Sink::connect_new(stream.mixer());
-                    sink.append(source);
-                    sink.play();
-                    sink.sleep_until_end();
-                    Ok(())
-                },
-            )
-        },
-    )
+    let stream = match rodio::OutputStreamBuilder::open_default_stream() {
+        Ok(stream) => stream,
+        Err(_) => return play_audio_via_system(wav_data),
+    };
+
+    let source = match Decoder::new(Cursor::new(wav_data.to_vec())) {
+        Ok(source) => source,
+        Err(_) => return play_audio_via_system(wav_data),
+    };
+
+    let sink = Sink::connect_new(stream.mixer());
+    sink.append(source);
+    sink.play();
+    sink.sleep_until_end();
+    Ok(())
 }
 
 fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
     let temp_file = create_temp_wav_file(wav_data)?;
     let temp_path = temp_file.path();
+
+    try_players(["afplay", "play"], |command| {
+        try_system_player(command, temp_path)
+    })
+}
+
+fn try_players<I, F>(commands: I, mut try_command: F) -> Result<()>
+where
+    I: IntoIterator,
+    I::Item: AsRef<str>,
+    F: FnMut(&str) -> Result<Option<()>>,
+{
     let mut last_error = None;
 
-    for command in ["afplay", "play"] {
-        match try_system_player(command, temp_path) {
+    for command in commands {
+        match try_command(command.as_ref()) {
             Ok(Some(())) => return Ok(()),
             Ok(None) => {}
             Err(error) => last_error = Some(error),

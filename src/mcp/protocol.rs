@@ -75,6 +75,21 @@ fn jsonrpc_error(id: Value, code: i32, message: impl Into<String>) -> JsonRpcRes
     JsonRpcResponse::error(id, code, message.into())
 }
 
+fn empty_json_object() -> Value {
+    Value::Object(serde_json::Map::new())
+}
+
+fn parse_tool_call_arguments(params_obj: &serde_json::Map<String, Value>) -> Result<Value, String> {
+    match params_obj.get("arguments") {
+        None => Ok(empty_json_object()),
+        Some(Value::Object(_)) => params_obj
+            .get("arguments")
+            .cloned()
+            .ok_or_else(|| "Invalid arguments: expected object".to_string()),
+        Some(_) => Err("Invalid arguments: expected object".to_string()),
+    }
+}
+
 // JSON-RPC Error Codes
 pub const PARSE_ERROR: i32 = -32700;
 pub const INVALID_REQUEST: i32 = -32600;
@@ -305,15 +320,18 @@ pub async fn process_tools_call(
         ));
     };
 
-    let tool_name = params_obj
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let Some(tool_name) = params_obj.get("name").and_then(|v| v.as_str()) else {
+        return Some(JsonRpcResponse::error(
+            id,
+            INVALID_PARAMS,
+            "Missing or invalid tool name".to_string(),
+        ));
+    };
 
-    let arguments = params_obj
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    let arguments = match parse_tool_call_arguments(params_obj) {
+        Ok(arguments) => arguments,
+        Err(message) => return Some(JsonRpcResponse::error(id, INVALID_PARAMS, message)),
+    };
 
     active_requests
         .spawn_execution(request_id, id, tool_name, arguments)
@@ -470,5 +488,43 @@ mod tests {
 
         let parsed = parse_cancelled_params_or_panic(params);
         assert_eq!(parsed.request_id.into_lookup_key(), "abc");
+    }
+
+    #[tokio::test]
+    async fn tools_call_rejects_missing_tool_name() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let active_requests = ActiveRequests::new(tx);
+        let response = process_tools_call(json!(1), Some(json!({})), &active_requests).await;
+
+        let Some(response) = response else {
+            panic!("expected immediate invalid-params response");
+        };
+
+        let error = response
+            .error
+            .unwrap_or_else(|| panic!("expected error response"));
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("tool name"));
+    }
+
+    #[tokio::test]
+    async fn tools_call_rejects_non_object_arguments() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let active_requests = ActiveRequests::new(tx);
+        let params = json!({
+            "name": "list_voice_styles",
+            "arguments": ["invalid"]
+        });
+        let response = process_tools_call(json!(1), Some(params), &active_requests).await;
+
+        let Some(response) = response else {
+            panic!("expected immediate invalid-params response");
+        };
+
+        let error = response
+            .error
+            .unwrap_or_else(|| panic!("expected error response"));
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("expected object"));
     }
 }

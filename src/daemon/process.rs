@@ -37,7 +37,10 @@ pub async fn check_and_prevent_duplicate(socket_path: &Path) -> DaemonResult<()>
 async fn handle_existing_socket(socket_path: &Path) -> DaemonResult<()> {
     match tokio::net::UnixStream::connect(socket_path).await {
         Ok(_) => {
-            let pid = find_daemon_processes().map_or(0, |pids| pids.first().copied().unwrap_or(0));
+            let pid = find_daemon_processes()
+                .ok()
+                .and_then(|pids| pids.into_iter().next())
+                .unwrap_or(0);
             Err(DaemonError::AlreadyRunning { pid })
         }
         Err(_) => remove_stale_socket(socket_path),

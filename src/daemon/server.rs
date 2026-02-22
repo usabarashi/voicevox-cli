@@ -1,7 +1,7 @@
 use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
@@ -39,17 +39,15 @@ impl DaemonState {
     }
 
     async fn get_model_id_from_style(&self, style_id: u32) -> u32 {
-        self.style_to_model_map
-            .read()
-            .await
-            .get(&style_id)
-            .copied()
-            .unwrap_or_else(|| {
+        match self.style_to_model_map.read().await.get(&style_id).copied() {
+            Some(model_id) => model_id,
+            None => {
                 eprintln!(
                     "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
                 );
                 style_id
-            })
+            }
+        }
     }
 
     async fn get_model_path(&self, model_id: u32) -> Option<PathBuf> {
@@ -75,54 +73,62 @@ impl DaemonState {
         OwnedResponse::ModelsList { models }
     }
 
+    fn unload_model_if_known(core: &VoicevoxCore, model_id: u32, model_path: Option<&Path>) {
+        let Some(model_path) = model_path else {
+            eprintln!("Model {model_id} not found in available models");
+            return;
+        };
+
+        if let Err(e) = core.unload_voice_model_by_path(model_path) {
+            eprintln!("Failed to unload model {model_id}: {e}");
+        }
+    }
+
+    async fn synthesize_response(&self, text: String, style_id: u32, rate: f32) -> OwnedResponse {
+        let model_id = self.get_model_id_from_style(style_id).await;
+        let model_path = self.get_model_path(model_id).await;
+
+        let core = self.core.lock().await;
+        if let Err(e) = core.load_specific_model(&model_id.to_string()) {
+            eprintln!("Failed to load model {model_id}: {e}");
+            return OwnedResponse::Error {
+                message: format!("Failed to load model {model_id} for synthesis: {e}"),
+            };
+        }
+
+        let synthesis_result = core.synthesize_with_rate(&text, style_id, rate);
+        Self::unload_model_if_known(&core, model_id, model_path.as_deref());
+
+        match synthesis_result {
+            Ok(wav_data) => OwnedResponse::SynthesizeResult { wav_data },
+            Err(e) => OwnedResponse::Error {
+                message: format!("Synthesis failed: {e}"),
+            },
+        }
+    }
+
     pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
         match request {
             OwnedRequest::Ping => OwnedResponse::Pong,
-
             OwnedRequest::Synthesize {
                 text,
                 style_id,
                 options,
-            } => {
-                let model_id = self.get_model_id_from_style(style_id).await;
-                let model_path = self.get_model_path(model_id).await;
-
-                let synthesis_result = {
-                    let core = self.core.lock().await;
-
-                    if let Err(e) = core.load_specific_model(&model_id.to_string()) {
-                        eprintln!("Failed to load model {model_id}: {e}");
-                        return OwnedResponse::Error {
-                            message: format!("Failed to load model {model_id} for synthesis: {e}"),
-                        };
-                    }
-
-                    let synthesis_result = core.synthesize_with_rate(&text, style_id, options.rate);
-                    if let Some(model_path) = model_path.as_deref() {
-                        if let Err(e) = core.unload_voice_model_by_path(model_path) {
-                            eprintln!("Failed to unload model {model_id}: {e}");
-                        }
-                    }
-                    synthesis_result
-                };
-
-                if model_path.is_none() {
-                    eprintln!("Model {model_id} not found in available models");
-                }
-
-                match synthesis_result {
-                    Ok(wav_data) => OwnedResponse::SynthesizeResult { wav_data },
-                    Err(e) => OwnedResponse::Error {
-                        message: format!("Synthesis failed: {e}"),
-                    },
-                }
-            }
-
+            } => self.synthesize_response(text, style_id, options.rate).await,
             OwnedRequest::ListSpeakers => self.speakers_list_response().await,
-
             OwnedRequest::ListModels => self.models_list_response().await,
         }
     }
+}
+
+fn decode_request_frame(data: &[u8]) -> Result<DaemonRequest> {
+    bincode::serde::decode_from_slice::<DaemonRequest, _>(data, bincode::config::standard())
+        .map(|(request, _)| request)
+        .map_err(Into::into)
+}
+
+fn encode_response_frame(response: &OwnedResponse) -> Result<Vec<u8>> {
+    bincode::serde::encode_to_vec(response, bincode::config::standard()).map_err(Into::into)
 }
 
 /// Handles a single connected daemon client until the stream closes or decoding fails.
@@ -134,23 +140,33 @@ pub async fn handle_client(stream: UnixStream, state: Arc<DaemonState>) -> Resul
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
     while let Some(frame) = framed.next().await {
-        let Ok(data) = frame else { break };
+        let data = match frame {
+            Ok(data) => data,
+            Err(error) => {
+                eprintln!("Client stream read error: {error}");
+                break;
+            }
+        };
 
-        let Ok((request, _)) = bincode::serde::decode_from_slice::<DaemonRequest, _>(
-            &data,
-            bincode::config::standard(),
-        ) else {
-            break;
+        let request = match decode_request_frame(&data) {
+            Ok(request) => request,
+            Err(error) => {
+                eprintln!("Failed to decode client request: {error}");
+                break;
+            }
         };
 
         let response = state.handle_request(request).await;
-        let Ok(response_data) =
-            bincode::serde::encode_to_vec(&response, bincode::config::standard())
-        else {
-            break;
+        let response_data = match encode_response_frame(&response) {
+            Ok(response_data) => response_data,
+            Err(error) => {
+                eprintln!("Failed to encode daemon response: {error}");
+                break;
+            }
         };
 
-        if framed.send(response_data.into()).await.is_err() {
+        if let Err(error) = framed.send(response_data.into()).await {
+            eprintln!("Client stream write error: {error}");
             break;
         }
     }
@@ -190,7 +206,9 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
             let (stream, _) = listener.accept().await?;
             let state_clone = Arc::clone(&state);
             tokio::spawn(async move {
-                let _ = handle_client(stream, state_clone).await;
+                if let Err(error) = handle_client(stream, state_clone).await {
+                    eprintln!("Client handler error: {error}");
+                }
             });
         }
         #[allow(unreachable_code)]

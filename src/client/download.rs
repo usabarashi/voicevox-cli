@@ -292,6 +292,15 @@ fn cleanup_incomplete_downloads(target_dir: &std::path::Path) {
     }
 }
 
+fn list_dir_paths(dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .map(|entry| entry.path())
+        .collect()
+}
+
 fn is_temporary_download_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -414,19 +423,18 @@ pub async fn launch_downloader_for_user() -> Result<()> {
 
 #[must_use]
 pub fn count_vvm_files_recursive(dir: &Path) -> usize {
-    std::fs::read_dir(dir)
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .map(|entry| entry.path())
-                .map(|path| match path {
-                    p if p.is_file() => count_vvm_file(&p),
-                    p if p.is_dir() => count_vvm_files_recursive(&p),
-                    _ => 0,
-                })
-                .sum()
+    list_dir_paths(dir)
+        .into_iter()
+        .map(|path| {
+            if path.is_file() {
+                count_vvm_file(&path)
+            } else if path.is_dir() {
+                count_vvm_files_recursive(&path)
+            } else {
+                0
+            }
         })
-        .unwrap_or(0)
+        .sum()
 }
 
 fn count_vvm_file(path: &Path) -> usize {
@@ -443,50 +451,47 @@ fn count_vvm_file(path: &Path) -> usize {
 pub fn cleanup_unnecessary_files(dir: &Path) {
     let unnecessary_extensions = [".zip", ".tgz", ".tar.gz", ".tar", ".gz"];
 
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        entries
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .for_each(|path| {
-                if path.is_file() {
-                    process_cleanup_file(&path, &unnecessary_extensions);
-                } else if path.is_dir() {
-                    cleanup_unnecessary_files(&path);
-                    try_remove_empty_directory(&path);
-                }
-            });
+    for path in list_dir_paths(dir) {
+        if path.is_file() {
+            process_cleanup_file(&path, &unnecessary_extensions);
+        } else if path.is_dir() {
+            cleanup_unnecessary_files(&path);
+            try_remove_empty_directory(&path);
+        }
     }
 }
 
 fn process_cleanup_file(path: &Path, unnecessary_extensions: &[&str]) {
-    if let Some(name) = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| {
-            unnecessary_extensions
-                .iter()
-                .any(|&ext| name.ends_with(ext))
-        })
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return;
+    };
+
+    if !unnecessary_extensions
+        .iter()
+        .any(|&ext| name.ends_with(ext))
     {
-        std::fs::remove_file(path).map_or_else(
-            |e| eprintln!("Warning: Failed to remove {name}: {e}"),
-            |()| println!("   Cleaned up: {name}"),
-        );
+        return;
     }
+
+    std::fs::remove_file(path).map_or_else(
+        |e| eprintln!("Warning: Failed to remove {name}: {e}"),
+        |()| println!("   Cleaned up: {name}"),
+    );
 }
 
 fn try_remove_empty_directory(path: &Path) {
-    let is_empty = std::fs::read_dir(path)
-        .map(|entries| entries.count() == 0)
-        .unwrap_or(false);
+    if std::fs::read_dir(path)
+        .ok()
+        .is_none_or(|mut entries| entries.next().is_some())
+    {
+        return;
+    }
 
-    if is_empty {
-        if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-            std::fs::remove_dir(path).map_or_else(
-                |e| eprintln!("Warning: Failed to remove empty directory {dir_name}: {e}"),
-                |()| println!("   Removed empty directory: {dir_name}"),
-            );
-        }
+    if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+        std::fs::remove_dir(path).map_or_else(
+            |e| eprintln!("Warning: Failed to remove empty directory {dir_name}: {e}"),
+            |()| println!("   Removed empty directory: {dir_name}"),
+        );
     }
 }
 

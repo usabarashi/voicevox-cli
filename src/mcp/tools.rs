@@ -594,11 +594,17 @@ fn render_voice_styles_block<Name>(
 where
     Name: std::fmt::Display,
 {
-    let mut block = format!("Speaker: {speaker_name}\nStyles:\n");
-    for style in styles {
-        let _ = writeln!(block, "  - {} (ID: {})", style.name, style.id);
-    }
-    block.trim_end().to_string()
+    styles
+        .iter()
+        .fold(
+            format!("Speaker: {speaker_name}\nStyles:\n"),
+            |mut block, style| {
+                let _ = writeln!(block, "  - {} (ID: {})", style.name, style.id);
+                block
+            },
+        )
+        .trim_end()
+        .to_string()
 }
 
 #[cfg(test)]

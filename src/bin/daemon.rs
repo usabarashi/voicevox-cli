@@ -319,10 +319,10 @@ async fn stop_daemon_process(pid: u32, socket_path: &Path) {
 
             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
-            if !daemon_is_responsive(socket_path).await {
-                println!("Socket cleanup confirmed");
-            } else {
+            if daemon_is_responsive(socket_path).await {
                 println!("Daemon may still be running");
+            } else {
+                println!("Socket cleanup confirmed");
             }
         }
         _ => {

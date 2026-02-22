@@ -71,6 +71,22 @@ pub type StyleModelMapBuildResult = (
     Vec<AvailableModel>,
 );
 
+fn available_models_from_paths(model_files: Vec<PathBuf>) -> Vec<AvailableModel> {
+    model_files
+        .into_iter()
+        .filter_map(|file_path| {
+            extract_model_id_from_path(&file_path).map(|model_id| AvailableModel {
+                model_id,
+                file_path,
+                #[cfg(feature = "smallvec")]
+                speakers: SmallVec::new(),
+                #[cfg(not(feature = "smallvec"))]
+                speakers: Vec::new(),
+            })
+        })
+        .collect()
+}
+
 fn record_new_style_ids<I>(
     style_map: &mut std::collections::HashMap<u32, u32>,
     cumulative_style_ids: &mut std::collections::HashSet<u32>,
@@ -399,8 +415,7 @@ where
         let _ = core.unload_voice_model_by_path(path);
     }
 
-    // Build available models list using existing scan function
-    let available_models = scan_available_models()?;
+    let available_models = available_models_from_paths(model_files);
 
     Ok((style_map, all_speakers, available_models))
 }

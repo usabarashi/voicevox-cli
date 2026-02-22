@@ -39,14 +39,13 @@ impl DaemonState {
     }
 
     async fn get_model_id_from_style(&self, style_id: u32) -> u32 {
-        match self.style_to_model_map.read().await.get(&style_id).copied() {
-            Some(model_id) => model_id,
-            None => {
-                eprintln!(
-                    "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
-                );
-                style_id
-            }
+        if let Some(model_id) = self.style_to_model_map.read().await.get(&style_id).copied() {
+            model_id
+        } else {
+            eprintln!(
+                "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
+            );
+            style_id
         }
     }
 

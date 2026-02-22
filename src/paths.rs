@@ -102,23 +102,19 @@ pub fn get_default_voicevox_dir() -> PathBuf {
 
 #[must_use]
 pub fn get_socket_path() -> PathBuf {
-    if let Some(path) = std::env::var("VOICEVOX_SOCKET_PATH")
-        .ok()
-        .map(PathBuf::from)
-    {
+    if let Some(path) = std::env::var_os("VOICEVOX_SOCKET_PATH").map(PathBuf::from) {
         return path;
     }
 
     if let Some(base_dir) = ["XDG_RUNTIME_DIR", "XDG_STATE_HOME"]
         .into_iter()
-        .filter_map(|var| std::env::var(var).ok())
+        .find_map(std::env::var_os)
         .map(PathBuf::from)
-        .next()
     {
         return base_dir.join(SOCKET_FILENAME);
     }
 
-    if let Some(home_dir) = std::env::var("HOME").ok().map(PathBuf::from) {
+    if let Some(home_dir) = std::env::var_os("HOME").map(PathBuf::from) {
         return home_dir.join(".local/state").join(SOCKET_FILENAME);
     }
 
@@ -244,7 +240,8 @@ fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<(PathBuf, bool)> {
     let mut candidates = std::fs::read_dir(lib_dir)
         .ok()
         .into_iter()
-        .flat_map(std::iter::Iterator::flatten)
+        .flatten()
+        .flatten()
         .map(|entry| entry.path())
         .filter_map(|path| {
             let filename = path.file_name()?.to_string_lossy().into_owned();

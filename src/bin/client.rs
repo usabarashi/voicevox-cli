@@ -125,8 +125,10 @@ fn print_no_models_message() {
     println!("{NO_MODELS_MESSAGE}");
 }
 
-fn default_voice_selection() -> (u32, String) {
-    (3, "Default (Zundamon Normal)".to_string())
+const DEFAULT_STYLE_ID: u32 = 3;
+
+fn default_voice_selection() -> u32 {
+    DEFAULT_STYLE_ID
 }
 
 fn print_list_models_output(models: &[voicevox_cli::voice::AvailableModel]) {
@@ -280,7 +282,7 @@ async fn run_synthesis_command(matches: &clap::ArgMatches) -> Result<()> {
         ));
     }
 
-    let (style_id, _voice_description) = resolve_voice_from_args(matches)?;
+    let style_id = resolve_voice_from_args(matches)?;
     let rate = matches.get_one::<f32>("rate").copied().unwrap_or(1.0);
     let quiet = matches.get_flag("quiet");
     let output_file = matches.get_one::<String>("output-file").map(Path::new);
@@ -294,17 +296,17 @@ async fn run_synthesis_command(matches: &clap::ArgMatches) -> Result<()> {
     try_daemon_with_retry(&text, style_id, options, output_file, quiet, &socket_path).await
 }
 
-fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
+fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<u32> {
     if let Some(&id) = matches.get_one::<u32>("speaker-id") {
-        return Ok((id, format!("Style ID {id}")));
+        return Ok(id);
     }
 
     if let Some(&id) = matches.get_one::<u32>("model") {
-        return Ok((id, format!("Model {id} (Default Style)")));
+        return Ok(id);
     }
 
     if let Some(voice_name) = matches.get_one::<String>("voice") {
-        return resolve_voice_dynamic(voice_name);
+        return resolve_voice_dynamic(voice_name).map(|(style_id, _description)| style_id);
     }
 
     Ok(default_voice_selection())

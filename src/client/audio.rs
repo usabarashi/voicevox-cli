@@ -44,14 +44,12 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
     use rodio::{Decoder, Sink};
     use std::io::Cursor;
 
-    let stream = match rodio::OutputStreamBuilder::open_default_stream() {
-        Ok(stream) => stream,
-        Err(_) => return play_audio_via_system(wav_data),
+    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+        return play_audio_via_system(wav_data);
     };
 
-    let source = match Decoder::new(Cursor::new(wav_data.to_vec())) {
-        Ok(source) => source,
-        Err(_) => return play_audio_via_system(wav_data),
+    let Ok(source) = Decoder::new(Cursor::new(wav_data.to_vec())) else {
+        return play_audio_via_system(wav_data);
     };
 
     let sink = Sink::connect_new(stream.mixer());

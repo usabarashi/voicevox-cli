@@ -19,7 +19,7 @@ fn collect_missing_resources() -> Vec<&'static str> {
 }
 
 fn default_download_target_dir() -> PathBuf {
-    std::env::var("HOME").ok().map_or_else(
+    std::env::var_os("HOME").map_or_else(
         || PathBuf::from("./voicevox"),
         |_| get_default_voicevox_dir(),
     )
@@ -305,17 +305,20 @@ fn is_temporary_download_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|ext| {
-            matches!(
-                ext.to_ascii_lowercase().as_str(),
-                "tmp" | "download" | "partial"
-            )
+            ext.eq_ignore_ascii_case("tmp")
+                || ext.eq_ignore_ascii_case("download")
+                || ext.eq_ignore_ascii_case("partial")
         })
 }
 
 fn is_shared_library_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "dylib" | "so" | "dll"))
+        .is_some_and(|ext| {
+            ext.eq_ignore_ascii_case("dylib")
+                || ext.eq_ignore_ascii_case("so")
+                || ext.eq_ignore_ascii_case("dll")
+        })
 }
 
 fn looks_like_large_resource_file(path: &Path) -> bool {

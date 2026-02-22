@@ -75,6 +75,13 @@ fn jsonrpc_error(id: Value, code: i32, message: impl Into<String>) -> JsonRpcRes
     JsonRpcResponse::error(id, code, message.into())
 }
 
+fn serialize_success_response<T: Serialize>(id: Value, result: T) -> JsonRpcResponse {
+    match serde_json::to_value(result) {
+        Ok(value) => JsonRpcResponse::success(id, value),
+        Err(_) => jsonrpc_error(id, INTERNAL_ERROR, "Failed to serialize response"),
+    }
+}
+
 fn empty_json_object() -> Value {
     Value::Object(serde_json::Map::new())
 }
@@ -82,10 +89,7 @@ fn empty_json_object() -> Value {
 fn parse_tool_call_arguments(params_obj: &serde_json::Map<String, Value>) -> Result<Value, String> {
     match params_obj.get("arguments") {
         None => Ok(empty_json_object()),
-        Some(Value::Object(_)) => params_obj
-            .get("arguments")
-            .cloned()
-            .ok_or_else(|| "Invalid arguments: expected object".to_string()),
+        Some(Value::Object(arguments)) => Ok(Value::Object(arguments.clone())),
         Some(_) => Err("Invalid arguments: expected object".to_string()),
     }
 }
@@ -234,14 +238,7 @@ pub fn process_initialize(id: Value, _params: Option<Value>) -> JsonRpcResponse 
         instructions: load_instructions(),
     };
 
-    match serde_json::to_value(result) {
-        Ok(value) => JsonRpcResponse::success(id, value),
-        Err(_) => JsonRpcResponse::error(
-            id,
-            INTERNAL_ERROR,
-            "Failed to serialize response".to_string(),
-        ),
-    }
+    serialize_success_response(id, result)
 }
 
 /// Tools list request processor - Returns available tools.
@@ -267,10 +264,7 @@ pub fn process_tools_list(id: Value, _params: Option<Value>) -> JsonRpcResponse 
         tools: get_tool_definitions(),
     };
 
-    match serde_json::to_value(result) {
-        Ok(value) => JsonRpcResponse::success(id, value),
-        Err(_) => jsonrpc_error(id, INTERNAL_ERROR, "Failed to serialize response"),
-    }
+    serialize_success_response(id, result)
 }
 
 /// Tools call request processor - Executes a tool.

@@ -22,9 +22,8 @@ pub async fn run_mcp_server() -> Result<()> {
     let (response_tx, mut response_rx) = mpsc::unbounded_channel::<JsonRpcResponse>();
     let active_requests = ActiveRequests::new(response_tx);
 
-    let mut shutdown = tokio::spawn(async {
-        let _ = tokio::signal::ctrl_c().await;
-    });
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
 
     loop {
         tokio::select! {
@@ -84,14 +83,13 @@ async fn process_line(
 }
 
 async fn parse_json_request(line: &str, stdout: &mut tokio::io::Stdout) -> Result<Option<Value>> {
-    match serde_json::from_str(line) {
-        Ok(request) => Ok(Some(request)),
-        Err(_) => {
-            let error_response =
-                JsonRpcResponse::error(Value::Null, PARSE_ERROR, "Parse error".to_string());
-            send_response(&error_response, stdout).await?;
-            Ok(None)
-        }
+    if let Ok(request) = serde_json::from_str(line) {
+        Ok(Some(request))
+    } else {
+        let error_response =
+            JsonRpcResponse::error(Value::Null, PARSE_ERROR, "Parse error".to_string());
+        send_response(&error_response, stdout).await?;
+        Ok(None)
     }
 }
 

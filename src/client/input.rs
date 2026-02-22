@@ -5,7 +5,7 @@ use std::io::{self, Read};
 fn read_stdin_trimmed() -> Result<String> {
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer)?;
-    Ok(buffer.trim().to_string())
+    Ok(buffer.trim_end().to_string())
 }
 
 fn read_input_file(file_path: &str) -> Result<String> {

@@ -55,15 +55,15 @@ fn text_content(text: impl Into<String>) -> ToolContent {
 fn text_result(text: impl Into<String>, is_error: bool) -> ToolCallResult {
     ToolCallResult {
         content: vec![text_content(text)],
-        is_error: Some(is_error),
+        is_error: is_error.then_some(true),
     }
 }
 
 fn json_object(value: Value) -> serde_json::Map<String, Value> {
-    match value {
-        Value::Object(map) => map,
-        _ => serde_json::Map::new(),
-    }
+    let Value::Object(map) = value else {
+        return serde_json::Map::new();
+    };
+    map
 }
 
 #[must_use]
@@ -574,11 +574,13 @@ where
         return "No speakers found matching the criteria.".to_string();
     }
 
-    let mut result_text = filtered_results
-        .iter()
-        .map(render_voice_styles_block)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let mut result_text = String::new();
+    for (index, item) in filtered_results.iter().enumerate() {
+        if index > 0 {
+            let _ = writeln!(result_text);
+        }
+        let _ = write!(result_text, "{}", render_voice_styles_block(item));
+    }
     let _ = writeln!(result_text);
     let _ = write!(
         result_text,
@@ -594,17 +596,12 @@ fn render_voice_styles_block<Name>(
 where
     Name: std::fmt::Display,
 {
-    styles
-        .iter()
-        .fold(
-            format!("Speaker: {speaker_name}\nStyles:\n"),
-            |mut block, style| {
-                let _ = writeln!(block, "  - {} (ID: {})", style.name, style.id);
-                block
-            },
-        )
-        .trim_end()
-        .to_string()
+    let mut block = format!("Speaker: {speaker_name}\nStyles:\n");
+    for style in styles {
+        let _ = writeln!(block, "  - {} (ID: {})", style.name, style.id);
+    }
+    block.pop();
+    block
 }
 
 #[cfg(test)]

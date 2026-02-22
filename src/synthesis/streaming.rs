@@ -82,13 +82,23 @@ impl Default for TextSplitter {
 impl TextSplitter {
     #[must_use]
     pub fn from_config(config: &crate::config::TextSplitterConfig) -> Self {
-        Self {
-            delimiters: config
-                .delimiters
-                .iter()
-                .filter_map(|s| s.chars().next())
-                .collect(),
-            max_length: config.max_length,
+        let delimiters = config
+            .delimiters
+            .iter()
+            .filter_map(|s| s.chars().next())
+            .collect::<Vec<_>>();
+        let max_length = config.max_length.max(1);
+
+        if delimiters.is_empty() {
+            Self {
+                max_length,
+                ..Self::default()
+            }
+        } else {
+            Self {
+                delimiters,
+                max_length,
+            }
         }
     }
 

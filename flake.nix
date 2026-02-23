@@ -104,14 +104,14 @@
           '';
         };
 
-        packageMeta = with pkgs.lib; {
+        packageMeta = {
           description = "VOICEVOX CLI for Apple Silicon - Dynamic voice detection system";
           homepage = "https://github.com/usabarashi/voicevox-cli";
-          license = with licenses; [
+          license = with lib.licenses; [
             mit
             asl20
           ];
-          platforms = [ "aarch64-darwin" ];
+          platforms = systems;
         };
 
         mkRustPackage =

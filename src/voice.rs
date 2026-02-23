@@ -98,6 +98,35 @@ fn sort_models_by_id(models: &mut [AvailableModel]) {
     }
 }
 
+fn populate_model_speakers(
+    models: &mut [AvailableModel],
+    speakers: &[Speaker],
+    style_to_model_map: &std::collections::HashMap<u32, u32>,
+) {
+    for model in models.iter_mut() {
+        model.speakers = speakers
+            .iter()
+            .filter_map(|speaker| {
+                let styles = speaker
+                    .styles
+                    .iter()
+                    .filter(|style| {
+                        style_to_model_map.get(&style.id).copied() == Some(model.model_id)
+                    })
+                    .cloned()
+                    .collect::<StyleList>();
+
+                (!styles.is_empty()).then(|| Speaker {
+                    name: speaker.name.clone(),
+                    speaker_uuid: speaker.speaker_uuid.clone(),
+                    styles,
+                    version: speaker.version.clone(),
+                })
+            })
+            .collect::<SpeakerList>();
+    }
+}
+
 fn record_new_style_ids<I>(
     style_map: &mut std::collections::HashMap<u32, u32>,
     cumulative_style_ids: &mut std::collections::HashSet<u32>,
@@ -334,7 +363,6 @@ pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
                     || (voice_id >= model.model_id * 10 && voice_id < (model.model_id + 1) * 10)
             })
             .map(|model| model.model_id)
-            .or_else(|| available_models.first().map(|model| model.model_id))
     })
 }
 
@@ -442,6 +470,7 @@ where
     }
 
     let mut available_models = available_models_from_entries(model_entries);
+    populate_model_speakers(&mut available_models, &all_speakers, &style_map);
     sort_models_by_id(&mut available_models);
 
     Ok((style_map, all_speakers, available_models))
@@ -449,7 +478,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_voice_dynamic;
+    use super::{
+        populate_model_speakers, resolve_voice_dynamic, AvailableModel, Speaker, SpeakerList,
+        Style, StyleList,
+    };
+    use std::collections::HashMap;
+    use std::path::PathBuf;
 
     #[test]
     fn resolve_voice_dynamic_trims_direct_style_id() {
@@ -457,5 +491,49 @@ mod tests {
             resolve_voice_dynamic("  3  ").expect("trimmed numeric style id should resolve");
         assert_eq!(style_id, 3);
         assert_eq!(description, "Style ID 3");
+    }
+
+    #[test]
+    fn populate_model_speakers_groups_styles_by_model() {
+        let mut models = vec![
+            AvailableModel {
+                model_id: 1,
+                file_path: PathBuf::from("1.vvm"),
+                speakers: SpeakerList::new(),
+            },
+            AvailableModel {
+                model_id: 2,
+                file_path: PathBuf::from("2.vvm"),
+                speakers: SpeakerList::new(),
+            },
+        ];
+        let speakers = vec![Speaker {
+            name: "speaker".into(),
+            speaker_uuid: "uuid".into(),
+            styles: [
+                Style {
+                    name: "style-10".into(),
+                    id: 10,
+                    style_type: None,
+                },
+                Style {
+                    name: "style-20".into(),
+                    id: 20,
+                    style_type: None,
+                },
+            ]
+            .into_iter()
+            .collect::<StyleList>(),
+            version: "1".into(),
+        }];
+        let style_to_model_map = HashMap::from([(10, 1), (20, 2)]);
+
+        populate_model_speakers(&mut models, &speakers, &style_to_model_map);
+
+        assert_eq!(models[0].speakers.len(), 1);
+        assert_eq!(models[0].speakers[0].styles.len(), 1);
+        assert_eq!(models[0].speakers[0].styles[0].id, 10);
+        assert_eq!(models[1].speakers.len(), 1);
+        assert_eq!(models[1].speakers[0].styles[0].id, 20);
     }
 }

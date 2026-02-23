@@ -156,6 +156,15 @@ fn print_list_models_output(models: &[voicevox_cli::voice::AvailableModel]) {
             "    Usage: --model {} or --speaker-id <STYLE_ID>",
             model.model_id
         );
+        if let Some(default_style_id) = model
+            .speakers
+            .iter()
+            .flat_map(|speaker| speaker.styles.iter())
+            .map(|style| style.id)
+            .next()
+        {
+            println!("    Default style ID (auto-selected by --model): {default_style_id}");
+        }
     }
 
     println!("\nTips:");

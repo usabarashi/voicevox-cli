@@ -62,17 +62,34 @@ impl DaemonState {
         })
     }
 
-    fn get_model_id_from_style(&self, style_id: u32) -> u32 {
-        let model_id = self.style_to_model_map.get(&style_id).copied();
-        model_id.map_or_else(
-            || {
-                eprintln!(
-                    "Warning: Style {style_id} not found in dynamic mapping, using style ID as model ID"
-                );
-                style_id
-            },
-            std::convert::identity,
-        )
+    fn first_style_id_for_model(&self, model_id: u32) -> Option<u32> {
+        self.all_speakers
+            .iter()
+            .flat_map(|speaker| speaker.styles.iter())
+            .find_map(|style| {
+                (self.style_to_model_map.get(&style.id) == Some(&model_id)).then_some(style.id)
+            })
+    }
+
+    fn resolve_synthesis_target(&self, requested_id: u32) -> Result<(u32, u32), String> {
+        if let Some(model_id) = self.style_to_model_map.get(&requested_id).copied() {
+            return Ok((requested_id, model_id));
+        }
+
+        if self
+            .available_models
+            .iter()
+            .any(|model| model.model_id == requested_id)
+        {
+            let style_id = self
+                .first_style_id_for_model(requested_id)
+                .ok_or_else(|| format!("Model {requested_id} has no resolvable style IDs"))?;
+            return Ok((style_id, requested_id));
+        }
+
+        Err(format!(
+            "Unknown style/model ID {requested_id}. Use --list-speakers or --list-models to inspect available IDs."
+        ))
     }
 
     fn get_model_path(&self, model_id: u32) -> Option<&Path> {
@@ -83,17 +100,16 @@ impl DaemonState {
     }
 
     fn speakers_list_response(&self) -> OwnedResponse {
-        let speakers = self.all_speakers.clone();
-        let style_to_model = self.style_to_model_map.clone();
         OwnedResponse::SpeakersListWithModels {
-            speakers,
-            style_to_model,
+            speakers: self.all_speakers.clone(),
+            style_to_model: self.style_to_model_map.clone(),
         }
     }
 
     fn models_list_response(&self) -> OwnedResponse {
-        let models = self.available_models.clone();
-        OwnedResponse::ModelsList { models }
+        OwnedResponse::ModelsList {
+            models: self.available_models.clone(),
+        }
     }
 
     fn unload_model_if_known(core: &VoicevoxCore, model_id: u32, model_path: Option<&Path>) {
@@ -107,8 +123,16 @@ impl DaemonState {
         }
     }
 
-    async fn synthesize_response(&self, text: String, style_id: u32, rate: f32) -> OwnedResponse {
-        let model_id = self.get_model_id_from_style(style_id);
+    async fn synthesize_response(
+        &self,
+        text: String,
+        requested_id: u32,
+        rate: f32,
+    ) -> OwnedResponse {
+        let (style_id, model_id) = match self.resolve_synthesis_target(requested_id) {
+            Ok(target) => target,
+            Err(message) => return OwnedResponse::Error { message },
+        };
         let model_path = self.get_model_path(model_id);
 
         let synthesis_result = {
@@ -207,6 +231,18 @@ async fn wait_for_shutdown_signal() -> Result<()> {
     Ok(())
 }
 
+async fn accept_loop(listener: &UnixListener, state: Arc<DaemonState>) -> Result<()> {
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let state_clone = Arc::clone(&state);
+        tokio::spawn(async move {
+            if let Err(error) = handle_client(stream, state_clone).await {
+                eprintln!("Client handler error: {error}");
+            }
+        });
+    }
+}
+
 /// Runs the daemon accept loop and serves requests over a Unix domain socket.
 ///
 /// # Errors
@@ -227,22 +263,8 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
         println!("Running in background mode. Use Ctrl+C to stop gracefully.");
     }
 
-    let server = async {
-        loop {
-            let (stream, _) = listener.accept().await?;
-            let state_clone = Arc::clone(&state);
-            tokio::spawn(async move {
-                if let Err(error) = handle_client(stream, state_clone).await {
-                    eprintln!("Client handler error: {error}");
-                }
-            });
-        }
-        #[allow(unreachable_code)]
-        Ok::<(), anyhow::Error>(())
-    };
-
     tokio::select! {
-        result = server => result?,
+        result = accept_loop(&listener, Arc::clone(&state)) => result?,
         result = wait_for_shutdown_signal() => result?,
     }
 

@@ -10,4 +10,7 @@ pub mod tts_execute;
 pub mod tts_params;
 pub mod voice_style_query;
 
+#[cfg(test)]
+mod tools_tests;
+
 pub use server::run_mcp_server;

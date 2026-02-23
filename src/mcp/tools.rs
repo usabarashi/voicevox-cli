@@ -186,7 +186,7 @@ struct ListVoiceStylesParams {
     style_name: Option<String>,
 }
 
-type FilteredSpeakerStyles<Name = String> = (Name, Vec<crate::voice::Style>);
+type FilteredSpeakerStyles = (String, Vec<crate::voice::Style>);
 
 fn cancelled_message(reason: &str) -> String {
     if reason.is_empty() {
@@ -574,10 +574,7 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
     Ok(text_result(result_text, false))
 }
 
-fn render_voice_styles_result<Name>(filtered_results: &[(Name, Vec<crate::voice::Style>)]) -> String
-where
-    Name: std::fmt::Display,
-{
+fn render_voice_styles_result(filtered_results: &[FilteredSpeakerStyles]) -> String {
     if filtered_results.is_empty() {
         return "No speakers found matching the criteria.".to_string();
     }
@@ -591,12 +588,7 @@ where
     format!("{blocks}\nTotal speakers found: {}", filtered_results.len())
 }
 
-fn render_voice_styles_block<Name>(
-    (speaker_name, styles): &(Name, Vec<crate::voice::Style>),
-) -> String
-where
-    Name: std::fmt::Display,
-{
+fn render_voice_styles_block((speaker_name, styles): &FilteredSpeakerStyles) -> String {
     let style_lines = styles
         .iter()
         .map(|style| format!("  - {} (ID: {})", style.name, style.id))

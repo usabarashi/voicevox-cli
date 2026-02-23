@@ -161,7 +161,7 @@ fn print_list_models_output(models: &[voicevox_cli::voice::AvailableModel]) {
             .iter()
             .flat_map(|speaker| speaker.styles.iter())
             .map(|style| style.id)
-            .next()
+            .min()
         {
             println!("    Default style ID (auto-selected by --model): {default_style_id}");
         }

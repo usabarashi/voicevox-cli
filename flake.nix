@@ -37,7 +37,8 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         lib = pkgs.lib;
-        version = "0.1.0";
+        cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+        version = cargoToml.package.version;
 
         # Fenix stable toolchain used for local builds/checks
         rustToolchain = fenix.packages.${system}.stable;

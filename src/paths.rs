@@ -36,9 +36,9 @@ fn dir_contains_vvm_files(dir: &Path) -> bool {
         entries.filter_map(Result::ok).any(|entry| {
             entry
                 .path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext == "vvm")
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|filename| has_extension_ignore_ascii_case(filename, "vvm"))
         })
     })
 }

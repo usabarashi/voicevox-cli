@@ -30,7 +30,7 @@ pub fn find_daemon_binary() -> Result<PathBuf, crate::daemon::DaemonError> {
     if let Ok(current_exe) = std::env::current_exe() {
         let mut daemon_path = current_exe;
         daemon_path.set_file_name("voicevox-daemon");
-        if daemon_path.exists() {
+        if daemon_path.is_file() {
             return Ok(daemon_path);
         }
     }
@@ -92,21 +92,32 @@ async fn wait_for_daemon_startup(socket_path: &Path) -> Result<()> {
     let mut retry_delay = DAEMON_STARTUP_INITIAL_DELAY;
 
     for attempt in 0..max_retries {
-        match timeout(DAEMON_CONNECTION_TIMEOUT, UnixStream::connect(socket_path)).await {
-            Ok(Ok(_)) => return Ok(()),
-            Ok(Err(_)) | Err(_) if attempt < max_retries - 1 => {
+        match connect_socket_with_timeout(socket_path, DAEMON_CONNECTION_TIMEOUT).await {
+            Ok(_stream) => return Ok(()),
+            Err(_) if attempt < max_retries - 1 => {
                 print!(".");
                 std::io::stdout().flush()?;
                 tokio::time::sleep(retry_delay).await;
                 retry_delay = (retry_delay * 2).min(DAEMON_STARTUP_MAX_DELAY);
             }
-            Ok(Err(_)) | Err(_) => {}
+            Err(_) => {}
         }
     }
 
     Err(anyhow!(
         "Daemon not responding after {max_retries} attempts (~{DAEMON_STARTUP_TOTAL_TIME_ESTIMATE}s total)"
     ))
+}
+
+fn encode_request_frame(request: &OwnedRequest) -> Result<Vec<u8>> {
+    bincode::serde::encode_to_vec(request, bincode::config::standard())
+        .map_err(|e| anyhow!("Failed to serialize request: {e}"))
+}
+
+fn decode_response_frame(frame: &[u8]) -> Result<OwnedResponse> {
+    bincode::serde::decode_from_slice(frame, bincode::config::standard())
+        .map(|(response, _)| response)
+        .map_err(|e| anyhow!("Failed to deserialize response: {e}"))
 }
 
 async fn request_daemon_once(
@@ -118,8 +129,7 @@ async fn request_daemon_once(
     let stream = connect_daemon_with_timeout(socket_path, connect_timeout_duration).await?;
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
-    let request_data = bincode::serde::encode_to_vec(request, bincode::config::standard())
-        .map_err(|e| anyhow!("Failed to serialize request: {e}"))?;
+    let request_data = encode_request_frame(request)?;
 
     framed
         .send(request_data.into())
@@ -132,9 +142,7 @@ async fn request_daemon_once(
         .ok_or_else(|| anyhow!("Connection closed by daemon"))?
         .map_err(|e| anyhow!("Failed to receive response: {e}"))?;
 
-    bincode::serde::decode_from_slice(&response_frame, bincode::config::standard())
-        .map(|(response, _)| response)
-        .map_err(|e| anyhow!("Failed to deserialize response: {e}"))
+    decode_response_frame(&response_frame)
 }
 
 /// Sends a synthesis request to an already running daemon and handles output/playback.
@@ -395,7 +403,7 @@ impl DaemonClient {
         crate::voice::has_available_models()
             .then_some(())
             .ok_or_else(|| anyhow!(
-                "No VOICEVOX models found. Please download models first using 'voicevox-cli download' or place .vvm files in the models directory."
+                "No VOICEVOX models found. Please run 'voicevox-setup' or place .vvm files in the models directory."
             ))?;
         start_daemon_automatically(socket_path).await?;
 
@@ -416,16 +424,15 @@ impl DaemonClient {
         &mut self,
         request: OwnedRequest,
     ) -> Result<OwnedResponse> {
-        let request_data = bincode::serde::encode_to_vec(&request, bincode::config::standard())?;
+        let request_data = encode_request_frame(&request)?;
         let mut framed = Framed::new(&mut self.stream, LengthDelimitedCodec::new());
         framed.send(request_data.into()).await?;
-        let response_data = framed
-            .next()
+        let response_data = framed.next();
+        let response_data = timeout(DAEMON_RESPONSE_TIMEOUT, response_data)
             .await
+            .map_err(|_| anyhow!("Daemon response timeout"))?
             .ok_or_else(|| anyhow!("No response from daemon"))??;
-        let (response, _) =
-            bincode::serde::decode_from_slice(&response_data, bincode::config::standard())?;
-        Ok(response)
+        decode_response_frame(&response_data)
     }
 
     /// Sends a synthesis request and returns the generated WAV bytes.

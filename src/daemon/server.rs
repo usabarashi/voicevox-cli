@@ -20,18 +20,27 @@ pub struct DaemonState {
 }
 
 struct SocketFileGuard {
-    path: PathBuf,
+    path: Option<PathBuf>,
 }
 
 impl SocketFileGuard {
-    const fn new(path: PathBuf) -> Self {
-        Self { path }
+    fn new(path: PathBuf) -> Self {
+        Self { path: Some(path) }
+    }
+
+    fn cleanup_now(mut self) -> Result<()> {
+        if let Some(path) = self.path.take() {
+            remove_socket_if_exists(&path)?;
+        }
+        Ok(())
     }
 }
 
 impl Drop for SocketFileGuard {
     fn drop(&mut self) {
-        let _ = remove_socket_if_exists(&self.path);
+        if let Some(path) = self.path.take() {
+            let _ = remove_socket_if_exists(&path);
+        }
     }
 }
 
@@ -48,24 +57,23 @@ impl DaemonState {
         speakers: &[crate::voice::Speaker],
         style_to_model_map: &HashMap<u32, u32>,
     ) -> HashMap<u32, u32> {
-        let mut model_default_style_map = HashMap::new();
-
-        for style in speakers.iter().flat_map(|speaker| speaker.styles.iter()) {
-            let Some(&model_id) = style_to_model_map.get(&style.id) else {
-                continue;
-            };
-
-            model_default_style_map
-                .entry(model_id)
-                .and_modify(|current_style_id| {
-                    if style.id < *current_style_id {
-                        *current_style_id = style.id;
-                    }
-                })
-                .or_insert(style.id);
-        }
-
-        model_default_style_map
+        speakers
+            .iter()
+            .flat_map(|speaker| speaker.styles.iter())
+            .filter_map(|style| {
+                style_to_model_map
+                    .get(&style.id)
+                    .copied()
+                    .map(|model_id| (model_id, style.id))
+            })
+            .fold(HashMap::new(), |mut acc, (model_id, style_id)| {
+                acc.entry(model_id)
+                    .and_modify(|current_style_id| {
+                        *current_style_id = (*current_style_id).min(style_id);
+                    })
+                    .or_insert(style_id);
+                acc
+            })
     }
 
     /// Builds daemon state and precomputes model/style metadata used by requests.
@@ -278,6 +286,13 @@ async fn accept_loop(listener: &UnixListener, state: Arc<DaemonState>) -> Result
     }
 }
 
+fn ensure_socket_parent_dir(socket_path: &Path) -> Result<()> {
+    if let Some(parent_dir) = socket_path.parent() {
+        std::fs::create_dir_all(parent_dir)?;
+    }
+    Ok(())
+}
+
 /// Runs the daemon accept loop and serves requests over a Unix domain socket.
 ///
 /// # Errors
@@ -285,9 +300,10 @@ async fn accept_loop(listener: &UnixListener, state: Arc<DaemonState>) -> Result
 /// Returns an error if socket cleanup/bind fails, daemon state initialization fails,
 /// socket accept fails, or final socket cleanup fails during shutdown.
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
+    ensure_socket_parent_dir(&socket_path)?;
     remove_socket_if_exists(&socket_path)?;
 
-    let _socket_guard = SocketFileGuard::new(socket_path.clone());
+    let socket_guard = SocketFileGuard::new(socket_path.clone());
     let listener = UnixListener::bind(&socket_path)?;
     println!("VOICEVOX daemon started successfully");
     println!("Listening on: {}", socket_path.display());
@@ -303,7 +319,7 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
         result = wait_for_shutdown_signal() => result?,
     }
 
-    remove_socket_if_exists(&socket_path)?;
+    socket_guard.cleanup_now()?;
 
     println!("VOICEVOX daemon stopped");
     Ok(())

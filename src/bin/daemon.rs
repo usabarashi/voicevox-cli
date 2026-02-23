@@ -44,8 +44,8 @@ impl CliArgs {
 
     fn to_daemon_flags(&self) -> DaemonFlags {
         DaemonFlags {
-            foreground: self.foreground,
-            detach: self.detach,
+            start_mode: StartMode::from_flags(self.foreground, self.detach),
+            mode_flag_explicit: self.foreground || self.detach,
             start: self.start,
             control: self.control_command(),
         }
@@ -65,6 +65,30 @@ impl CliArgs {
 }
 
 #[derive(Clone, Copy)]
+enum StartMode {
+    Foreground,
+    Detached,
+}
+
+impl StartMode {
+    fn from_flags(foreground: bool, detach: bool) -> Self {
+        if detach && !foreground {
+            Self::Detached
+        } else {
+            Self::Foreground
+        }
+    }
+
+    const fn is_foreground(self) -> bool {
+        matches!(self, Self::Foreground)
+    }
+
+    const fn should_detach(self) -> bool {
+        matches!(self, Self::Detached)
+    }
+}
+
+#[derive(Clone, Copy)]
 enum ControlCommand {
     None,
     Stop,
@@ -74,8 +98,8 @@ enum ControlCommand {
 
 #[derive(Clone, Copy)]
 struct DaemonFlags {
-    foreground: bool,
-    detach: bool,
+    start_mode: StartMode,
+    mode_flag_explicit: bool,
     start: bool,
     control: ControlCommand,
 }
@@ -121,11 +145,7 @@ async fn maybe_handle_control_commands(socket_path: &Path, flags: DaemonFlags) -
         }
         ControlCommand::None => {}
     }
-    if !flags.start
-        && matches!(flags.control, ControlCommand::None)
-        && !flags.foreground
-        && !flags.detach
-    {
+    if !flags.start && matches!(flags.control, ControlCommand::None) && !flags.mode_flag_explicit {
         print_usage_banner();
         return Ok(true);
     }
@@ -133,7 +153,7 @@ async fn maybe_handle_control_commands(socket_path: &Path, flags: DaemonFlags) -
 }
 
 async fn maybe_detach(socket_path: &Path, flags: DaemonFlags) -> ExecutionDecision {
-    if !flags.detach || flags.foreground {
+    if !flags.start_mode.should_detach() {
         return ExecutionDecision::Continue;
     }
 
@@ -265,7 +285,7 @@ async fn main() -> Result<()> {
         std::process::exit(report_startup_error(&error));
     }
     print_daemon_start_banner(&socket_path);
-    voicevox_cli::daemon::run_daemon(socket_path, flags.foreground).await
+    voicevox_cli::daemon::run_daemon(socket_path, flags.start_mode.is_foreground()).await
 }
 
 async fn handle_stop_daemon(socket_path: &Path) -> Result<()> {

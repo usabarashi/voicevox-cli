@@ -13,6 +13,8 @@ use voicevox_cli::ipc::{
 use voicevox_cli::paths::{find_openjtalk_dict, get_socket_path};
 use voicevox_cli::voice::{print_voice_help, resolve_voice_dynamic, scan_available_models};
 
+// Clap option flags are intentionally represented as booleans.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Parser)]
 #[command(
     name = "voicevox-say",

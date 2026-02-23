@@ -28,15 +28,3 @@ pub fn get_input_text_from_sources(text: Option<&str>, input_file: Option<&str>)
         (None, None) => read_stdin_trimmed(),
     }
 }
-
-/// Resolves input text from CLI argument, file, or stdin (in that order).
-///
-/// # Errors
-///
-/// Returns an error if the specified input file cannot be read or stdin reading fails.
-pub fn get_input_text(matches: &clap::ArgMatches) -> Result<String> {
-    get_input_text_from_sources(
-        matches.get_one::<String>("text").map(String::as_str),
-        matches.get_one::<String>("input-file").map(String::as_str),
-    )
-}

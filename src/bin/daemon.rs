@@ -8,6 +8,8 @@ use tokio::net::UnixStream;
 use voicevox_cli::daemon::{check_and_prevent_duplicate, exit_codes as exit_daemon, DaemonError};
 use voicevox_cli::paths::get_socket_path;
 
+// Clap option flags are intentionally represented as booleans.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Parser)]
 #[command(
     name = "voicevox-daemon",

@@ -2,6 +2,7 @@ pub mod audio;
 pub mod daemon_client;
 pub mod download;
 pub mod download_cleanup;
+pub mod download_install;
 pub mod download_update;
 pub mod input;
 

@@ -2,10 +2,10 @@ use anyhow::Result;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use super::download::{
+use super::{
+    cleanup::{cleanup_unnecessary_files, count_vvm_files_recursive},
     default_download_target_dir, find_downloader_binary, launch_downloader_for_user,
 };
-use super::download_cleanup::{cleanup_unnecessary_files, count_vvm_files_recursive};
 
 async fn try_run_downloader_only(resource: &str, target_dir: &Path) -> Result<bool> {
     let status = tokio::process::Command::new(find_downloader_binary()?)

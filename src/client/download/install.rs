@@ -2,11 +2,9 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use super::download::{
+use super::{
+    cleanup::{cleanup_incomplete_downloads, cleanup_unnecessary_files, count_vvm_files_recursive},
     collect_missing_resources, default_download_target_dir, find_downloader_binary,
-};
-use super::download_cleanup::{
-    cleanup_incomplete_downloads, cleanup_unnecessary_files, count_vvm_files_recursive,
 };
 use crate::paths::{find_onnxruntime, get_default_voicevox_dir};
 

@@ -156,18 +156,9 @@ fn print_usage_banner() {
 
 async fn maybe_handle_control_commands(socket_path: &Path, flags: DaemonFlags) -> Result<bool> {
     match Invocation::from_flags(flags) {
-        Invocation::Control(ControlAction::Stop) => {
-            handle_stop_daemon(socket_path).await?;
-            return Ok(true);
-        }
-        Invocation::Control(ControlAction::Status) => {
-            handle_status_daemon(socket_path).await?;
-            return Ok(true);
-        }
-        Invocation::Control(ControlAction::Restart) => {
-            println!("Restarting daemon...");
-            let _ = handle_stop_daemon(socket_path).await;
-            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        Invocation::Control(action) => {
+            run_control_action(action, socket_path).await?;
+            return Ok(!matches!(action, ControlAction::Restart));
         }
         Invocation::ShowUsage => {
             print_usage_banner();
@@ -176,6 +167,19 @@ async fn maybe_handle_control_commands(socket_path: &Path, flags: DaemonFlags) -
         Invocation::Start => {}
     }
     Ok(false)
+}
+
+async fn run_control_action(action: ControlAction, socket_path: &Path) -> Result<()> {
+    match action {
+        ControlAction::Stop => handle_stop_daemon(socket_path).await,
+        ControlAction::Status => handle_status_daemon(socket_path).await,
+        ControlAction::Restart => {
+            println!("Restarting daemon...");
+            let _ = handle_stop_daemon(socket_path).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+            Ok(())
+        }
+    }
 }
 
 async fn maybe_detach(socket_path: &Path, flags: DaemonFlags) -> ExecutionDecision {

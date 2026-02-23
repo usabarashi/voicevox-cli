@@ -14,6 +14,7 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse};
 pub struct DaemonState {
     core: Mutex<VoicevoxCore>,
     style_to_model_map: HashMap<u32, u32>,
+    model_default_style_map: HashMap<u32, u32>,
     all_speakers: Vec<crate::voice::Speaker>,
     available_models: Vec<crate::voice::AvailableModel>,
 }
@@ -43,6 +44,30 @@ fn remove_socket_if_exists(socket_path: &Path) -> Result<()> {
 }
 
 impl DaemonState {
+    fn build_model_default_style_map(
+        speakers: &[crate::voice::Speaker],
+        style_to_model_map: &HashMap<u32, u32>,
+    ) -> HashMap<u32, u32> {
+        let mut model_default_style_map = HashMap::new();
+
+        for style in speakers.iter().flat_map(|speaker| speaker.styles.iter()) {
+            let Some(&model_id) = style_to_model_map.get(&style.id) else {
+                continue;
+            };
+
+            model_default_style_map
+                .entry(model_id)
+                .and_modify(|current_style_id| {
+                    if style.id < *current_style_id {
+                        *current_style_id = style.id;
+                    }
+                })
+                .or_insert(style.id);
+        }
+
+        model_default_style_map
+    }
+
     /// Builds daemon state and precomputes model/style metadata used by requests.
     ///
     /// # Errors
@@ -56,19 +81,11 @@ impl DaemonState {
 
         Ok(Self {
             core: Mutex::new(core),
+            model_default_style_map: Self::build_model_default_style_map(&speakers, &mapping),
             style_to_model_map: mapping,
             all_speakers: speakers,
             available_models: models,
         })
-    }
-
-    fn first_style_id_for_model(&self, model_id: u32) -> Option<u32> {
-        self.all_speakers
-            .iter()
-            .flat_map(|speaker| speaker.styles.iter())
-            .find_map(|style| {
-                (self.style_to_model_map.get(&style.id) == Some(&model_id)).then_some(style.id)
-            })
     }
 
     fn resolve_synthesis_target(&self, requested_id: u32) -> Result<(u32, u32), String> {
@@ -82,7 +99,9 @@ impl DaemonState {
             .any(|model| model.model_id == requested_id)
         {
             let style_id = self
-                .first_style_id_for_model(requested_id)
+                .model_default_style_map
+                .get(&requested_id)
+                .copied()
                 .ok_or_else(|| format!("Model {requested_id} has no resolvable style IDs"))?;
             return Ok((style_id, requested_id));
         }

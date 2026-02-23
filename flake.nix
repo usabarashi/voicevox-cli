@@ -37,6 +37,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         lib = pkgs.lib;
+        version = "0.1.0";
 
         # Fenix stable toolchain used for local builds/checks
         rustToolchain = fenix.packages.${system}.stable;
@@ -118,7 +119,7 @@
           extraAttrs:
           pkgs.rustPlatform.buildRustPackage (
             {
-              version = "0.1.0";
+              inherit version;
 
               src = srcFiltered;
               cargoLock = cargoLockConfig;
@@ -176,6 +177,11 @@
           type = "app";
           inherit program;
         };
+        appBins = [
+          "voicevox-say"
+          "voicevox-daemon"
+          "voicevox-mcp-server"
+        ];
 
       in
       {
@@ -241,12 +247,11 @@
           };
         };
 
-        apps = {
-          default = mkApp "${voicevoxCli}/bin/voicevox-say";
-          voicevox-say = mkApp "${voicevoxCli}/bin/voicevox-say";
-          voicevox-daemon = mkApp "${voicevoxCli}/bin/voicevox-daemon";
-          voicevox-mcp-server = mkApp "${voicevoxCli}/bin/voicevox-mcp-server";
-        };
+        apps =
+          {
+            default = mkApp "${voicevoxCli}/bin/voicevox-say";
+          }
+          // lib.genAttrs appBins (bin: mkApp "${voicevoxCli}/bin/${bin}");
 
         devShells.default = pkgs.mkShell {
           # ONNX Runtime library search path (actual library loaded at runtime via dlopen)

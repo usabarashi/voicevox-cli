@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::Deserialize;
+use serde_json::Value;
 use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
@@ -12,115 +12,14 @@ use crate::client::{
 use crate::ipc::{
     is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
 };
+use crate::mcp::tool_types::text_result;
+use crate::mcp::voice_style_query::{
+    filter_speakers, normalized_filters, render_voice_styles_result, ListVoiceStylesParams,
+};
 use crate::synthesis::StreamingSynthesizer;
 
-// Tool Definition Types
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    #[serde(rename = "inputSchema")]
-    pub input_schema: ToolInputSchema,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ToolInputSchema {
-    #[serde(rename = "type")]
-    pub schema_type: String,
-    pub properties: serde_json::Map<String, Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub required: Option<Vec<String>>,
-}
-
-// Tool Execution Result Types
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ToolCallResult {
-    pub content: Vec<ToolContent>,
-    #[serde(rename = "isError", skip_serializing_if = "Option::is_none")]
-    pub is_error: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ToolContent {
-    #[serde(rename = "type")]
-    pub content_type: String,
-    pub text: String,
-}
-
-fn text_content(text: impl Into<String>) -> ToolContent {
-    ToolContent {
-        content_type: "text".to_string(),
-        text: text.into(),
-    }
-}
-
-fn text_result(text: impl Into<String>, is_error: bool) -> ToolCallResult {
-    ToolCallResult {
-        content: vec![text_content(text)],
-        is_error: is_error.then_some(true),
-    }
-}
-
-fn json_object(value: Value) -> serde_json::Map<String, Value> {
-    let Value::Object(map) = value else {
-        return serde_json::Map::new();
-    };
-    map
-}
-
-#[must_use]
-pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    vec![
-        ToolDefinition {
-            name: "text_to_speech".to_string(),
-            description: "Convert Japanese text to speech with VOICEVOX. Splits long messages automatically for client compatibility.".to_string(),
-            input_schema: ToolInputSchema {
-                schema_type: "object".to_string(),
-                properties: json_object(json!({
-                    "text": {
-                        "type": "string",
-                        "description": "Japanese text (15-50 chars optimal, 100+ may need splitting)"
-                    },
-                    "style_id": {
-                        "type": "integer",
-                        "description": "3=normal, 1=happy, 22=whisper, 76=sad, 75=confused"
-                    },
-                    "rate": {
-                        "type": "number",
-                        "description": "Speed (0.5-2.0, default 1.0)",
-                        "minimum": 0.5,
-                        "maximum": 2.0,
-                        "default": 1.0
-                    },
-                    "streaming": {
-                        "type": "boolean",
-                        "description": "Lower latency mode",
-                        "default": true
-                    }
-                })),
-                required: Some(vec!["text".to_string(), "style_id".to_string()]),
-            },
-        },
-        ToolDefinition {
-            name: "list_voice_styles".to_string(),
-            description: "Get available VOICEVOX voice styles for text_to_speech. Use this before synthesizing speech to discover available style_ids and their characteristics. Filter by speaker_name or style_name (e.g., 'ノーマル', 'ささやき', 'なみだめ') to find appropriate voices. Returns style_id, speaker name, and style type for each voice. Call this when users ask about available voices or when you need to select an appropriate voice style based on context.".to_string(),
-            input_schema: ToolInputSchema {
-                schema_type: "object".to_string(),
-                properties: json_object(json!({
-                    "speaker_name": {
-                        "type": "string",
-                        "description": "Filter by speaker name (partial match)"
-                    },
-                    "style_name": {
-                        "type": "string",
-                        "description": "Filter by style name (partial match)"
-                    }
-                })),
-                required: None,
-            },
-        },
-    ]
-}
+pub use crate::mcp::tool_catalog::{get_tool_definitions, ToolDefinition};
+pub use crate::mcp::tool_types::{ToolCallResult, ToolContent};
 
 /// Executes an MCP tool request with cancellation support.
 ///
@@ -180,14 +79,6 @@ const fn default_streaming() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize)]
-struct ListVoiceStylesParams {
-    speaker_name: Option<String>,
-    style_name: Option<String>,
-}
-
-type FilteredSpeakerStyles = (String, Vec<crate::voice::Style>);
-
 fn cancelled_message(reason: &str) -> String {
     if reason.is_empty() {
         "Audio playback cancelled by client".to_string()
@@ -198,46 +89,6 @@ fn cancelled_message(reason: &str) -> String {
 
 fn text_char_count(text: &str) -> usize {
     text.chars().count()
-}
-
-fn normalized_filters(params: &ListVoiceStylesParams) -> (Option<String>, Option<String>) {
-    (
-        params.speaker_name.as_ref().map(|s| s.to_lowercase()),
-        params.style_name.as_ref().map(|s| s.to_lowercase()),
-    )
-}
-
-fn filter_speakers(
-    speakers: Vec<crate::voice::Speaker>,
-    speaker_name_filter: Option<&str>,
-    style_name_filter: Option<&str>,
-) -> Vec<FilteredSpeakerStyles> {
-    speakers
-        .into_iter()
-        .filter_map(|speaker| {
-            let crate::voice::Speaker { name, styles, .. } = speaker;
-            let speaker_name_lower = speaker_name_filter.map(|_| name.to_lowercase());
-
-            if let Some(name_filter) = speaker_name_filter {
-                if !speaker_name_lower
-                    .as_deref()
-                    .is_some_and(|lower| lower.contains(name_filter))
-                {
-                    return None;
-                }
-            }
-
-            let filtered_styles = styles
-                .into_iter()
-                .filter(|style| {
-                    style_name_filter
-                        .is_none_or(|style_filter| style.name.to_lowercase().contains(style_filter))
-                })
-                .collect::<Vec<_>>();
-
-            (!filtered_styles.is_empty()).then_some((name.into(), filtered_styles))
-        })
-        .collect()
 }
 
 fn streaming_success_message(text_len: usize, style_id: u32) -> String {
@@ -572,30 +423,6 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
 
     let result_text = render_voice_styles_result(&filtered_results);
     Ok(text_result(result_text, false))
-}
-
-fn render_voice_styles_result(filtered_results: &[FilteredSpeakerStyles]) -> String {
-    if filtered_results.is_empty() {
-        return "No speakers found matching the criteria.".to_string();
-    }
-
-    let blocks = filtered_results
-        .iter()
-        .map(render_voice_styles_block)
-        .collect::<Vec<_>>()
-        .join("\n\n");
-
-    format!("{blocks}\nTotal speakers found: {}", filtered_results.len())
-}
-
-fn render_voice_styles_block((speaker_name, styles): &FilteredSpeakerStyles) -> String {
-    let style_lines = styles
-        .iter()
-        .map(|style| format!("  - {} (ID: {})", style.name, style.id))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!("Speaker: {speaker_name}\nStyles:\n{style_lines}")
 }
 
 #[cfg(test)]

@@ -201,6 +201,30 @@ fn encode_response_frame(response: &OwnedResponse) -> Result<Vec<u8>> {
     bincode::serde::encode_to_vec(response, bincode::config::standard()).map_err(Into::into)
 }
 
+fn log_client_error(context: &str, error: &dyn std::fmt::Display) {
+    eprintln!("{context}: {error}");
+}
+
+fn decode_request_or_log(data: &[u8]) -> Option<DaemonRequest> {
+    decode_request_frame(data).map_or_else(
+        |error| {
+            log_client_error("Failed to decode client request", &error);
+            None
+        },
+        Some,
+    )
+}
+
+fn encode_response_or_log(response: &OwnedResponse) -> Option<Vec<u8>> {
+    encode_response_frame(response).map_or_else(
+        |error| {
+            log_client_error("Failed to encode daemon response", &error);
+            None
+        },
+        Some,
+    )
+}
+
 /// Handles a single connected daemon client until the stream closes or decoding fails.
 ///
 /// # Errors
@@ -213,30 +237,22 @@ pub async fn handle_client(stream: UnixStream, state: Arc<DaemonState>) -> Resul
         let data = match frame {
             Ok(data) => data,
             Err(error) => {
-                eprintln!("Client stream read error: {error}");
+                log_client_error("Client stream read error", &error);
                 break;
             }
         };
 
-        let request = match decode_request_frame(&data) {
-            Ok(request) => request,
-            Err(error) => {
-                eprintln!("Failed to decode client request: {error}");
-                break;
-            }
+        let Some(request) = decode_request_or_log(&data) else {
+            break;
         };
 
         let response = state.handle_request(request).await;
-        let response_data = match encode_response_frame(&response) {
-            Ok(response_data) => response_data,
-            Err(error) => {
-                eprintln!("Failed to encode daemon response: {error}");
-                break;
-            }
+        let Some(response_data) = encode_response_or_log(&response) else {
+            break;
         };
 
         if let Err(error) = framed.send(response_data.into()).await {
-            eprintln!("Client stream write error: {error}");
+            log_client_error("Client stream write error", &error);
             break;
         }
     }
@@ -256,7 +272,7 @@ async fn accept_loop(listener: &UnixListener, state: Arc<DaemonState>) -> Result
         let state_clone = Arc::clone(&state);
         tokio::spawn(async move {
             if let Err(error) = handle_client(stream, state_clone).await {
-                eprintln!("Client handler error: {error}");
+                log_client_error("Client handler error", &error);
             }
         });
     }

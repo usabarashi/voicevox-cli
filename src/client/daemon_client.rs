@@ -19,7 +19,7 @@ const DAEMON_STARTUP_TOTAL_TIME_ESTIMATE: u32 = 80;
 
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::paths::get_socket_path;
-use crate::voice::{AvailableModel, Speaker};
+use crate::voice::{format_speakers_output, AvailableModel, Speaker};
 
 /// Finds the daemon executable path using the current binary location and common fallbacks.
 ///
@@ -215,28 +215,14 @@ pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
 }
 
 fn print_speakers(speakers: &[Speaker], style_to_model: Option<&HashMap<u32, u32>>) {
-    println!("All available speakers and styles from daemon:");
-    for speaker in speakers {
-        println!("  {}", speaker.name);
-        for style in &speaker.styles {
-            match style_to_model.and_then(|map| map.get(&style.id)) {
-                Some(model_id) => {
-                    println!(
-                        "    {} (Model: {model_id}, Style ID: {})",
-                        style.name, style.id
-                    );
-                }
-                None => {
-                    println!("    {} (Style ID: {})", style.name, style.id);
-                }
-            }
-
-            if let Some(style_type) = &style.style_type {
-                println!("        Type: {style_type}");
-            }
-        }
-        println!();
-    }
+    println!(
+        "{}",
+        format_speakers_output(
+            "All available speakers and styles from daemon:",
+            speakers,
+            style_to_model
+        )
+    );
 }
 
 async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {

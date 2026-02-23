@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "rayon")]
@@ -56,11 +57,52 @@ pub struct AvailableModel {
     pub speakers: SpeakerList,
 }
 
-pub type StyleModelMapBuildResult = (
-    std::collections::HashMap<u32, u32>,
-    Vec<Speaker>,
-    Vec<AvailableModel>,
-);
+pub type StyleModelMapBuildResult = (HashMap<u32, u32>, Vec<Speaker>, Vec<AvailableModel>);
+
+#[must_use]
+pub fn format_speakers_output(
+    header: &str,
+    speakers: &[Speaker],
+    style_to_model: Option<&HashMap<u32, u32>>,
+) -> String {
+    let body = speakers
+        .iter()
+        .map(|speaker| format_speaker_block(speaker, style_to_model))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    if body.is_empty() {
+        header.to_string()
+    } else {
+        format!("{header}\n{body}\n")
+    }
+}
+
+fn format_speaker_block(speaker: &Speaker, style_to_model: Option<&HashMap<u32, u32>>) -> String {
+    let style_lines = speaker
+        .styles
+        .iter()
+        .flat_map(|style| {
+            let main_line = match style_to_model.and_then(|map| map.get(&style.id)) {
+                Some(model_id) => format!(
+                    "    {} (Model: {model_id}, Style ID: {})",
+                    style.name, style.id
+                ),
+                None => format!("    {} (Style ID: {})", style.name, style.id),
+            };
+
+            std::iter::once(main_line).chain(
+                style
+                    .style_type
+                    .iter()
+                    .map(|style_type| format!("        Type: {style_type}")),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!("  {}\n{style_lines}", speaker.name)
+}
 
 fn available_models_from_paths(model_files: Vec<PathBuf>) -> Vec<AvailableModel> {
     model_files

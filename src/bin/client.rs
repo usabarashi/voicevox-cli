@@ -11,7 +11,9 @@ use voicevox_cli::ipc::{
     MIN_SYNTHESIS_RATE,
 };
 use voicevox_cli::paths::{find_openjtalk_dict, get_socket_path};
-use voicevox_cli::voice::{print_voice_help, resolve_voice_dynamic, scan_available_models};
+use voicevox_cli::voice::{
+    format_speakers_output, print_voice_help, resolve_voice_dynamic, scan_available_models,
+};
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]
@@ -254,17 +256,10 @@ fn handle_status_command() -> bool {
 }
 
 fn print_speakers(speakers: &[voicevox_cli::voice::Speaker]) {
-    println!("All available speakers and styles:");
-    for speaker in speakers {
-        println!("  {}", speaker.name);
-        for style in &speaker.styles {
-            println!("    {} (Style ID: {})", style.name, style.id);
-            if let Some(style_type) = &style.style_type {
-                println!("        Type: {style_type}");
-            }
-        }
-        println!();
-    }
+    println!(
+        "{}",
+        format_speakers_output("All available speakers and styles:", speakers, None)
+    );
 }
 
 async fn handle_list_speakers_command(args: &CliArgs) -> Result<bool> {

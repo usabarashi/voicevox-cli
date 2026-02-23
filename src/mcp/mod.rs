@@ -1,3 +1,4 @@
+pub mod list_voice_styles;
 pub mod playback;
 pub mod protocol;
 pub mod requests;

@@ -291,6 +291,27 @@ enum MetaCommand {
     ListSpeakers,
 }
 
+enum VoiceSelection<'a> {
+    SpeakerId(u32),
+    ModelId(u32),
+    VoiceName(&'a str),
+    Default,
+}
+
+impl<'a> VoiceSelection<'a> {
+    fn from_args(args: &'a CliArgs) -> Self {
+        if let Some(id) = args.speaker_id {
+            Self::SpeakerId(id)
+        } else if let Some(id) = args.model {
+            Self::ModelId(id)
+        } else if let Some(voice_name) = args.voice.as_deref() {
+            Self::VoiceName(voice_name)
+        } else {
+            Self::Default
+        }
+    }
+}
+
 async fn maybe_handle_meta_commands(args: &CliArgs) -> Result<bool> {
     match args.selected_meta_command() {
         Some(MetaCommand::ListModels) => handle_list_models_command(args).await,
@@ -325,19 +346,13 @@ async fn run_synthesis_command(args: &CliArgs) -> Result<()> {
 }
 
 fn resolve_voice_from_args(args: &CliArgs) -> Result<u32> {
-    if let Some(id) = args.speaker_id {
-        return Ok(id);
+    match VoiceSelection::from_args(args) {
+        VoiceSelection::SpeakerId(id) | VoiceSelection::ModelId(id) => Ok(id),
+        VoiceSelection::VoiceName(voice_name) => {
+            resolve_voice_dynamic(voice_name).map(|(style_id, _description)| style_id)
+        }
+        VoiceSelection::Default => Ok(default_voice_selection()),
     }
-
-    if let Some(id) = args.model {
-        return Ok(id);
-    }
-
-    if let Some(voice_name) = &args.voice {
-        return resolve_voice_dynamic(voice_name).map(|(style_id, _description)| style_id);
-    }
-
-    Ok(default_voice_selection())
 }
 
 async fn try_daemon_with_retry(

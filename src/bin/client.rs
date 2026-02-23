@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use std::path::{Path, PathBuf};
 
 use voicevox_cli::client::{
@@ -17,7 +17,12 @@ use voicevox_cli::voice::{print_voice_help, resolve_voice_dynamic, scan_availabl
 #[command(
     name = "voicevox-say",
     version,
-    about = "VOICEVOX Say - Convert text to audible speech using VOICEVOX"
+    about = "VOICEVOX Say - Convert text to audible speech using VOICEVOX",
+    group(
+        ArgGroup::new("meta_command")
+            .args(["list_speakers", "list_models", "status"])
+            .multiple(false)
+    )
 )]
 struct CliArgs {
     #[arg(help = "Specify the text to speak on the command line", index = 1)]
@@ -93,6 +98,18 @@ impl CliArgs {
 
     fn wants_voice_help(&self) -> bool {
         self.voice.as_deref() == Some("?")
+    }
+
+    fn selected_meta_command(&self) -> Option<MetaCommand> {
+        if self.list_models {
+            Some(MetaCommand::ListModels)
+        } else if self.status {
+            Some(MetaCommand::Status)
+        } else if self.list_speakers {
+            Some(MetaCommand::ListSpeakers)
+        } else {
+            None
+        }
     }
 }
 
@@ -274,20 +291,8 @@ enum MetaCommand {
     ListSpeakers,
 }
 
-fn selected_meta_command(args: &CliArgs) -> Option<MetaCommand> {
-    if args.list_models {
-        Some(MetaCommand::ListModels)
-    } else if args.status {
-        Some(MetaCommand::Status)
-    } else if args.list_speakers {
-        Some(MetaCommand::ListSpeakers)
-    } else {
-        None
-    }
-}
-
 async fn maybe_handle_meta_commands(args: &CliArgs) -> Result<bool> {
-    match selected_meta_command(args) {
+    match args.selected_meta_command() {
         Some(MetaCommand::ListModels) => handle_list_models_command(args).await,
         Some(MetaCommand::Status) => Ok(handle_status_command()),
         Some(MetaCommand::ListSpeakers) => handle_list_speakers_command(args).await,
@@ -306,7 +311,7 @@ async fn run_synthesis_command(args: &CliArgs) -> Result<()> {
     let style_id = resolve_voice_from_args(args)?;
     let rate = args.rate;
     let quiet = args.quiet;
-    let output_file = args.output_file.as_deref().map(Path::new);
+    let output_file = args.output_file.as_deref();
     if !is_valid_synthesis_rate(rate) {
         return Err(anyhow!(
             "Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}, got: {rate}"

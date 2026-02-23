@@ -69,6 +69,11 @@ async fn handle_existing_socket(socket_path: &Path) -> DaemonResult<()> {
                 .unwrap_or(0);
             Err(DaemonError::AlreadyRunning { pid })
         }
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            Err(DaemonError::SocketPermissionDenied {
+                path: socket_path.to_path_buf(),
+            })
+        }
         Err(_) => remove_stale_socket(socket_path),
     }
 }
@@ -119,10 +124,9 @@ fn check_pgrep_output(stdout: &[u8]) -> DaemonResult<()> {
 pub fn find_daemon_processes() -> Result<Vec<u32>> {
     let output = pgrep_voicevox_daemon_output(PgrepMatchMode::FullCommandLine)?;
 
-    match output {
-        output if output.status.success() && !output.stdout.is_empty() => {
-            Ok(parse_other_pids(&output.stdout))
-        }
-        _ => Ok(Vec::new()),
+    if output.status.success() && !output.stdout.is_empty() {
+        Ok(parse_other_pids(&output.stdout))
+    } else {
+        Ok(Vec::new())
     }
 }

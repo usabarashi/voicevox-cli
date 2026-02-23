@@ -172,29 +172,29 @@ impl CoreSynthesis for VoicevoxCore {
 }
 
 impl VoicevoxCore {
-    /// Loads a specific `.vvm` voice model by model file stem (e.g. `"3"`).
+    /// Loads a specific `.vvm` voice model by numeric model ID (e.g. `3` => `3.vvm`).
     ///
     /// # Errors
     ///
     /// Returns an error if the model directory cannot be found, the model file does not
     /// exist, or the core fails to load the model.
-    pub fn load_specific_model(&self, model_name: &str) -> Result<()> {
+    pub fn load_specific_model(&self, model_id: u32) -> Result<()> {
         let models_dir = find_models_dir()?;
-        let model_path = models_dir.join(format!("{model_name}.vvm"));
+        let model_path = models_dir.join(format!("{model_id}.vvm"));
 
         if !model_path.exists() {
             return Err(anyhow!(
-                "Model not found: {model_name}.vvm at {}",
+                "Model not found: {model_id}.vvm at {}",
                 models_dir.display()
             ));
         }
 
         let model = VoiceModelFile::open(&model_path)
-            .map_err(|e| anyhow!("Failed to open model {model_name}: {e}"))?;
+            .map_err(|e| anyhow!("Failed to open model {model_id}: {e}"))?;
 
         self.synthesizer
             .load_voice_model(&model)
-            .map_err(|e| anyhow!("Failed to load model {model_name}: {e}"))
+            .map_err(|e| anyhow!("Failed to load model {model_id}: {e}"))
     }
 
     /// Unloads a voice model by file path.

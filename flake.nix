@@ -183,6 +183,7 @@
           "voicevox-daemon"
           "voicevox-mcp-server"
         ];
+        appAttrs = lib.genAttrs appBins (bin: mkApp "${voicevoxCli}/bin/${bin}");
 
       in
       {
@@ -248,11 +249,7 @@
           };
         };
 
-        apps =
-          {
-            default = mkApp "${voicevoxCli}/bin/voicevox-say";
-          }
-          // lib.genAttrs appBins (bin: mkApp "${voicevoxCli}/bin/${bin}");
+        apps = appAttrs // { default = appAttrs.voicevox-say; };
 
         devShells.default = pkgs.mkShell {
           # ONNX Runtime library search path (actual library loaded at runtime via dlopen)

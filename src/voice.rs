@@ -226,34 +226,34 @@ fn find_vvm_files(dir: &Path) -> Result<Vec<PathBuf>> {
         return Ok(Vec::new());
     }
 
-    let mut files = Vec::new();
-    collect_vvm_files(dir, &mut files)?;
-    Ok(files)
+    collect_vvm_files(dir)
 }
 
-fn collect_vvm_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_vvm_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let entries = std::fs::read_dir(dir)
         .map_err(|e| anyhow!("Failed to read directory {}: {e}", dir.display()))?;
 
-    for entry_result in entries {
-        let entry =
-            entry_result.map_err(|e| anyhow!("Failed to read entry in {}: {e}", dir.display()))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|e| anyhow!("Failed to inspect entry in {}: {e}", dir.display()))?;
-        let path = entry.path();
+    entries
+        .into_iter()
+        .try_fold(Vec::new(), |mut files, entry_result| {
+            let entry = entry_result
+                .map_err(|e| anyhow!("Failed to read entry in {}: {e}", dir.display()))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|e| anyhow!("Failed to inspect entry in {}: {e}", dir.display()))?;
+            let path = entry.path();
 
-        if file_type.is_file() && is_vvm_path(&path) {
-            files.push(path);
-            continue;
-        }
+            if file_type.is_file() && is_vvm_path(&path) {
+                files.push(path);
+                return Ok(files);
+            }
 
-        if file_type.is_dir() {
-            collect_vvm_files(&path, files)?;
-        }
-    }
+            if file_type.is_dir() {
+                files.extend(collect_vvm_files(&path)?);
+            }
 
-    Ok(())
+            Ok(files)
+        })
 }
 
 fn extract_model_id_from_path(path: &Path) -> Option<u32> {
@@ -414,7 +414,7 @@ where
 
         progress_callback(index + 1, total_models, model_filename);
 
-        if let Err(error) = core.load_specific_model(&model_id.to_string()) {
+        if let Err(error) = core.load_specific_model(*model_id) {
             eprintln!("Warning: failed to load model {model_id} ({model_filename}): {error}");
             continue;
         }
@@ -442,7 +442,7 @@ where
     let loaded_model_paths = model_entries
         .iter()
         .filter_map(
-            |(model_id, path)| match core.load_specific_model(&model_id.to_string()) {
+            |(model_id, path)| match core.load_specific_model(*model_id) {
                 Ok(()) => Some(path),
                 Err(error) => {
                     eprintln!(

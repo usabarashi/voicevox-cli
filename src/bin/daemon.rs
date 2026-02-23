@@ -158,15 +158,14 @@ async fn maybe_handle_control_commands(socket_path: &Path, flags: DaemonFlags) -
     match Invocation::from_flags(flags) {
         Invocation::Control(action) => {
             run_control_action(action, socket_path).await?;
-            return Ok(!matches!(action, ControlAction::Restart));
+            Ok(!matches!(action, ControlAction::Restart))
         }
         Invocation::ShowUsage => {
             print_usage_banner();
-            return Ok(true);
+            Ok(true)
         }
-        Invocation::Start => {}
+        Invocation::Start => Ok(false),
     }
-    Ok(false)
 }
 
 async fn run_control_action(action: ControlAction, socket_path: &Path) -> Result<()> {
@@ -189,9 +188,10 @@ async fn maybe_detach(socket_path: &Path, flags: DaemonFlags) -> ExecutionDecisi
 
     println!("Starting daemon in detached mode...");
 
-    let mut args: Vec<String> = std::env::args().collect();
-    args.retain(|arg| arg != "--detach" && arg != "-d");
-    args.push("--foreground".to_string());
+    let mut args = std::env::args()
+        .filter(|arg| arg != "--detach" && arg != "-d")
+        .collect::<Vec<_>>();
+    args.push(String::from("--foreground"));
 
     let child = ProcessCommand::new(&args[0])
         .args(&args[1..])

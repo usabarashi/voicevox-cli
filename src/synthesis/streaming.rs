@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use rodio::{Decoder, Sink};
-use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::client::DaemonClient;
@@ -67,14 +66,14 @@ impl StreamingSynthesizer {
 
 #[derive(Debug, Clone)]
 pub struct TextSplitter {
-    delimiters: HashSet<char>,
+    delimiters: Vec<char>,
     max_length: usize,
 }
 
 impl Default for TextSplitter {
     fn default() -> Self {
         Self {
-            delimiters: ['。', '！', '？', '．', '\n'].into_iter().collect(),
+            delimiters: vec!['。', '！', '？', '．', '\n'],
             max_length: 100,
         }
     }
@@ -83,11 +82,13 @@ impl Default for TextSplitter {
 impl TextSplitter {
     #[must_use]
     pub fn from_config(config: &crate::config::TextSplitterConfig) -> Self {
-        let delimiters = config
+        let mut delimiters = config
             .delimiters
             .iter()
             .filter_map(|s| s.chars().next())
-            .collect::<HashSet<_>>();
+            .collect::<Vec<_>>();
+        delimiters.sort_unstable();
+        delimiters.dedup();
         let max_length = config.max_length.max(1);
 
         if delimiters.is_empty() {
@@ -103,6 +104,10 @@ impl TextSplitter {
         }
     }
 
+    fn is_delimiter(&self, ch: char) -> bool {
+        self.delimiters.contains(&ch)
+    }
+
     #[must_use]
     pub fn split(&self, text: &str) -> Vec<String> {
         let mut segments = Vec::new();
@@ -114,7 +119,7 @@ impl TextSplitter {
             current_segment.push(ch);
             current_len += 1;
 
-            if self.delimiters.contains(&ch) {
+            if self.is_delimiter(ch) {
                 self.consume_consecutive_delimiters(&mut chars, &mut current_segment);
                 segments.push(std::mem::take(&mut current_segment));
                 current_len = 0;
@@ -137,7 +142,7 @@ impl TextSplitter {
         current_segment: &mut String,
     ) {
         while let Some(&next_ch) = chars.peek() {
-            if !self.delimiters.contains(&next_ch) {
+            if !self.is_delimiter(next_ch) {
                 break;
             }
             if let Some(next_ch) = chars.next() {
@@ -193,7 +198,7 @@ mod tests {
     #[test]
     fn test_text_splitter_long_text() {
         let splitter = TextSplitter {
-            delimiters: std::iter::once('。').collect(),
+            delimiters: vec!['。'],
             max_length: 10,
         };
 

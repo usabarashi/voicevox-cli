@@ -179,7 +179,13 @@ fn load_instructions() -> Option<String> {
     fn try_load(path: &Path) -> Option<String> {
         match fs::read_to_string(path) {
             Ok(content) => Some(content),
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => None,
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                eprintln!(
+                    "Warning: failed to read MCP instructions from {}: {error}",
+                    path.display()
+                );
+                None
+            }
             _ => None,
         }
     }

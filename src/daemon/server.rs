@@ -164,7 +164,7 @@ impl DaemonState {
 
         let synthesis_result = {
             let core = self.core.lock().await;
-            if let Err(e) = core.load_specific_model(&model_id.to_string()) {
+            if let Err(e) = core.load_specific_model(model_id) {
                 eprintln!("Failed to load model {model_id}: {e}");
                 return OwnedResponse::Error {
                     message: format!("Failed to load model {model_id} for synthesis: {e}"),
@@ -173,7 +173,6 @@ impl DaemonState {
 
             let synthesis_result = core.synthesize_with_rate(&text, style_id, rate);
             Self::unload_model_if_known(&core, model_id, model_path);
-            drop(core);
             synthesis_result
         };
 

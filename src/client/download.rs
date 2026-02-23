@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -189,19 +190,23 @@ impl UpdateRequest {
         }
     }
 
-    fn start_message(&self) -> String {
+    fn start_message(&self) -> Cow<'static, str> {
         match self {
-            Self::Models => " Updating voice models only...".to_string(),
-            Self::Dictionary => " Updating dictionary only...".to_string(),
-            Self::SpecificModel(model_id) => format!(" Updating model {model_id} only..."),
+            Self::Models => Cow::Borrowed(" Updating voice models only..."),
+            Self::Dictionary => Cow::Borrowed(" Updating dictionary only..."),
+            Self::SpecificModel(model_id) => {
+                Cow::Owned(format!(" Updating model {model_id} only..."))
+            }
         }
     }
 
-    fn progress_message(&self) -> String {
+    fn progress_message(&self) -> Cow<'static, str> {
         match self {
-            Self::Models => " Downloading voice models only...".to_string(),
-            Self::Dictionary => " Downloading dictionary only...".to_string(),
-            Self::SpecificModel(model_id) => format!(" Downloading model {model_id} only..."),
+            Self::Models => Cow::Borrowed(" Downloading voice models only..."),
+            Self::Dictionary => Cow::Borrowed(" Downloading dictionary only..."),
+            Self::SpecificModel(model_id) => {
+                Cow::Owned(format!(" Downloading model {model_id} only..."))
+            }
         }
     }
 

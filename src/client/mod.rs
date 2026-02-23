@@ -9,4 +9,4 @@ pub use download::{
     cleanup_unnecessary_files, count_vvm_files_recursive, ensure_models_available,
     launch_downloader_for_user,
 };
-pub use input::get_input_text;
+pub use input::{get_input_text, get_input_text_from_sources};

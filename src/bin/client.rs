@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
-use clap::{Arg, Command};
+use clap::Parser;
 use std::path::{Path, PathBuf};
 
 use voicevox_cli::client::{
-    emit_synthesized_audio, ensure_models_available, get_input_text, list_speakers_daemon,
-    DaemonClient,
+    emit_synthesized_audio, ensure_models_available, get_input_text_from_sources,
+    list_speakers_daemon, DaemonClient,
 };
 use voicevox_cli::ipc::{
     is_valid_synthesis_rate, OwnedSynthesizeOptions, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE,
@@ -13,111 +13,94 @@ use voicevox_cli::ipc::{
 use voicevox_cli::paths::{find_openjtalk_dict, get_socket_path};
 use voicevox_cli::voice::{print_voice_help, resolve_voice_dynamic, scan_available_models};
 
-fn build_cli() -> Command {
-    Command::new("voicevox-say")
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("VOICEVOX Say - Convert text to audible speech using VOICEVOX")
-        .arg(
-            Arg::new("text")
-                .help("Specify the text to speak on the command line")
-                .index(1)
-                .required(false),
-        )
-        .arg(
-            Arg::new("voice")
-                .help("Specify the voice to be used. Use '?' to list all available voices")
-                .long("voice")
-                .short('v')
-                .value_name("VOICE"),
-        )
-        .arg(
-            Arg::new("rate")
-                .help("Speech rate multiplier (0.5-2.0, default: 1.0)")
-                .long("rate")
-                .short('r')
-                .value_name("RATE")
-                .value_parser(clap::value_parser!(f32))
-                .default_value("1.0"),
-        )
-        .arg(
-            Arg::new("output-file")
-                .help("Specify the path for an audio file to be written")
-                .long("output-file")
-                .short('o')
-                .value_name("FILE"),
-        )
-        .arg(
-            Arg::new("input-file")
-                .help("Specify a file to be spoken. Use '-' for stdin")
-                .long("input-file")
-                .short('f')
-                .value_name("FILE"),
-        )
-        .arg(
-            Arg::new("quiet")
-                .help("Don't play audio, only save to file")
-                .long("quiet")
-                .short('q')
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("list-speakers")
-                .help("List all available speakers and styles")
-                .long("list-speakers")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("speaker-id")
-                .help("Directly specify speaker style ID (advanced users)")
-                .long("speaker-id")
-                .value_name("ID")
-                .value_parser(clap::value_parser!(u32))
-                .conflicts_with_all(["voice", "model"]),
-        )
-        .arg(
-            Arg::new("model")
-                .help("Specify voice model by file number (e.g., --model 3 for 3.vvm)")
-                .long("model")
-                .short('m')
-                .value_name("MODEL_ID")
-                .value_parser(clap::value_parser!(u32))
-                .conflicts_with_all(["voice", "speaker-id"]),
-        )
-        .arg(
-            Arg::new("list-models")
-                .help("List all available voice models and exit")
-                .long("list-models")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("status")
-                .help("Show installation status of voice models and dictionary")
-                .long("status")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("socket-path")
-                .help("Specify custom Unix socket path")
-                .long("socket-path")
-                .short('S')
-                .value_name("PATH"),
-        )
+#[derive(Debug, Parser)]
+#[command(
+    name = "voicevox-say",
+    version,
+    about = "VOICEVOX Say - Convert text to audible speech using VOICEVOX"
+)]
+struct CliArgs {
+    #[arg(help = "Specify the text to speak on the command line", index = 1)]
+    text: Option<String>,
+
+    #[arg(
+        long,
+        short = 'v',
+        value_name = "VOICE",
+        help = "Specify the voice to be used. Use '?' to list all available voices",
+        conflicts_with_all = ["speaker_id", "model"]
+    )]
+    voice: Option<String>,
+
+    #[arg(
+        long,
+        short = 'r',
+        value_name = "RATE",
+        default_value_t = DEFAULT_SYNTHESIS_RATE,
+        help = "Speech rate multiplier (0.5-2.0, default: 1.0)"
+    )]
+    rate: f32,
+
+    #[arg(long = "output-file", short = 'o', value_name = "FILE")]
+    output_file: Option<PathBuf>,
+
+    #[arg(long = "input-file", short = 'f', value_name = "FILE")]
+    input_file: Option<String>,
+
+    #[arg(long, short = 'q', help = "Don't play audio, only save to file")]
+    quiet: bool,
+
+    #[arg(
+        long = "list-speakers",
+        help = "List all available speakers and styles"
+    )]
+    list_speakers: bool,
+
+    #[arg(
+        long = "speaker-id",
+        value_name = "ID",
+        help = "Directly specify speaker style ID (advanced users)",
+        conflicts_with_all = ["voice", "model"]
+    )]
+    speaker_id: Option<u32>,
+
+    #[arg(
+        long,
+        short = 'm',
+        value_name = "MODEL_ID",
+        help = "Specify voice model by file number (e.g., --model 3 for 3.vvm)",
+        conflicts_with_all = ["voice", "speaker_id"]
+    )]
+    model: Option<u32>,
+
+    #[arg(
+        long = "list-models",
+        help = "List all available voice models and exit"
+    )]
+    list_models: bool,
+
+    #[arg(long, help = "Show installation status of voice models and dictionary")]
+    status: bool,
+
+    #[arg(long = "socket-path", short = 'S', value_name = "PATH")]
+    socket_path: Option<PathBuf>,
+}
+
+impl CliArgs {
+    fn socket_path(&self) -> PathBuf {
+        self.socket_path.clone().unwrap_or_else(get_socket_path)
+    }
+
+    fn wants_voice_help(&self) -> bool {
+        self.voice.as_deref() == Some("?")
+    }
 }
 
 const NO_MODELS_MESSAGE: &str =
     "No voice models found. Please run 'voicevox-setup' to download required resources.";
 
-fn socket_path_from_matches(matches: &clap::ArgMatches) -> PathBuf {
-    matches
-        .get_one::<String>("socket-path")
-        .map_or_else(get_socket_path, PathBuf::from)
-}
-
-fn handle_voice_help_request(matches: &clap::ArgMatches) -> bool {
-    if matches
-        .get_one::<String>("voice")
-        .is_some_and(|voice_name| voice_name == "?")
-    {
+fn handle_voice_help_request(args: &CliArgs) -> bool {
+    if args.wants_voice_help() {
         print_voice_help();
         return true;
     }
@@ -173,8 +156,8 @@ fn print_list_models_output(models: &[voicevox_cli::voice::AvailableModel]) {
     println!("  - Use --list-speakers for detailed speaker information");
 }
 
-async fn handle_list_models_command(matches: &clap::ArgMatches) -> Result<bool> {
-    let socket_path = socket_path_from_matches(matches);
+async fn handle_list_models_command(args: &CliArgs) -> Result<bool> {
+    let socket_path = args.socket_path();
 
     match DaemonClient::new_with_auto_start_at(&socket_path).await {
         Ok(mut client) => {
@@ -265,8 +248,8 @@ fn print_speakers(speakers: &[voicevox_cli::voice::Speaker]) {
     }
 }
 
-async fn handle_list_speakers_command(matches: &clap::ArgMatches) -> Result<bool> {
-    let socket_path = socket_path_from_matches(matches);
+async fn handle_list_speakers_command(args: &CliArgs) -> Result<bool> {
+    let socket_path = args.socket_path();
 
     if list_speakers_daemon(&socket_path).await.is_ok() {
         return Ok(true);
@@ -291,64 +274,61 @@ enum MetaCommand {
     ListSpeakers,
 }
 
-fn selected_meta_command(matches: &clap::ArgMatches) -> Option<MetaCommand> {
-    if matches.get_flag("list-models") {
+fn selected_meta_command(args: &CliArgs) -> Option<MetaCommand> {
+    if args.list_models {
         Some(MetaCommand::ListModels)
-    } else if matches.get_flag("status") {
+    } else if args.status {
         Some(MetaCommand::Status)
-    } else if matches.get_flag("list-speakers") {
+    } else if args.list_speakers {
         Some(MetaCommand::ListSpeakers)
     } else {
         None
     }
 }
 
-async fn maybe_handle_meta_commands(matches: &clap::ArgMatches) -> Result<bool> {
-    match selected_meta_command(matches) {
-        Some(MetaCommand::ListModels) => handle_list_models_command(matches).await,
+async fn maybe_handle_meta_commands(args: &CliArgs) -> Result<bool> {
+    match selected_meta_command(args) {
+        Some(MetaCommand::ListModels) => handle_list_models_command(args).await,
         Some(MetaCommand::Status) => Ok(handle_status_command()),
-        Some(MetaCommand::ListSpeakers) => handle_list_speakers_command(matches).await,
+        Some(MetaCommand::ListSpeakers) => handle_list_speakers_command(args).await,
         None => Ok(false),
     }
 }
 
-async fn run_synthesis_command(matches: &clap::ArgMatches) -> Result<()> {
-    let text = get_input_text(matches)?;
+async fn run_synthesis_command(args: &CliArgs) -> Result<()> {
+    let text = get_input_text_from_sources(args.text.as_deref(), args.input_file.as_deref())?;
     if text.trim().is_empty() {
         return Err(anyhow!(
             "No text provided. Use command line argument, -f file, or pipe text to stdin."
         ));
     }
 
-    let style_id = resolve_voice_from_args(matches)?;
-    let rate = matches
-        .get_one::<f32>("rate")
-        .copied()
-        .unwrap_or(DEFAULT_SYNTHESIS_RATE);
-    let quiet = matches.get_flag("quiet");
-    let output_file = matches.get_one::<String>("output-file").map(Path::new);
+    let style_id = resolve_voice_from_args(args)?;
+    let rate = args.rate;
+    let quiet = args.quiet;
+    let output_file = args.output_file.as_deref().map(Path::new);
     if !is_valid_synthesis_rate(rate) {
         return Err(anyhow!(
             "Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}, got: {rate}"
         ));
     }
 
-    let socket_path = socket_path_from_matches(matches);
+    let socket_path = args.socket_path();
     let options = OwnedSynthesizeOptions { rate };
 
     try_daemon_with_retry(&text, style_id, options, output_file, quiet, &socket_path).await
 }
 
-fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<u32> {
-    if let Some(&id) = matches.get_one::<u32>("speaker-id") {
+fn resolve_voice_from_args(args: &CliArgs) -> Result<u32> {
+    if let Some(id) = args.speaker_id {
         return Ok(id);
     }
 
-    if let Some(&id) = matches.get_one::<u32>("model") {
+    if let Some(id) = args.model {
         return Ok(id);
     }
 
-    if let Some(voice_name) = matches.get_one::<String>("voice") {
+    if let Some(voice_name) = &args.voice {
         return resolve_voice_dynamic(voice_name).map(|(style_id, _description)| style_id);
     }
 
@@ -388,12 +368,12 @@ async fn try_daemon_with_retry(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = build_cli().get_matches();
-    if handle_voice_help_request(&matches) {
+    let args = CliArgs::parse();
+    if handle_voice_help_request(&args) {
         return Ok(());
     }
-    if maybe_handle_meta_commands(&matches).await? {
+    if maybe_handle_meta_commands(&args).await? {
         return Ok(());
     }
-    run_synthesis_command(&matches).await
+    run_synthesis_command(&args).await
 }

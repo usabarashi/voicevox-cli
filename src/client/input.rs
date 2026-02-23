@@ -21,13 +21,22 @@ fn read_input_file(file_path: &str) -> Result<String> {
 /// # Errors
 ///
 /// Returns an error if the specified input file cannot be read or stdin reading fails.
-pub fn get_input_text(matches: &clap::ArgMatches) -> Result<String> {
-    match (
-        matches.get_one::<String>("text"),
-        matches.get_one::<String>("input-file"),
-    ) {
+pub fn get_input_text_from_sources(text: Option<&str>, input_file: Option<&str>) -> Result<String> {
+    match (text, input_file) {
         (Some(text), _) => Ok(text.to_owned()),
         (None, Some(file_path)) => read_input_file(file_path),
         (None, None) => read_stdin_trimmed(),
     }
+}
+
+/// Resolves input text from CLI argument, file, or stdin (in that order).
+///
+/// # Errors
+///
+/// Returns an error if the specified input file cannot be read or stdin reading fails.
+pub fn get_input_text(matches: &clap::ArgMatches) -> Result<String> {
+    get_input_text_from_sources(
+        matches.get_one::<String>("text").map(String::as_str),
+        matches.get_one::<String>("input-file").map(String::as_str),
+    )
 }

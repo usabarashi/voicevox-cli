@@ -1,16 +1,13 @@
 use anyhow::{anyhow, Context, Result};
 use rodio::Sink;
-use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
 use crate::client::DaemonClient;
-use crate::ipc::{
-    is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
-};
 use crate::mcp::playback::{play_daemon_audio_with_cancellation, PlaybackOutcome};
 use crate::mcp::tool_types::text_result;
+use crate::mcp::tts_params::{parse_synthesize_params, text_char_count, SynthesizeParams};
 use crate::mcp::voice_style_query::{
     filter_speakers, normalized_filters, render_voice_styles_result, ListVoiceStylesParams,
 };
@@ -56,37 +53,12 @@ pub async fn execute_tool_request(
     }
 }
 
-const MAX_STYLE_ID: u32 = 1000;
-const MAX_TEXT_LENGTH: usize = 10_000;
-
-#[derive(Debug, Deserialize)]
-struct SynthesizeParams {
-    text: String,
-    style_id: u32,
-    #[serde(default = "default_rate")]
-    rate: f32,
-    #[serde(default = "default_streaming")]
-    streaming: bool,
-}
-
-const fn default_rate() -> f32 {
-    DEFAULT_SYNTHESIS_RATE
-}
-
-const fn default_streaming() -> bool {
-    true
-}
-
 fn cancelled_message(reason: &str) -> String {
     if reason.is_empty() {
         "Audio playback cancelled by client".to_string()
     } else {
         format!("Audio playback cancelled: {reason}")
     }
-}
-
-fn text_char_count(text: &str) -> usize {
-    text.chars().count()
 }
 
 fn streaming_success_message(text_len: usize, style_id: u32) -> String {
@@ -122,45 +94,6 @@ async fn connect_daemon_client_for_tool() -> Result<DaemonClient> {
     DaemonClient::connect_with_retry()
         .await
         .context("Failed to connect to VOICEVOX daemon after multiple attempts")
-}
-
-fn validate_synthesize_params(params: &SynthesizeParams) -> Result<()> {
-    let text = params.text.trim();
-    let text_char_count = text_char_count(text);
-    (!text.is_empty())
-        .then_some(())
-        .ok_or_else(|| anyhow!("Text cannot be empty"))?;
-
-    (text_char_count <= MAX_TEXT_LENGTH)
-        .then_some(())
-        .ok_or_else(|| {
-            anyhow!("Text too long: {text_char_count} characters (max: {MAX_TEXT_LENGTH})")
-        })?;
-
-    is_valid_synthesis_rate(params.rate)
-        .then_some(())
-        .ok_or_else(|| {
-            anyhow!("Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}")
-        })?;
-
-    (params.style_id <= MAX_STYLE_ID)
-        .then_some(())
-        .ok_or_else(|| {
-            anyhow!(
-                "Invalid style_id: {} (max: {})",
-                params.style_id,
-                MAX_STYLE_ID
-            )
-        })?;
-
-    Ok(())
-}
-
-fn parse_synthesize_params(arguments: Value) -> Result<SynthesizeParams> {
-    let params: SynthesizeParams =
-        serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
-    validate_synthesize_params(&params)?;
-    Ok(params)
 }
 
 /// Executes the `text_to_speech` tool without external cancellation.
@@ -310,6 +243,7 @@ pub async fn handle_list_voice_styles(arguments: Value) -> Result<ToolCallResult
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::tts_params;
     use serde_json::json;
 
     #[allow(clippy::future_not_send)]
@@ -364,7 +298,7 @@ mod tests {
     async fn test_text_to_speech_invalid_style_id() {
         let args = json!({
             "text": "テスト",
-            "style_id": MAX_STYLE_ID + 1,
+            "style_id": tts_params::MAX_STYLE_ID + 1,
             "streaming": false
         });
 
@@ -374,13 +308,13 @@ mod tests {
     #[test]
     fn test_validate_synthesize_params_char_limit_uses_character_count() {
         let params = SynthesizeParams {
-            text: "あ".repeat(MAX_TEXT_LENGTH),
+            text: "あ".repeat(tts_params::MAX_TEXT_LENGTH),
             style_id: 3,
             rate: 1.0,
             streaming: false,
         };
 
-        let result = validate_synthesize_params(&params);
+        let result = tts_params::validate_synthesize_params(&params);
         assert!(
             result.is_ok(),
             "expected char-limit boundary to pass: {result:?}"

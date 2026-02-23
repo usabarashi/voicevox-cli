@@ -104,6 +104,32 @@ struct DaemonFlags {
     control: ControlCommand,
 }
 
+#[derive(Clone, Copy)]
+enum Invocation {
+    ShowUsage,
+    Control(ControlAction),
+    Start,
+}
+
+#[derive(Clone, Copy)]
+enum ControlAction {
+    Stop,
+    Status,
+    Restart,
+}
+
+impl Invocation {
+    const fn from_flags(flags: DaemonFlags) -> Self {
+        match flags.control {
+            ControlCommand::Stop => Self::Control(ControlAction::Stop),
+            ControlCommand::Status => Self::Control(ControlAction::Status),
+            ControlCommand::Restart => Self::Control(ControlAction::Restart),
+            ControlCommand::None if !flags.start && !flags.mode_flag_explicit => Self::ShowUsage,
+            ControlCommand::None => Self::Start,
+        }
+    }
+}
+
 enum ExecutionDecision {
     Continue,
     Exit(i32),
@@ -129,25 +155,25 @@ fn print_usage_banner() {
 }
 
 async fn maybe_handle_control_commands(socket_path: &Path, flags: DaemonFlags) -> Result<bool> {
-    match flags.control {
-        ControlCommand::Stop => {
+    match Invocation::from_flags(flags) {
+        Invocation::Control(ControlAction::Stop) => {
             handle_stop_daemon(socket_path).await?;
             return Ok(true);
         }
-        ControlCommand::Status => {
+        Invocation::Control(ControlAction::Status) => {
             handle_status_daemon(socket_path).await?;
             return Ok(true);
         }
-        ControlCommand::Restart => {
+        Invocation::Control(ControlAction::Restart) => {
             println!("Restarting daemon...");
             let _ = handle_stop_daemon(socket_path).await;
             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         }
-        ControlCommand::None => {}
-    }
-    if !flags.start && matches!(flags.control, ControlCommand::None) && !flags.mode_flag_explicit {
-        print_usage_banner();
-        return Ok(true);
+        Invocation::ShowUsage => {
+            print_usage_banner();
+            return Ok(true);
+        }
+        Invocation::Start => {}
     }
     Ok(false)
 }

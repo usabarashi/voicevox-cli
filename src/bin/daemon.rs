@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Arg, Command};
+use clap::Parser;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
@@ -8,55 +8,60 @@ use tokio::net::UnixStream;
 use voicevox_cli::daemon::{check_and_prevent_duplicate, exit_codes as exit_daemon, DaemonError};
 use voicevox_cli::paths::get_socket_path;
 
-fn build_cli() -> Command {
-    Command::new("voicevox-daemon")
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("VOICEVOX Daemon - Background TTS service with pre-loaded models")
-        .arg(
-            Arg::new("socket-path")
-                .help("Specify custom Unix socket path")
-                .long("socket-path")
-                .short('s')
-                .value_name("PATH"),
-        )
-        .arg(
-            Arg::new("foreground")
-                .help("Run in foreground (don't daemonize)")
-                .long("foreground")
-                .short('f')
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("detach")
-                .help("Run as detached background process")
-                .long("detach")
-                .short('d')
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("start")
-                .help("Start the daemon (default behavior)")
-                .long("start")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("stop")
-                .help("Stop the running daemon")
-                .long("stop")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("status")
-                .help("Check daemon status")
-                .long("status")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("restart")
-                .help("Restart the daemon (stop then start)")
-                .long("restart")
-                .action(clap::ArgAction::SetTrue),
-        )
+#[derive(Debug, Parser)]
+#[command(
+    name = "voicevox-daemon",
+    version,
+    about = "VOICEVOX Daemon - Background TTS service with pre-loaded models"
+)]
+struct CliArgs {
+    #[arg(long = "socket-path", short = 's', value_name = "PATH")]
+    socket_path: Option<PathBuf>,
+
+    #[arg(long, short = 'f')]
+    foreground: bool,
+
+    #[arg(long, short = 'd')]
+    detach: bool,
+
+    #[arg(long, help = "Start the daemon (default behavior)")]
+    start: bool,
+
+    #[arg(long, conflicts_with_all = ["status", "restart"])]
+    stop: bool,
+
+    #[arg(long, conflicts_with_all = ["stop", "restart"])]
+    status: bool,
+
+    #[arg(long, conflicts_with_all = ["stop", "status"])]
+    restart: bool,
+}
+
+impl CliArgs {
+    fn socket_path(&self) -> PathBuf {
+        self.socket_path.clone().unwrap_or_else(get_socket_path)
+    }
+
+    fn to_daemon_flags(&self) -> DaemonFlags {
+        DaemonFlags {
+            foreground: self.foreground,
+            detach: self.detach,
+            start: self.start,
+            control: self.control_command(),
+        }
+    }
+
+    fn control_command(&self) -> ControlCommand {
+        if self.stop {
+            ControlCommand::Stop
+        } else if self.status {
+            ControlCommand::Status
+        } else if self.restart {
+            ControlCommand::Restart
+        } else {
+            ControlCommand::None
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -83,33 +88,6 @@ enum ExecutionDecision {
 impl ExecutionDecision {
     const fn exit(code: i32) -> Self {
         Self::Exit(code)
-    }
-}
-
-fn socket_path_from_matches(matches: &clap::ArgMatches) -> PathBuf {
-    matches
-        .get_one::<String>("socket-path")
-        .map_or_else(get_socket_path, PathBuf::from)
-}
-
-fn parse_control_command(matches: &clap::ArgMatches) -> ControlCommand {
-    if matches.get_flag("stop") {
-        ControlCommand::Stop
-    } else if matches.get_flag("status") {
-        ControlCommand::Status
-    } else if matches.get_flag("restart") {
-        ControlCommand::Restart
-    } else {
-        ControlCommand::None
-    }
-}
-
-fn parse_flags(matches: &clap::ArgMatches) -> DaemonFlags {
-    DaemonFlags {
-        foreground: matches.get_flag("foreground"),
-        detach: matches.get_flag("detach"),
-        start: matches.get_flag("start"),
-        control: parse_control_command(matches),
     }
 }
 
@@ -271,10 +249,9 @@ fn print_pid_memory_info(pid_num: u32) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = build_cli().get_matches();
-
-    let socket_path = socket_path_from_matches(&matches);
-    let flags = parse_flags(&matches);
+    let args = CliArgs::parse();
+    let socket_path = args.socket_path();
+    let flags = args.to_daemon_flags();
 
     if maybe_handle_control_commands(&socket_path, flags).await? {
         return Ok(());

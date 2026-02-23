@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -10,6 +9,9 @@ use crate::paths::{
 use crate::voice::scan_available_models;
 
 pub use super::download_cleanup::{cleanup_unnecessary_files, count_vvm_files_recursive};
+pub use super::download_update::{
+    update_dictionary_only, update_models_only, update_specific_model,
+};
 
 fn collect_missing_resources() -> Vec<&'static str> {
     [
@@ -22,7 +24,7 @@ fn collect_missing_resources() -> Vec<&'static str> {
     .collect()
 }
 
-fn default_download_target_dir() -> PathBuf {
+pub(crate) fn default_download_target_dir() -> PathBuf {
     std::env::var_os("HOME").map_or_else(
         || PathBuf::from("./voicevox"),
         |_| get_default_voicevox_dir(),
@@ -160,104 +162,6 @@ async fn download_missing_resources(missing_resources: &[&str]) -> Result<()> {
     ))
 }
 
-async fn try_run_downloader_only(resource: &str, target_dir: &Path) -> Result<bool> {
-    let status = tokio::process::Command::new(find_downloader_binary()?)
-        .arg("--only")
-        .arg(resource)
-        .arg("--output")
-        .arg(target_dir)
-        .status()
-        .await?;
-
-    Ok(status.success())
-}
-
-async fn prepare_update_target_dir() -> Result<PathBuf> {
-    let target_dir = default_download_target_dir();
-    tokio::fs::create_dir_all(&target_dir).await?;
-    println!(" Target directory: {}", target_dir.display());
-    Ok(target_dir)
-}
-
-enum UpdateRequest {
-    Models,
-    Dictionary,
-    SpecificModel(u32),
-}
-
-impl UpdateRequest {
-    const fn resource(&self) -> &'static str {
-        match self {
-            Self::Models | Self::SpecificModel(_) => "models",
-            Self::Dictionary => "dict",
-        }
-    }
-
-    fn start_message(&self) -> Cow<'static, str> {
-        match self {
-            Self::Models => Cow::Borrowed(" Updating voice models only..."),
-            Self::Dictionary => Cow::Borrowed(" Updating dictionary only..."),
-            Self::SpecificModel(model_id) => {
-                Cow::Owned(format!(" Updating model {model_id} only..."))
-            }
-        }
-    }
-
-    fn progress_message(&self) -> Cow<'static, str> {
-        match self {
-            Self::Models => Cow::Borrowed(" Downloading voice models only..."),
-            Self::Dictionary => Cow::Borrowed(" Downloading dictionary only..."),
-            Self::SpecificModel(model_id) => {
-                Cow::Owned(format!(" Downloading model {model_id} only..."))
-            }
-        }
-    }
-
-    const fn fallback_message(&self) -> &'static str {
-        match self {
-            Self::Models => "  Models-only update not supported, falling back to full update...",
-            Self::Dictionary => {
-                "  Dictionary-only update not supported, falling back to full update..."
-            }
-            Self::SpecificModel(_) => {
-                "  Specific model update not supported, falling back to full update..."
-            }
-        }
-    }
-
-    fn print_success(&self, target_dir: &Path) {
-        match self {
-            Self::Models => {
-                let vvm_count = count_vvm_files_recursive(&target_dir.join("models"));
-                println!(" Voice models updated successfully!");
-                println!("   Found {vvm_count} VVM model files");
-            }
-            Self::Dictionary => {
-                println!(" Dictionary updated successfully!");
-            }
-            Self::SpecificModel(model_id) => {
-                println!(" Model {model_id} updated successfully!");
-            }
-        }
-    }
-}
-
-async fn run_update_request(request: UpdateRequest) -> Result<()> {
-    println!("{}", request.start_message());
-
-    let target_dir = prepare_update_target_dir().await?;
-    println!("{}", request.progress_message());
-
-    if try_run_downloader_only(request.resource(), &target_dir).await? {
-        request.print_success(&target_dir);
-        cleanup_unnecessary_files(&target_dir);
-        Ok(())
-    } else {
-        println!("{}", request.fallback_message());
-        launch_downloader_for_user().await
-    }
-}
-
 /// Ensures all runtime resources (ONNX Runtime, dictionary, models) are available.
 ///
 /// # Errors
@@ -280,7 +184,7 @@ pub async fn ensure_resources_available() -> Result<()> {
 }
 
 /// Find the voicevox-download binary
-fn find_downloader_binary() -> Result<PathBuf> {
+pub(crate) fn find_downloader_binary() -> Result<PathBuf> {
     if let Ok(current_exe) = std::env::current_exe() {
         let downloader = current_exe.with_file_name("voicevox-download");
         if downloader.exists() {
@@ -370,33 +274,6 @@ pub async fn launch_downloader_for_user() -> Result<()> {
 /// Returns an error if resource detection, user input, or downloads fail.
 pub async fn ensure_models_available() -> Result<()> {
     ensure_resources_available().await
-}
-
-/// Attempts to update only voice models using `voicevox-download`.
-///
-/// # Errors
-///
-/// Returns an error if fallback full download also fails.
-pub async fn update_models_only() -> Result<()> {
-    run_update_request(UpdateRequest::Models).await
-}
-
-/// Attempts to update only the `OpenJTalk` dictionary using `voicevox-download`.
-///
-/// # Errors
-///
-/// Returns an error if fallback full download also fails.
-pub async fn update_dictionary_only() -> Result<()> {
-    run_update_request(UpdateRequest::Dictionary).await
-}
-
-/// Attempts to update a specific model, falling back to full model download if unsupported.
-///
-/// # Errors
-///
-/// Returns an error if directory setup fails or fallback download fails.
-pub async fn update_specific_model(model_id: u32) -> Result<()> {
-    run_update_request(UpdateRequest::SpecificModel(model_id)).await
 }
 
 /// Prints currently installed resources and available update commands.

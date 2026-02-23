@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod daemon_client;
 pub mod download;
+pub mod download_cleanup;
 pub mod input;
 
 pub use audio::{emit_synthesized_audio, play_audio_from_memory};

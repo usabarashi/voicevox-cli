@@ -1,3 +1,4 @@
+pub mod playback;
 pub mod protocol;
 pub mod requests;
 pub mod server;

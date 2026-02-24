@@ -5,7 +5,7 @@ use crate::app::{
     validate_text_synthesis_request, AppOutput, DaemonSynthesisBytesRequest, StdAppOutput,
     synthesize_bytes_via_daemon,
 };
-use crate::client::emit_synthesized_audio;
+use crate::client::{emit_synthesized_audio, format_daemon_rpc_error_for_cli};
 
 pub struct SaySynthesisRequest<'a> {
     pub text: &'a str,
@@ -54,7 +54,7 @@ async fn synthesize_with_daemon_retry(
         }
         Err(error) => {
             if !request.quiet {
-                output.error(&format!("Synthesis request failed: {error}"));
+                output.error(&format_daemon_rpc_error_for_cli(&error));
             }
             Err(error)
         }

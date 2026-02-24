@@ -6,10 +6,7 @@ use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOpti
 use crate::voice::{format_speakers_output, Speaker};
 
 use super::transport::{request_daemon_once, DAEMON_CONNECTION_TIMEOUT, DAEMON_RESPONSE_TIMEOUT};
-
-fn daemon_response_error(context: &str, message: &str) -> anyhow::Error {
-    anyhow!("{context}: {message}")
-}
+use super::daemon_response_error;
 
 fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {
     anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")
@@ -47,8 +44,8 @@ pub async fn daemon_mode(
             crate::client::audio::emit_synthesized_audio(&wav_data, output_file, quiet)?;
             Ok(())
         }
-        OwnedResponse::Error { code: _, message } => {
-            Err(daemon_response_error("Daemon error", &message))
+        OwnedResponse::Error { code, message } => {
+            Err(daemon_response_error("Daemon error", code, &message))
         }
         _ => Err(unexpected_daemon_response(
             "handling synthesize request",
@@ -80,8 +77,8 @@ pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
             print_speakers(&speakers, Some(&style_to_model));
             Ok(())
         }
-        OwnedResponse::Error { code: _, message } => {
-            Err(daemon_response_error("Daemon error", &message))
+        OwnedResponse::Error { code, message } => {
+            Err(daemon_response_error("Daemon error", code, &message))
         }
         _ => Err(unexpected_daemon_response(
             "listing speakers",

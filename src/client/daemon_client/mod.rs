@@ -1,3 +1,4 @@
+mod error;
 mod launcher;
 mod policy;
 mod rpc;
@@ -12,12 +13,12 @@ use crate::paths::get_socket_path;
 use crate::voice::{AvailableModel, Speaker};
 
 pub use crate::daemon::find_daemon_binary;
+pub use error::{
+    daemon_response_error, daemon_rpc_exit_code, find_daemon_rpc_error,
+    format_daemon_rpc_error_for_cli, format_daemon_rpc_error_for_mcp, DaemonRpcError,
+};
 pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 pub use rpc::{daemon_mode, list_speakers_daemon};
-
-fn daemon_response_error(context: &str, message: &str) -> anyhow::Error {
-    anyhow!("{context}: {message}")
-}
 
 fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {
     anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")
@@ -142,8 +143,8 @@ impl DaemonClient {
 
         match self.send_request_and_receive_response(request).await? {
             OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data),
-            OwnedResponse::Error { code: _, message } => {
-                Err(daemon_response_error("Synthesis error", &message))
+            OwnedResponse::Error { code, message } => {
+                Err(daemon_response_error("Synthesis error", code, &message))
             }
             _ => Err(unexpected_daemon_response(
                 "handling synthesize request",
@@ -164,8 +165,8 @@ impl DaemonClient {
             .await?
         {
             OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
-            OwnedResponse::Error { code: _, message } => {
-                Err(daemon_response_error("List speakers error", &message))
+            OwnedResponse::Error { code, message } => {
+                Err(daemon_response_error("List speakers error", code, &message))
             }
             _ => Err(unexpected_daemon_response(
                 "listing speakers",
@@ -186,8 +187,8 @@ impl DaemonClient {
             .await?
         {
             OwnedResponse::ModelsList { models } => Ok(models),
-            OwnedResponse::Error { code: _, message } => {
-                Err(daemon_response_error("List models error", &message))
+            OwnedResponse::Error { code, message } => {
+                Err(daemon_response_error("List models error", code, &message))
             }
             _ => Err(unexpected_daemon_response(
                 "listing models",

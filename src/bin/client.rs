@@ -1,12 +1,16 @@
 use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use voicevox_cli::app::{
     run_list_models_command, run_list_speakers_command, run_say_synthesis, run_status_command,
     SaySynthesisRequest,
 };
-use voicevox_cli::client::get_input_text_from_sources;
+use voicevox_cli::client::{
+    daemon_rpc_exit_code, find_daemon_rpc_error, format_daemon_rpc_error_for_cli,
+    get_input_text_from_sources,
+};
 use voicevox_cli::ipc::DEFAULT_SYNTHESIS_RATE;
 use voicevox_cli::paths::get_socket_path;
 use voicevox_cli::voice::{print_voice_help, resolve_voice_dynamic};
@@ -202,14 +206,48 @@ fn resolve_voice_from_args(args: &CliArgs) -> Result<u32> {
     }
 }
 
+async fn run_client_command(args: &CliArgs) -> Result<()> {
+    if handle_voice_help_request(args) {
+        return Ok(());
+    }
+    if maybe_handle_meta_commands(args).await? {
+        return Ok(());
+    }
+    run_synthesis_command(args).await
+}
+
+fn should_print_error_in_main(args: &CliArgs, error: &anyhow::Error) -> bool {
+    if find_daemon_rpc_error(error).is_none() {
+        return true;
+    }
+
+    args.quiet || args.selected_meta_command().is_some()
+}
+
+fn print_cli_error(args: &CliArgs, error: &anyhow::Error) {
+    if !should_print_error_in_main(args, error) {
+        return;
+    }
+
+    if find_daemon_rpc_error(error).is_some() {
+        eprintln!("{}", format_daemon_rpc_error_for_cli(error));
+    } else {
+        eprintln!("Error: {error}");
+    }
+}
+
+fn exit_code_for_error(error: &anyhow::Error) -> ExitCode {
+    ExitCode::from(daemon_rpc_exit_code(error).unwrap_or(1))
+}
+
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExitCode {
     let args = CliArgs::parse();
-    if handle_voice_help_request(&args) {
-        return Ok(());
+    match run_client_command(&args).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            print_cli_error(&args, &error);
+            exit_code_for_error(&error)
+        }
     }
-    if maybe_handle_meta_commands(&args).await? {
-        return Ok(());
-    }
-    run_synthesis_command(&args).await
 }

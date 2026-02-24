@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 
 use crate::app::{synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput};
+use crate::client::format_daemon_rpc_error_for_mcp;
 use crate::mcp::playback::{
     append_wav_segments_to_sink, play_daemon_audio_with_cancellation,
     wait_for_sink_with_cancellation, PlaybackOutcome,
@@ -160,10 +161,7 @@ async fn handle_daemon_synthesis(
     let wav_data = match synthesize_bytes_via_daemon(&synth_request, &output).await {
         Ok(wav_data) => wav_data,
         Err(error) => {
-            return Ok(text_result(
-                format!("Failed to connect to VOICEVOX daemon: {error}"),
-                true,
-            ));
+            return Ok(text_result(format_daemon_rpc_error_for_mcp(&error), true));
         }
     };
 

@@ -8,11 +8,11 @@ pub struct StdAppOutput;
 
 impl AppOutput for StdAppOutput {
     fn info(&self, message: &str) {
-        println!("{message}");
+        crate::logging::info(message);
     }
 
     fn error(&self, message: &str) {
-        eprintln!("{message}");
+        crate::logging::error(message);
     }
 }
 

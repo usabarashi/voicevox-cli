@@ -21,11 +21,51 @@ fn unexpected_daemon_response(context: &str) -> anyhow::Error {
     anyhow!("Unexpected response {context}")
 }
 
+fn missing_capability_error(capability: &str) -> anyhow::Error {
+    anyhow!("Daemon does not advertise required capability: {capability}")
+}
+
 pub struct DaemonClient {
     stream: UnixStream,
 }
 
 impl DaemonClient {
+    async fn from_stream(stream: UnixStream) -> Result<Self> {
+        let mut client = Self { stream };
+        client.ensure_compatible_server().await?;
+        Ok(client)
+    }
+
+    async fn ensure_compatible_server(&mut self) -> Result<()> {
+        match self
+            .send_request_and_receive_response(OwnedRequest::GetServerInfo)
+            .await?
+        {
+            OwnedResponse::ServerInfo {
+                protocol_version,
+                capabilities,
+                ..
+            } => {
+                if protocol_version != crate::ipc::DAEMON_IPC_PROTOCOL_VERSION {
+                    return Err(anyhow!(
+                        "Incompatible daemon IPC protocol version: expected {}, got {}",
+                        crate::ipc::DAEMON_IPC_PROTOCOL_VERSION,
+                        protocol_version
+                    ));
+                }
+
+                if !capabilities.iter().any(|cap| cap == "synthesize") {
+                    return Err(missing_capability_error("synthesize"));
+                }
+                Ok(())
+            }
+            OwnedResponse::Pong => Ok(()),
+            _ => Err(unexpected_daemon_response(
+                "while checking daemon compatibility",
+            )),
+        }
+    }
+
     /// Connects to the daemon using the default socket path.
     ///
     /// # Errors
@@ -46,7 +86,7 @@ impl DaemonClient {
             transport::DAEMON_CONNECTION_TIMEOUT,
         )
         .await?;
-        Ok(Self { stream })
+        Self::from_stream(stream).await
     }
 
     /// Connects to the daemon with retry/backoff behavior.
@@ -106,7 +146,7 @@ impl DaemonClient {
     /// Returns an error if no models are available, daemon startup fails, or connection fails.
     pub async fn new_with_auto_start_at(socket_path: &Path) -> Result<Self> {
         let stream = launcher::connect_or_start(socket_path).await?;
-        Ok(Self { stream })
+        Self::from_stream(stream).await
     }
 
     async fn send_request_and_receive_response(

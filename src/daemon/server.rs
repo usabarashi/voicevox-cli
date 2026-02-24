@@ -53,7 +53,7 @@ fn encode_response_frame(response: &OwnedResponse) -> Result<Vec<u8>> {
 }
 
 fn log_client_error(context: &str, error: &dyn std::fmt::Display) {
-    eprintln!("{context}: {error}");
+    crate::logging::error(&format!("{context}: {error}"));
 }
 
 fn decode_request_or_log(data: &[u8]) -> Option<DaemonRequest> {
@@ -113,7 +113,7 @@ pub async fn handle_client(stream: UnixStream, state: Arc<DaemonState>) -> Resul
 
 async fn wait_for_shutdown_signal() -> Result<()> {
     signal::ctrl_c().await?;
-    println!("\nShutting down daemon...");
+    crate::logging::info("\nShutting down daemon...");
     Ok(())
 }
 
@@ -148,13 +148,13 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
 
     let socket_guard = SocketFileGuard::new(socket_path.clone());
     let listener = UnixListener::bind(&socket_path)?;
-    println!("VOICEVOX daemon started successfully");
-    println!("Listening on: {}", socket_path.display());
+    crate::logging::info("VOICEVOX daemon started successfully");
+    crate::logging::info(&format!("Listening on: {}", socket_path.display()));
 
     let state = Arc::new(DaemonState::new()?);
 
     if !foreground {
-        println!("Running in background mode. Use Ctrl+C to stop gracefully.");
+        crate::logging::info("Running in background mode. Use Ctrl+C to stop gracefully.");
     }
 
     tokio::select! {
@@ -164,6 +164,6 @@ pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
 
     socket_guard.cleanup_now()?;
 
-    println!("VOICEVOX daemon stopped");
+    crate::logging::info("VOICEVOX daemon stopped");
     Ok(())
 }

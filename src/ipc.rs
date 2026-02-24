@@ -6,6 +6,7 @@ use crate::voice::{AvailableModel, Speaker};
 pub const DEFAULT_SYNTHESIS_RATE: f32 = 1.0;
 pub const MIN_SYNTHESIS_RATE: f32 = 0.5;
 pub const MAX_SYNTHESIS_RATE: f32 = 2.0;
+pub const DAEMON_IPC_PROTOCOL_VERSION: u32 = 1;
 
 #[must_use]
 pub const fn is_valid_synthesis_rate(rate: f32) -> bool {
@@ -16,6 +17,7 @@ pub const fn is_valid_synthesis_rate(rate: f32) -> bool {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DaemonRequest {
     Ping,
+    GetServerInfo,
     Synthesize {
         text: String,
         style_id: u32,
@@ -43,6 +45,11 @@ impl Default for SynthesizeOptions {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonResponse {
     Pong,
+    ServerInfo {
+        protocol_version: u32,
+        daemon_version: String,
+        capabilities: Vec<String>,
+    },
     SynthesizeResult {
         wav_data: Vec<u8>,
     },

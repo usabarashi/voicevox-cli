@@ -4,73 +4,69 @@ use std::time::Duration;
 use tokio::net::UnixStream;
 
 use super::transport::{connect_socket_with_timeout, DAEMON_CONNECTION_TIMEOUT};
+use crate::daemon::{
+    ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
+};
 
+const DAEMON_STARTUP_GRACE_PERIOD: Duration = Duration::from_millis(1000);
+const DAEMON_FINAL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const DAEMON_STARTUP_MAX_RETRIES: u32 = 20;
 const DAEMON_STARTUP_INITIAL_DELAY: Duration = Duration::from_millis(500);
 const DAEMON_STARTUP_MAX_DELAY: Duration = Duration::from_secs(4);
-const DAEMON_STARTUP_GRACE_PERIOD: Duration = Duration::from_millis(1000);
-const DAEMON_FINAL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-const DAEMON_STARTUP_TOTAL_TIME_ESTIMATE: u32 = 80;
-
-async fn wait_for_daemon_startup(socket_path: &Path) -> Result<()> {
-    let ready = crate::daemon::socket_probe::wait_for_socket_ready_with_backoff(
-        socket_path,
-        DAEMON_STARTUP_MAX_RETRIES,
-        DAEMON_STARTUP_INITIAL_DELAY,
-        DAEMON_STARTUP_MAX_DELAY,
-        false,
-        |_| {
-            use std::io::Write as _;
-            print!(".");
-            let _ = std::io::stdout().flush();
-        },
-    )
-    .await;
-
-    ready.then_some(()).ok_or_else(|| {
-        anyhow!(
-            "Daemon not responding after {DAEMON_STARTUP_MAX_RETRIES} attempts (~{DAEMON_STARTUP_TOTAL_TIME_ESTIMATE}s total)"
-        )
-    })
-}
 
 async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
     use std::io::Write;
 
-    println!("Starting VOICEVOX daemon (first startup may take a few seconds)...");
-    println!("  Resources:");
-    println!(
+    crate::logging::info("Starting VOICEVOX daemon (first startup may take a few seconds)...");
+    crate::logging::info("  Resources:");
+    crate::logging::info(&format!(
         "    ONNX Runtime: {}",
         crate::paths::find_onnxruntime()?.display()
-    );
-    println!(
+    ));
+    crate::logging::info(&format!(
         "    OpenJTalk Dictionary: {}",
         crate::paths::find_openjtalk_dict()?.display()
-    );
+    ));
 
     let models_dir = crate::paths::find_models_dir()?;
     let models = crate::voice::scan_available_models()?;
-    println!(
+    crate::logging::info(&format!(
         "    Voice Models: {} in {}",
         models.len(),
         models_dir.display()
-    );
-    println!("  Building voice model mappings (this may take a moment)...");
+    ));
+    crate::logging::info("  Building voice model mappings (this may take a moment)...");
 
     print!("  Starting daemon process");
     std::io::stdout().flush()?;
 
-    match crate::daemon::start_daemon_detached(Some(socket_path)).await {
-        Ok(crate::daemon::StartDaemonOutcome::Started) => {
-            wait_for_daemon_startup(socket_path).await?;
+    let startup_options = EnsureDaemonRunningOptions {
+        connect_timeout: DAEMON_CONNECTION_TIMEOUT,
+        wait_attempts: DAEMON_STARTUP_MAX_RETRIES,
+        initial_retry_delay: DAEMON_STARTUP_INITIAL_DELAY,
+        max_retry_delay: DAEMON_STARTUP_MAX_DELAY,
+        ..EnsureDaemonRunningOptions::default()
+    };
+
+    match ensure_daemon_running(socket_path, startup_options, |_| {
+        print!(".");
+        let _ = std::io::stdout().flush();
+    })
+    .await
+    {
+        Ok(EnsureDaemonRunningOutcome::Started) => {
             println!(" done!");
-            println!("VOICEVOX daemon started successfully");
+            crate::logging::info("VOICEVOX daemon started successfully");
             Ok(())
         }
-        Ok(crate::daemon::StartDaemonOutcome::AlreadyRunning) => {
-            wait_for_daemon_startup(socket_path).await?;
+        Ok(EnsureDaemonRunningOutcome::AlreadyRunningRecovered) => {
             println!(" done!");
-            println!("VOICEVOX daemon is already running");
+            crate::logging::info("VOICEVOX daemon is already running");
+            Ok(())
+        }
+        Ok(EnsureDaemonRunningOutcome::AlreadyResponsive) => {
+            println!(" done!");
+            crate::logging::info("VOICEVOX daemon is already running");
             Ok(())
         }
         Err(error) => Err(anyhow!("Failed to execute daemon: {error}")),

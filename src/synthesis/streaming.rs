@@ -7,7 +7,11 @@ use crate::config::Config;
 
 pub struct StreamingSynthesizer {
     daemon_client: DaemonClient,
-    text_splitter: TextSplitter,
+    text_segmenter: Box<dyn TextSegmenter + Send + Sync>,
+}
+
+pub trait TextSegmenter {
+    fn split(&self, text: &str) -> Vec<String>;
 }
 
 impl StreamingSynthesizer {
@@ -18,18 +22,85 @@ impl StreamingSynthesizer {
     /// Returns an error if the daemon cannot be reached.
     pub async fn new() -> Result<Self> {
         let daemon_client = DaemonClient::connect_with_retry().await?;
-        Self::new_with_client(daemon_client)
+        Self::new_with_client_and_config(daemon_client, &Config::default())
     }
 
     /// Creates a streaming synthesizer with an already-connected daemon client.
     #[allow(clippy::missing_errors_doc)]
     pub fn new_with_client(daemon_client: DaemonClient) -> Result<Self> {
-        let config = Config::default();
-        let text_splitter = TextSplitter::from_config(&config.text_splitter);
+        Self::new_with_client_and_config(daemon_client, &Config::default())
+    }
+
+    /// Creates a streaming synthesizer with explicit configuration injection.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn new_with_client_and_config(
+        daemon_client: DaemonClient,
+        config: &Config,
+    ) -> Result<Self> {
+        let text_segmenter = Box::new(TextSplitter::from_config(&config.text_splitter));
         Ok(Self {
             daemon_client,
-            text_splitter,
+            text_segmenter,
         })
+    }
+
+    /// Creates a streaming synthesizer with an explicit segmentation strategy.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn new_with_client_and_segmenter(
+        daemon_client: DaemonClient,
+        text_segmenter: Box<dyn TextSegmenter + Send + Sync>,
+    ) -> Result<Self> {
+        Ok(Self {
+            daemon_client,
+            text_segmenter,
+        })
+    }
+
+    /// Synthesizes text in segments and returns synthesized WAV segments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if segment synthesis fails.
+    pub async fn synthesize_streaming_segments(
+        &mut self,
+        text: &str,
+        style_id: u32,
+        rate: f32,
+    ) -> Result<Vec<Vec<u8>>> {
+        let segments = self.text_segmenter.split(text);
+        let options = crate::ipc::OwnedSynthesizeOptions { rate };
+        let mut wav_segments = Vec::new();
+
+        for (i, segment) in segments
+            .iter()
+            .filter(|segment| !segment.trim().is_empty())
+            .enumerate()
+        {
+            let wav_data = self
+                .daemon_client
+                .synthesize(segment, style_id, options)
+                .await
+                .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
+            wav_segments.push(wav_data);
+        }
+
+        Ok(wav_segments)
+    }
+
+    /// Appends synthesized WAV segments to the provided sink.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any audio segment cannot be decoded.
+    pub fn append_segments_to_sink(&self, wav_segments: &[Vec<u8>], sink: &Sink) -> Result<()> {
+        sink.play();
+        for (i, wav_data) in wav_segments.iter().enumerate() {
+            let cursor = Cursor::new(wav_data.clone());
+            let source = Decoder::new(cursor)
+                .with_context(|| format!("Failed to decode audio for segment {i}"))?;
+            sink.append(source);
+        }
+        Ok(())
     }
 
     /// Synthesizes text in segments and appends decoded audio to the provided sink.
@@ -44,29 +115,10 @@ impl StreamingSynthesizer {
         rate: f32,
         sink: &Sink,
     ) -> Result<()> {
-        let segments = self.text_splitter.split(text);
-        sink.play();
-        let options = crate::ipc::OwnedSynthesizeOptions { rate };
-
-        for (i, segment) in segments
-            .iter()
-            .filter(|segment| !segment.trim().is_empty())
-            .enumerate()
-        {
-            let wav_data = self
-                .daemon_client
-                .synthesize(segment, style_id, options)
-                .await
-                .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
-
-            let cursor = Cursor::new(wav_data);
-            let source = Decoder::new(cursor)
-                .with_context(|| format!("Failed to decode audio for segment {i}"))?;
-
-            sink.append(source);
-        }
-
-        Ok(())
+        let wav_segments = self
+            .synthesize_streaming_segments(text, style_id, rate)
+            .await?;
+        self.append_segments_to_sink(&wav_segments, sink)
     }
 }
 
@@ -184,9 +236,23 @@ impl TextSplitter {
     }
 }
 
+impl TextSegmenter for TextSplitter {
+    fn split(&self, text: &str) -> Vec<String> {
+        Self::split(self, text)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FixedSegmenter;
+
+    impl TextSegmenter for FixedSegmenter {
+        fn split(&self, _text: &str) -> Vec<String> {
+            vec!["a".to_string(), "b".to_string()]
+        }
+    }
 
     #[test]
     fn test_text_splitter_basic() {
@@ -225,5 +291,12 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0], "すごい！！！");
         assert_eq!(segments[1], "本当に？？");
+    }
+
+    #[test]
+    fn trait_object_segmenter_is_swappable() {
+        let segmenter: Box<dyn TextSegmenter + Send + Sync> = Box::new(FixedSegmenter);
+        let segments = segmenter.split("ignored");
+        assert_eq!(segments, vec!["a", "b"]);
     }
 }

@@ -15,6 +15,40 @@ fn unexpected_daemon_response(context: &str) -> anyhow::Error {
     anyhow!("Unexpected response {context}")
 }
 
+async fn assert_compatible_daemon(socket_path: &Path) -> Result<()> {
+    let response = request_daemon_once(
+        socket_path,
+        &OwnedRequest::GetServerInfo,
+        DAEMON_CONNECTION_TIMEOUT,
+        DAEMON_RESPONSE_TIMEOUT,
+    )
+    .await?;
+
+    match response {
+        OwnedResponse::ServerInfo {
+            protocol_version,
+            capabilities,
+            ..
+        } => {
+            if protocol_version != crate::ipc::DAEMON_IPC_PROTOCOL_VERSION {
+                return Err(anyhow!(
+                    "Incompatible daemon IPC protocol version: expected {}, got {}",
+                    crate::ipc::DAEMON_IPC_PROTOCOL_VERSION,
+                    protocol_version
+                ));
+            }
+            if !capabilities.iter().any(|cap| cap == "synthesize") {
+                return Err(anyhow!(
+                    "Daemon does not advertise required capability: synthesize"
+                ));
+            }
+            Ok(())
+        }
+        OwnedResponse::Pong => Ok(()),
+        _ => Err(unexpected_daemon_response("during compatibility check")),
+    }
+}
+
 /// Sends a synthesis request to an already running daemon and handles output/playback.
 ///
 /// # Errors
@@ -29,6 +63,7 @@ pub async fn daemon_mode(
     quiet: bool,
     socket_path: &Path,
 ) -> Result<()> {
+    assert_compatible_daemon(socket_path).await?;
     let request = OwnedRequest::Synthesize {
         text: text.to_string(),
         style_id,
@@ -59,6 +94,7 @@ pub async fn daemon_mode(
 /// Returns an error if daemon connection, request/response serialization, or response
 /// decoding fails, or if the daemon returns an error response.
 pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
+    assert_compatible_daemon(socket_path).await?;
     let response = request_daemon_once(
         socket_path,
         &DaemonRequest::ListSpeakers,

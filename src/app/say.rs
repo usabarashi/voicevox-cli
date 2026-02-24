@@ -1,11 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::app::{AppOutput, StdAppOutput};
 use crate::client::{emit_synthesized_audio, ensure_models_available, DaemonClient};
-use crate::ipc::{
-    is_valid_synthesis_rate, OwnedSynthesizeOptions, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
-};
+use crate::synthesis::{synthesize_bytes, validate_basic_request, TextSynthesisRequest};
 
 pub struct SaySynthesisRequest<'a> {
     pub text: &'a str,
@@ -30,18 +28,11 @@ pub async fn run_say_synthesis_with_output(
     request: SaySynthesisRequest<'_>,
     output: &dyn AppOutput,
 ) -> Result<()> {
-    if request.text.trim().is_empty() {
-        return Err(anyhow!(
-            "No text provided. Use command line argument, -f file, or pipe text to stdin."
-        ));
-    }
-
-    if !is_valid_synthesis_rate(request.rate) {
-        return Err(anyhow!(
-            "Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}, got: {}",
-            request.rate
-        ));
-    }
+    validate_basic_request(&TextSynthesisRequest {
+        text: request.text,
+        style_id: request.style_id,
+        rate: request.rate,
+    })?;
 
     synthesize_with_daemon_retry(request, output).await
 }
@@ -57,13 +48,14 @@ async fn synthesize_with_daemon_retry(
         ensure_models_available().await?;
     }
 
-    let options = OwnedSynthesizeOptions { rate: request.rate };
-
     match DaemonClient::new_with_auto_start_at(&request.socket_path).await {
         Ok(mut client) => {
-            let wav_data = client
-                .synthesize(request.text, request.style_id, options)
-                .await?;
+            let synth_req = TextSynthesisRequest {
+                text: request.text,
+                style_id: request.style_id,
+                rate: request.rate,
+            };
+            let wav_data = synthesize_bytes(&mut client, &synth_req).await?;
             emit_synthesized_audio(&wav_data, request.output_file, request.quiet)?;
             Ok(())
         }

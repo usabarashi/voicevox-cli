@@ -1,3 +1,4 @@
+pub mod bootstrap;
 pub mod process;
 pub mod server;
 pub mod socket_probe;
@@ -8,6 +9,9 @@ use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
+pub use bootstrap::{
+    ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
+};
 pub use process::{check_and_prevent_duplicate, find_daemon_processes};
 pub use server::{handle_client, run_daemon};
 pub use start_process::{find_daemon_binary, start_daemon_detached, StartDaemonOutcome};

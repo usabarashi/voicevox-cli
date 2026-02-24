@@ -79,7 +79,10 @@ async fn handle_existing_socket(socket_path: &Path) -> DaemonResult<()> {
 }
 
 fn remove_stale_socket(socket_path: &Path) -> DaemonResult<()> {
-    println!("Removing stale socket file: {}", socket_path.display());
+    crate::logging::info(&format!(
+        "Removing stale socket file: {}",
+        socket_path.display()
+    ));
 
     fs::remove_file(socket_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::PermissionDenied => DaemonError::SocketPermissionDenied {
@@ -100,7 +103,7 @@ fn check_for_other_daemons() -> DaemonResult<()> {
         }
         Ok(_) => Ok(()), // No processes found or empty output
         Err(_) => {
-            println!("Could not check for existing processes (pgrep not available)");
+            crate::logging::warn("Could not check for existing processes (pgrep not available)");
             Ok(())
         }
     }

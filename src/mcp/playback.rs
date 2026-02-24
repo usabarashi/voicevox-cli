@@ -10,6 +10,52 @@ pub(crate) enum PlaybackOutcome {
     Cancelled(String),
 }
 
+pub(crate) fn append_wav_segments_to_sink(sink: &Sink, wav_segments: &[Vec<u8>]) -> Result<()> {
+    sink.play();
+    for (i, wav_data) in wav_segments.iter().enumerate() {
+        let cursor = std::io::Cursor::new(wav_data.clone());
+        let source = rodio::Decoder::new(cursor)
+            .with_context(|| format!("Failed to decode audio for segment {i}"))?;
+        sink.append(source);
+    }
+    Ok(())
+}
+
+#[allow(clippy::future_not_send)]
+pub(crate) async fn wait_for_sink_with_cancellation(
+    sink: Arc<Sink>,
+    cancel_rx: Option<oneshot::Receiver<String>>,
+) -> Result<PlaybackOutcome> {
+    let playback_task = tokio::task::spawn_blocking({
+        let sink_for_task = Arc::clone(&sink);
+        move || -> Result<()> {
+            sink_for_task.sleep_until_end();
+            Ok(())
+        }
+    });
+    tokio::pin!(playback_task);
+
+    if let Some(mut cancel_rx) = cancel_rx {
+        tokio::select! {
+            res = &mut playback_task => {
+                res.context("Audio playback task failed")??;
+                Ok(PlaybackOutcome::Completed)
+            }
+            reason = &mut cancel_rx => {
+                let reason = reason.unwrap_or_default();
+                sink.stop();
+                let _ = playback_task.await;
+                Ok(PlaybackOutcome::Cancelled(reason))
+            }
+        }
+    } else {
+        playback_task
+            .await
+            .context("Audio playback task failed")??;
+        Ok(PlaybackOutcome::Completed)
+    }
+}
+
 #[allow(clippy::future_not_send)]
 pub(crate) async fn play_daemon_audio_with_cancellation(
     wav_data: Vec<u8>,

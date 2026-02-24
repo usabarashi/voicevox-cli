@@ -9,6 +9,7 @@ pub mod core;
 mod core_speakers;
 pub mod daemon;
 pub mod ipc;
+pub mod logging;
 pub mod mcp;
 pub mod paths;
 pub mod synthesis;

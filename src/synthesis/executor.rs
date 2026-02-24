@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 
 use crate::client::DaemonClient;
+use crate::config::Config;
 
 use super::StreamingSynthesizer;
 
@@ -21,10 +22,22 @@ async fn connect_daemon_client_with_retry_context() -> Result<DaemonClient> {
 ///
 /// Returns an error if daemon connection fails or streaming backend construction fails.
 pub async fn prepare_backend(streaming: bool) -> Result<PreparedBackend> {
+    prepare_backend_with_config(streaming, &Config::default()).await
+}
+
+/// Prepares a synthesis backend with injected configuration for streaming behavior.
+///
+/// # Errors
+///
+/// Returns an error if daemon connection fails or streaming backend construction fails.
+pub async fn prepare_backend_with_config(
+    streaming: bool,
+    config: &Config,
+) -> Result<PreparedBackend> {
     let client = connect_daemon_client_with_retry_context().await?;
     if streaming {
         Ok(PreparedBackend::Streaming(
-            StreamingSynthesizer::new_with_client(client)?,
+            StreamingSynthesizer::new_with_client_and_config(client, config)?,
         ))
     } else {
         Ok(PreparedBackend::Daemon(client))

@@ -4,10 +4,16 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
-use crate::mcp::playback::{play_daemon_audio_with_cancellation, PlaybackOutcome};
+use crate::mcp::playback::{
+    append_wav_segments_to_sink, play_daemon_audio_with_cancellation,
+    wait_for_sink_with_cancellation, PlaybackOutcome,
+};
 use crate::mcp::tool_types::text_result;
 use crate::mcp::tts_params::{parse_synthesize_params, text_char_count, SynthesizeParams};
-use crate::synthesis::{prepare_backend, PreparedBackend};
+use crate::synthesis::{
+    prepare_backend_with_config, synthesize_bytes, synthesize_streaming_segments,
+    validate_basic_request, PreparedBackend, TextSynthesisRequest,
+};
 
 fn cancelled_message(reason: &str) -> String {
     if reason.is_empty() {
@@ -72,6 +78,11 @@ pub async fn handle_text_to_speech_cancellable(
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<crate::mcp::tool_types::ToolCallResult> {
     let params = parse_synthesize_params(arguments)?;
+    validate_basic_request(&TextSynthesisRequest {
+        text: &params.text,
+        style_id: params.style_id,
+        rate: params.rate,
+    })?;
 
     if params.streaming {
         handle_streaming_synthesis_cancellable(params, cancel_rx).await
@@ -95,43 +106,33 @@ async fn handle_streaming_synthesis_cancellable(
         .context("Failed to create audio output stream")?;
     let sink = Arc::new(Sink::connect_new(stream.mixer()));
 
-    let mut synthesizer = match prepare_backend(true).await {
+    let config = crate::config::Config::default();
+    let mut synthesizer = match prepare_backend_with_config(true, &config).await {
         Ok(PreparedBackend::Streaming(synthesizer)) => synthesizer,
         Ok(PreparedBackend::Daemon(_)) => unreachable!(),
         Err(error) => return Err(error.context("Failed to create streaming synthesizer")),
     };
 
-    let sink_clone = Arc::clone(&sink);
     let text_len = text_char_count(&text);
 
-    let synthesis_and_playback_fut = async move {
-        synthesizer
-            .synthesize_streaming(&text, style_id, rate, &sink_clone)
-            .await
-            .context("Streaming synthesis failed")?;
+    let request = TextSynthesisRequest {
+        text: &text,
+        style_id,
+        rate,
+    };
+    let wav_segments = synthesize_streaming_segments(&mut synthesizer, &request)
+        .await
+        .context("Streaming synthesis failed")?;
+    append_wav_segments_to_sink(&sink, &wav_segments)?;
 
-        let res: Result<(), tokio::task::JoinError> = tokio::task::spawn_blocking(move || {
-            sink_clone.sleep_until_end();
-        })
-        .await;
-        res.context("Audio playback task failed")?;
-        Ok(()) as Result<()>
+    let sink_clone = Arc::clone(&sink);
+    let cancelled_reason = match wait_for_sink_with_cancellation(sink_clone, cancel_rx).await? {
+        PlaybackOutcome::Completed => None,
+        PlaybackOutcome::Cancelled(reason) => Some(reason),
     };
 
-    if let Some(mut cancel_rx) = cancel_rx {
-        tokio::pin!(synthesis_and_playback_fut);
-        tokio::select! {
-            res = &mut synthesis_and_playback_fut => {
-                res?;
-            }
-            reason = &mut cancel_rx => {
-                sink.stop();
-                let reason = reason.unwrap_or_default();
-                return Ok(cancelled_result(&reason));
-            }
-        }
-    } else {
-        synthesis_and_playback_fut.await?;
+    if let Some(reason) = cancelled_reason {
+        return Ok(cancelled_result(&reason));
     }
 
     Ok(text_result(
@@ -145,7 +146,8 @@ async fn handle_daemon_synthesis(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<crate::mcp::tool_types::ToolCallResult> {
-    let mut client = match prepare_backend(false).await {
+    let config = crate::config::Config::default();
+    let mut client = match prepare_backend_with_config(false, &config).await {
         Ok(PreparedBackend::Daemon(client)) => client,
         Ok(PreparedBackend::Streaming(_)) => unreachable!(),
         Err(error) => {
@@ -156,10 +158,12 @@ async fn handle_daemon_synthesis(
         }
     };
 
-    let options = crate::ipc::OwnedSynthesizeOptions { rate: params.rate };
-
-    let wav_data = client
-        .synthesize(&params.text, params.style_id, options)
+    let request = TextSynthesisRequest {
+        text: &params.text,
+        style_id: params.style_id,
+        rate: params.rate,
+    };
+    let wav_data = synthesize_bytes(&mut client, &request)
         .await
         .context("Synthesis failed")?;
 

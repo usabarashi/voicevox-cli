@@ -6,12 +6,6 @@ use crate::voice::{AvailableModel, Speaker};
 pub const DEFAULT_SYNTHESIS_RATE: f32 = 1.0;
 pub const MIN_SYNTHESIS_RATE: f32 = 0.5;
 pub const MAX_SYNTHESIS_RATE: f32 = 2.0;
-/// Current daemon IPC contract version.
-///
-/// This project intentionally optimizes for a single current contract rather than
-/// maintaining legacy request/response variants by default.
-pub const DAEMON_IPC_PROTOCOL_VERSION: u32 = 1;
-
 #[must_use]
 pub const fn is_valid_synthesis_rate(rate: f32) -> bool {
     rate >= MIN_SYNTHESIS_RATE && rate <= MAX_SYNTHESIS_RATE
@@ -20,7 +14,6 @@ pub const fn is_valid_synthesis_rate(rate: f32) -> bool {
 /// Request messages sent from client to daemon
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DaemonRequest {
-    GetServerInfo,
     Synthesize {
         text: String,
         style_id: u32,
@@ -47,11 +40,6 @@ impl Default for SynthesizeOptions {
 /// Response messages from daemon to client
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonResponse {
-    ServerInfo {
-        protocol_version: u32,
-        daemon_version: String,
-        capabilities: Vec<String>,
-    },
     SynthesizeResult {
         wav_data: Vec<u8>,
     },

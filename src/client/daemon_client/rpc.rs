@@ -15,39 +15,6 @@ fn unexpected_daemon_response(context: &str) -> anyhow::Error {
     anyhow!("Unexpected response {context}")
 }
 
-async fn assert_server_feature(socket_path: &Path, required_capability: &str) -> Result<()> {
-    let response = request_daemon_once(
-        socket_path,
-        &OwnedRequest::GetServerInfo,
-        DAEMON_CONNECTION_TIMEOUT,
-        DAEMON_RESPONSE_TIMEOUT,
-    )
-    .await?;
-
-    match response {
-        OwnedResponse::ServerInfo {
-            protocol_version,
-            capabilities,
-            ..
-        } => {
-            if protocol_version != crate::ipc::DAEMON_IPC_PROTOCOL_VERSION {
-                return Err(anyhow!(
-                    "Incompatible daemon IPC protocol version: expected {}, got {}",
-                    crate::ipc::DAEMON_IPC_PROTOCOL_VERSION,
-                    protocol_version
-                ));
-            }
-            if !capabilities.iter().any(|cap| cap == required_capability) {
-                return Err(anyhow!(
-                    "Daemon does not advertise required capability: {required_capability}"
-                ));
-            }
-            Ok(())
-        }
-        _ => Err(unexpected_daemon_response("while reading server info")),
-    }
-}
-
 /// Sends a synthesis request to an already running daemon and handles output/playback.
 ///
 /// # Errors
@@ -62,7 +29,6 @@ pub async fn daemon_mode(
     quiet: bool,
     socket_path: &Path,
 ) -> Result<()> {
-    assert_server_feature(socket_path, "synthesize").await?;
     let request = OwnedRequest::Synthesize {
         text: text.to_string(),
         style_id,
@@ -93,7 +59,6 @@ pub async fn daemon_mode(
 /// Returns an error if daemon connection, request/response serialization, or response
 /// decoding fails, or if the daemon returns an error response.
 pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
-    assert_server_feature(socket_path, "list_speakers").await?;
     let response = request_daemon_once(
         socket_path,
         &DaemonRequest::ListSpeakers,

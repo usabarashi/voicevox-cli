@@ -9,19 +9,6 @@ use catalog::ModelCatalog;
 use executor::DaemonSynthesisExecutor;
 use policy::SerializedSynthesisPolicy;
 
-fn daemon_ipc_capabilities() -> Vec<String> {
-    [
-        "ping",
-        "server_info",
-        "synthesize",
-        "list_speakers",
-        "list_models",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
-}
-
 pub struct DaemonState {
     catalog: ModelCatalog,
     synthesis_policy: SerializedSynthesisPolicy,
@@ -48,11 +35,6 @@ impl DaemonState {
 
     pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
         match request {
-            OwnedRequest::GetServerInfo => OwnedResponse::ServerInfo {
-                protocol_version: crate::ipc::DAEMON_IPC_PROTOCOL_VERSION,
-                daemon_version: env!("CARGO_PKG_VERSION").to_string(),
-                capabilities: daemon_ipc_capabilities(),
-            },
             OwnedRequest::Synthesize {
                 text,
                 style_id,

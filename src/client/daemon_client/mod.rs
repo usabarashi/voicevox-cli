@@ -21,66 +21,13 @@ fn unexpected_daemon_response(context: &str) -> anyhow::Error {
     anyhow!("Unexpected response {context}")
 }
 
-fn missing_capability_error(capability: &str) -> anyhow::Error {
-    anyhow!("Daemon does not advertise required capability: {capability}")
-}
-
-#[derive(Debug, Clone)]
-struct ServerFeatures {
-    capabilities: Vec<String>,
-}
-
 pub struct DaemonClient {
     stream: UnixStream,
-    server_features: ServerFeatures,
 }
 
 impl DaemonClient {
     async fn from_stream(stream: UnixStream) -> Result<Self> {
-        let mut client = Self {
-            stream,
-            server_features: ServerFeatures {
-                capabilities: Vec::new(),
-            },
-        };
-        client.server_features = client.fetch_server_features().await?;
-        Ok(client)
-    }
-
-    async fn fetch_server_features(&mut self) -> Result<ServerFeatures> {
-        match self
-            .send_request_and_receive_response(OwnedRequest::GetServerInfo)
-            .await?
-        {
-            OwnedResponse::ServerInfo {
-                protocol_version,
-                capabilities,
-                ..
-            } => {
-                if protocol_version != crate::ipc::DAEMON_IPC_PROTOCOL_VERSION {
-                    return Err(anyhow!(
-                        "Incompatible daemon IPC protocol version: expected {}, got {}",
-                        crate::ipc::DAEMON_IPC_PROTOCOL_VERSION,
-                        protocol_version
-                    ));
-                }
-
-                if !capabilities.iter().any(|cap| cap == "synthesize") {
-                    return Err(missing_capability_error("synthesize"));
-                }
-                Ok(ServerFeatures { capabilities })
-            }
-            _ => Err(unexpected_daemon_response("while reading server info")),
-        }
-    }
-
-    fn ensure_capability(&self, capability: &str) -> Result<()> {
-        self.server_features
-            .capabilities
-            .iter()
-            .any(|cap| cap == capability)
-            .then_some(())
-            .ok_or_else(|| missing_capability_error(capability))
+        Ok(Self { stream })
     }
 
     /// Connects to the daemon using the default socket path.
@@ -185,7 +132,6 @@ impl DaemonClient {
         style_id: u32,
         options: OwnedSynthesizeOptions,
     ) -> Result<Vec<u8>> {
-        self.ensure_capability("synthesize")?;
         let request = OwnedRequest::Synthesize {
             text: text.to_string(),
             style_id,
@@ -208,7 +154,6 @@ impl DaemonClient {
     /// Returns an error if request/response I/O fails, decoding fails, or the daemon
     /// returns an error response.
     pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
-        self.ensure_capability("list_speakers")?;
         match self
             .send_request_and_receive_response(OwnedRequest::ListSpeakers)
             .await?
@@ -228,7 +173,6 @@ impl DaemonClient {
     /// Returns an error if request/response I/O fails, decoding fails, or the daemon
     /// returns an error response.
     pub async fn list_models(&mut self) -> Result<Vec<AvailableModel>> {
-        self.ensure_capability("list_models")?;
         match self
             .send_request_and_receive_response(OwnedRequest::ListModels)
             .await?

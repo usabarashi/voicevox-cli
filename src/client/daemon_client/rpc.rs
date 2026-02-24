@@ -15,7 +15,7 @@ fn unexpected_daemon_response(context: &str) -> anyhow::Error {
     anyhow!("Unexpected response {context}")
 }
 
-async fn assert_compatible_daemon(socket_path: &Path, required_capability: &str) -> Result<()> {
+async fn assert_server_feature(socket_path: &Path, required_capability: &str) -> Result<()> {
     let response = request_daemon_once(
         socket_path,
         &OwnedRequest::GetServerInfo,
@@ -44,7 +44,7 @@ async fn assert_compatible_daemon(socket_path: &Path, required_capability: &str)
             }
             Ok(())
         }
-        _ => Err(unexpected_daemon_response("during compatibility check")),
+        _ => Err(unexpected_daemon_response("while reading server info")),
     }
 }
 
@@ -62,7 +62,7 @@ pub async fn daemon_mode(
     quiet: bool,
     socket_path: &Path,
 ) -> Result<()> {
-    assert_compatible_daemon(socket_path, "synthesize").await?;
+    assert_server_feature(socket_path, "synthesize").await?;
     let request = OwnedRequest::Synthesize {
         text: text.to_string(),
         style_id,
@@ -93,7 +93,7 @@ pub async fn daemon_mode(
 /// Returns an error if daemon connection, request/response serialization, or response
 /// decoding fails, or if the daemon returns an error response.
 pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
-    assert_compatible_daemon(socket_path, "list_speakers").await?;
+    assert_server_feature(socket_path, "list_speakers").await?;
     let response = request_daemon_once(
         socket_path,
         &DaemonRequest::ListSpeakers,

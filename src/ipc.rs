@@ -6,6 +6,10 @@ use crate::voice::{AvailableModel, Speaker};
 pub const DEFAULT_SYNTHESIS_RATE: f32 = 1.0;
 pub const MIN_SYNTHESIS_RATE: f32 = 0.5;
 pub const MAX_SYNTHESIS_RATE: f32 = 2.0;
+/// Current daemon IPC contract version.
+///
+/// This project intentionally optimizes for a single current contract rather than
+/// maintaining legacy request/response variants by default.
 pub const DAEMON_IPC_PROTOCOL_VERSION: u32 = 1;
 
 #[must_use]

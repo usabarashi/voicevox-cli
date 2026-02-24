@@ -26,28 +26,28 @@ fn missing_capability_error(capability: &str) -> anyhow::Error {
 }
 
 #[derive(Debug, Clone)]
-struct CompatibilityInfo {
+struct ServerFeatures {
     capabilities: Vec<String>,
 }
 
 pub struct DaemonClient {
     stream: UnixStream,
-    compatibility: CompatibilityInfo,
+    server_features: ServerFeatures,
 }
 
 impl DaemonClient {
     async fn from_stream(stream: UnixStream) -> Result<Self> {
         let mut client = Self {
             stream,
-            compatibility: CompatibilityInfo {
+            server_features: ServerFeatures {
                 capabilities: Vec::new(),
             },
         };
-        client.compatibility = client.negotiate_compatibility().await?;
+        client.server_features = client.fetch_server_features().await?;
         Ok(client)
     }
 
-    async fn negotiate_compatibility(&mut self) -> Result<CompatibilityInfo> {
+    async fn fetch_server_features(&mut self) -> Result<ServerFeatures> {
         match self
             .send_request_and_receive_response(OwnedRequest::GetServerInfo)
             .await?
@@ -68,16 +68,14 @@ impl DaemonClient {
                 if !capabilities.iter().any(|cap| cap == "synthesize") {
                     return Err(missing_capability_error("synthesize"));
                 }
-                Ok(CompatibilityInfo { capabilities })
+                Ok(ServerFeatures { capabilities })
             }
-            _ => Err(unexpected_daemon_response(
-                "while checking daemon compatibility",
-            )),
+            _ => Err(unexpected_daemon_response("while reading server info")),
         }
     }
 
     fn ensure_capability(&self, capability: &str) -> Result<()> {
-        self.compatibility
+        self.server_features
             .capabilities
             .iter()
             .any(|cap| cap == capability)

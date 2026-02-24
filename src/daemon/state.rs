@@ -48,7 +48,6 @@ impl DaemonState {
 
     pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
         match request {
-            OwnedRequest::Ping => OwnedResponse::Pong,
             OwnedRequest::GetServerInfo => OwnedResponse::ServerInfo {
                 protocol_version: crate::ipc::DAEMON_IPC_PROTOCOL_VERSION,
                 daemon_version: env!("CARGO_PKG_VERSION").to_string(),

@@ -16,7 +16,6 @@ pub const fn is_valid_synthesis_rate(rate: f32) -> bool {
 /// Request messages sent from client to daemon
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DaemonRequest {
-    Ping,
     GetServerInfo,
     Synthesize {
         text: String,
@@ -44,7 +43,6 @@ impl Default for SynthesizeOptions {
 /// Response messages from daemon to client
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonResponse {
-    Pong,
     ServerInfo {
         protocol_version: u32,
         daemon_version: String,
@@ -53,10 +51,6 @@ pub enum DaemonResponse {
     SynthesizeResult {
         wav_data: Vec<u8>,
     },
-    SpeakersList {
-        speakers: Vec<Speaker>,
-    },
-    /// Enhanced speakers list with model ID mapping
     SpeakersListWithModels {
         speakers: Vec<Speaker>,
         style_to_model: HashMap<u32, u32>,

@@ -26,9 +26,8 @@ fn missing_capability_error(capability: &str) -> anyhow::Error {
 }
 
 #[derive(Debug, Clone)]
-enum CompatibilityInfo {
-    LegacyCompatible,
-    Negotiated { capabilities: Vec<String> },
+struct CompatibilityInfo {
+    capabilities: Vec<String>,
 }
 
 pub struct DaemonClient {
@@ -40,7 +39,9 @@ impl DaemonClient {
     async fn from_stream(stream: UnixStream) -> Result<Self> {
         let mut client = Self {
             stream,
-            compatibility: CompatibilityInfo::LegacyCompatible,
+            compatibility: CompatibilityInfo {
+                capabilities: Vec::new(),
+            },
         };
         client.compatibility = client.negotiate_compatibility().await?;
         Ok(client)
@@ -67,9 +68,8 @@ impl DaemonClient {
                 if !capabilities.iter().any(|cap| cap == "synthesize") {
                     return Err(missing_capability_error("synthesize"));
                 }
-                Ok(CompatibilityInfo::Negotiated { capabilities })
+                Ok(CompatibilityInfo { capabilities })
             }
-            OwnedResponse::Pong => Ok(CompatibilityInfo::LegacyCompatible),
             _ => Err(unexpected_daemon_response(
                 "while checking daemon compatibility",
             )),
@@ -77,14 +77,12 @@ impl DaemonClient {
     }
 
     fn ensure_capability(&self, capability: &str) -> Result<()> {
-        match &self.compatibility {
-            CompatibilityInfo::LegacyCompatible => Ok(()),
-            CompatibilityInfo::Negotiated { capabilities } => capabilities
-                .iter()
-                .any(|cap| cap == capability)
-                .then_some(())
-                .ok_or_else(|| missing_capability_error(capability)),
-        }
+        self.compatibility
+            .capabilities
+            .iter()
+            .any(|cap| cap == capability)
+            .then_some(())
+            .ok_or_else(|| missing_capability_error(capability))
     }
 
     /// Connects to the daemon using the default socket path.
@@ -217,8 +215,7 @@ impl DaemonClient {
             .send_request_and_receive_response(OwnedRequest::ListSpeakers)
             .await?
         {
-            OwnedResponse::SpeakersList { speakers }
-            | OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
+            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
             OwnedResponse::Error { message } => {
                 Err(daemon_response_error("List speakers error", &message))
             }

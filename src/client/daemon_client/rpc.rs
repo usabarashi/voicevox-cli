@@ -44,7 +44,6 @@ async fn assert_compatible_daemon(socket_path: &Path, required_capability: &str)
             }
             Ok(())
         }
-        OwnedResponse::Pong => Ok(()),
         _ => Err(unexpected_daemon_response("during compatibility check")),
     }
 }
@@ -104,10 +103,6 @@ pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
     .await?;
 
     match response {
-        OwnedResponse::SpeakersList { speakers } => {
-            print_speakers(&speakers, None);
-            Ok(())
-        }
         OwnedResponse::SpeakersListWithModels {
             speakers,
             style_to_model,

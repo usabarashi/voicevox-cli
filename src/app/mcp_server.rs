@@ -1,16 +1,17 @@
+use crate::app::{AppOutput, StdAppOutput};
 use crate::daemon::{startup, DaemonError, DaemonResult, StartDaemonOutcome};
 use crate::paths::get_socket_path;
 use anyhow::Result;
 
-async fn remove_stale_socket_if_present(socket_path: &std::path::Path) {
+async fn remove_stale_socket_if_present(socket_path: &std::path::Path, output: &dyn AppOutput) {
     match tokio::fs::remove_file(socket_path).await {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Ok(()) => {}
         Err(error) => {
-            eprintln!(
+            output.error(&format!(
                 "Warning: failed to remove stale socket candidate {}: {error}",
                 socket_path.display()
-            );
+            ));
         }
     }
 }
@@ -72,35 +73,36 @@ async fn wait_for_daemon_ready(socket_path: &std::path::Path) -> DaemonResult<()
     .ok_or(DaemonError::NotResponding { attempts })
 }
 
-async fn ensure_daemon_running_for_mcp() -> DaemonResult<()> {
+async fn ensure_daemon_running_for_mcp(output: &dyn AppOutput) -> DaemonResult<()> {
     let socket_path = get_socket_path();
 
     if try_connect_existing(&socket_path).await {
         return Ok(());
     }
 
-    remove_stale_socket_if_present(&socket_path).await;
+    remove_stale_socket_if_present(&socket_path, output).await;
     start_daemon_process(&socket_path).await?;
     wait_for_daemon_ready(&socket_path).await
 }
 
-fn print_mcp_warning(message: &str) {
-    eprintln!("Warning: {message}");
-    eprintln!("Audio synthesis may not be available.");
+fn print_mcp_warning(message: &str, output: &dyn AppOutput) {
+    output.error(&format!("Warning: {message}"));
+    output.error("Audio synthesis may not be available.");
 }
 
-fn print_mcp_warning_with_detail(message: &str, detail: &str) {
-    eprintln!("Warning: {message}");
-    eprintln!("{detail}");
-    eprintln!("Audio synthesis may not be available.");
+fn print_mcp_warning_with_detail(message: &str, detail: &str, output: &dyn AppOutput) {
+    output.error(&format!("Warning: {message}"));
+    output.error(detail);
+    output.error("Audio synthesis may not be available.");
 }
 
-fn warn_nonfatal_daemon_issue(error: &DaemonError) {
+fn warn_nonfatal_daemon_issue(error: &DaemonError, output: &dyn AppOutput) {
     match error {
         DaemonError::AlreadyRunning { pid } => {
-            print_mcp_warning(&format!(
-                "Daemon is running (PID: {pid}) but may not be responsive."
-            ));
+            print_mcp_warning(
+                &format!("Daemon is running (PID: {pid}) but may not be responsive."),
+                output,
+            );
         }
         DaemonError::SocketPermissionDenied { path } => {
             print_mcp_warning_with_detail(
@@ -109,17 +111,19 @@ fn warn_nonfatal_daemon_issue(error: &DaemonError) {
                     "Socket file may be owned by another user: {}",
                     path.display()
                 ),
+                output,
             );
         }
         DaemonError::NotResponding { attempts } => {
-            print_mcp_warning(&format!(
-                "Daemon started but is not responding after {attempts} attempts."
-            ));
+            print_mcp_warning(
+                &format!("Daemon started but is not responding after {attempts} attempts."),
+                output,
+            );
         }
         DaemonError::StartupFailed { message } => {
-            print_mcp_warning(&format!("Failed to start daemon: {message}"));
+            print_mcp_warning(&format!("Failed to start daemon: {message}"), output);
         }
-        _ => print_mcp_warning(&error.to_string()),
+        _ => print_mcp_warning(&error.to_string(), output),
     }
 }
 
@@ -129,8 +133,13 @@ fn warn_nonfatal_daemon_issue(error: &DaemonError) {
 ///
 /// Returns an error only if the MCP stdio server itself fails.
 pub async fn run_mcp_server_app() -> Result<()> {
-    if let Err(error) = ensure_daemon_running_for_mcp().await {
-        warn_nonfatal_daemon_issue(&error);
+    let output = StdAppOutput;
+    run_mcp_server_app_with_output(&output).await
+}
+
+pub async fn run_mcp_server_app_with_output(output: &dyn AppOutput) -> Result<()> {
+    if let Err(error) = ensure_daemon_running_for_mcp(output).await {
+        warn_nonfatal_daemon_issue(&error, output);
     }
 
     crate::mcp::run_mcp_server().await

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::path::Path;
 
+use crate::app::{AppOutput, StdAppOutput};
 use crate::client::{list_speakers_daemon, DaemonClient};
 use crate::paths::find_openjtalk_dict;
 use crate::voice::{format_speakers_output, scan_available_models, AvailableModel, Speaker};
@@ -8,32 +9,36 @@ use crate::voice::{format_speakers_output, scan_available_models, AvailableModel
 const NO_MODELS_MESSAGE: &str =
     "No voice models found. Please run 'voicevox-setup' to download required resources.";
 
-fn print_no_models_message() {
-    println!("{NO_MODELS_MESSAGE}");
+fn print_no_models_message(output: &dyn AppOutput) {
+    output.info(NO_MODELS_MESSAGE);
 }
 
-fn handle_missing_models_error(error: anyhow::Error) -> Result<()> {
+fn handle_missing_models_error(error: anyhow::Error, output: &dyn AppOutput) -> Result<()> {
     if crate::paths::find_models_dir().is_err() {
-        print_no_models_message();
+        print_no_models_message(output);
         return Ok(());
     }
 
     Err(error)
 }
 
-fn print_list_models_output(models: &[AvailableModel]) {
+fn print_list_models_output(models: &[AvailableModel], output: &dyn AppOutput) {
     if models.is_empty() {
-        print_no_models_message();
+        print_no_models_message(output);
         return;
     }
 
-    println!("Available voice models:");
+    output.info("Available voice models:");
     for model in models {
-        println!("  Model {} ({})", model.model_id, model.file_path.display());
-        println!(
+        output.info(&format!(
+            "  Model {} ({})",
+            model.model_id,
+            model.file_path.display()
+        ));
+        output.info(&format!(
             "    Usage: --model {} or --speaker-id <STYLE_ID>",
             model.model_id
-        );
+        ));
         if let Some(default_style_id) = model
             .speakers
             .iter()
@@ -41,34 +46,47 @@ fn print_list_models_output(models: &[AvailableModel]) {
             .map(|style| style.id)
             .min()
         {
-            println!("    Default style ID (auto-selected by --model): {default_style_id}");
+            output.info(&format!(
+                "    Default style ID (auto-selected by --model): {default_style_id}"
+            ));
         }
     }
 
-    println!("\nTips:");
-    println!("  - Use --model N to load model N.vvm");
-    println!("  - Use --speaker-id for direct style ID specification");
-    println!("  - Use --list-speakers for detailed speaker information");
+    output.info("\nTips:");
+    output.info("  - Use --model N to load model N.vvm");
+    output.info("  - Use --speaker-id for direct style ID specification");
+    output.info("  - Use --list-speakers for detailed speaker information");
 }
 
 pub async fn run_list_models_command(socket_path: &Path) -> Result<()> {
+    let output = StdAppOutput;
+    run_list_models_command_with_output(socket_path, &output).await
+}
+
+pub async fn run_list_models_command_with_output(
+    socket_path: &Path,
+    output: &dyn AppOutput,
+) -> Result<()> {
     match DaemonClient::new_with_auto_start_at(socket_path).await {
         Ok(mut client) => {
             let models = client.list_models().await?;
-            print_list_models_output(&models);
+            print_list_models_output(&models, output);
             Ok(())
         }
-        Err(error) => handle_missing_models_error(error),
+        Err(error) => handle_missing_models_error(error, output),
     }
 }
 
-fn print_status_models(current_models: &[AvailableModel]) {
+fn print_status_models(current_models: &[AvailableModel], output: &dyn AppOutput) {
     if current_models.is_empty() {
-        print_missing_status_item("Voice Models");
+        print_missing_status_item("Voice Models", output);
         return;
     }
 
-    println!("Voice Models: {} files installed", current_models.len());
+    output.info(&format!(
+        "Voice Models: {} files installed",
+        current_models.len()
+    ));
     for model in current_models {
         let model_info = std::fs::metadata(&model.file_path).map_or_else(
             |_| format!("  Model {} ({})", model.model_id, model.file_path.display()),
@@ -82,54 +100,68 @@ fn print_status_models(current_models: &[AvailableModel]) {
                 format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
             },
         );
-        println!("{model_info}");
+        output.info(&model_info);
     }
 }
 
-fn print_missing_status_item(name: &str) {
-    println!("{name}: Not found");
-    println!("  Install with: voicevox-setup");
+fn print_missing_status_item(name: &str, output: &dyn AppOutput) {
+    output.info(&format!("{name}: Not found"));
+    output.info("  Install with: voicevox-setup");
 }
 
-fn print_status_dictionary() {
+fn print_status_dictionary(output: &dyn AppOutput) {
     if let Ok(dict_path) = find_openjtalk_dict() {
-        println!("Dictionary: {}", dict_path.display());
+        output.info(&format!("Dictionary: {}", dict_path.display()));
     } else {
-        print_missing_status_item("Dictionary");
+        print_missing_status_item("Dictionary", output);
     }
 }
 
 pub fn run_status_command() {
-    println!("VOICEVOX CLI Installation Status");
-    println!("=====================================");
-    println!("Application: v{}", env!("CARGO_PKG_VERSION"));
+    let output = StdAppOutput;
+    run_status_command_with_output(&output);
+}
+
+pub fn run_status_command_with_output(output: &dyn AppOutput) {
+    output.info("VOICEVOX CLI Installation Status");
+    output.info("=====================================");
+    output.info(&format!("Application: v{}", env!("CARGO_PKG_VERSION")));
 
     if let Ok(onnx_path) = crate::paths::find_onnxruntime() {
-        println!("ONNX Runtime: {}", onnx_path.display());
+        output.info(&format!("ONNX Runtime: {}", onnx_path.display()));
     } else {
-        print_missing_status_item("ONNX Runtime");
+        print_missing_status_item("ONNX Runtime", output);
     }
 
     match scan_available_models() {
         Ok(current_models) => {
-            print_status_models(&current_models);
-            print_status_dictionary();
+            print_status_models(&current_models, output);
+            print_status_dictionary(output);
         }
         Err(error) => {
-            print_missing_status_item("Voice Models");
-            eprintln!("Error scanning models: {error}");
+            print_missing_status_item("Voice Models", output);
+            output.error(&format!("Error scanning models: {error}"));
         }
     }
 }
 
-fn print_speakers(speakers: &[Speaker]) {
-    println!(
-        "{}",
-        format_speakers_output("All available speakers and styles:", speakers, None)
-    );
+fn print_speakers(speakers: &[Speaker], output: &dyn AppOutput) {
+    output.info(&format_speakers_output(
+        "All available speakers and styles:",
+        speakers,
+        None,
+    ));
 }
 
 pub async fn run_list_speakers_command(socket_path: &Path) -> Result<()> {
+    let output = StdAppOutput;
+    run_list_speakers_command_with_output(socket_path, &output).await
+}
+
+pub async fn run_list_speakers_command_with_output(
+    socket_path: &Path,
+    output: &dyn AppOutput,
+) -> Result<()> {
     if list_speakers_daemon(socket_path).await.is_ok() {
         return Ok(());
     }
@@ -137,9 +169,9 @@ pub async fn run_list_speakers_command(socket_path: &Path) -> Result<()> {
     match DaemonClient::new_with_auto_start_at(socket_path).await {
         Ok(mut client) => {
             let speakers = client.list_speakers().await?;
-            print_speakers(&speakers);
+            print_speakers(&speakers, output);
             Ok(())
         }
-        Err(error) => handle_missing_models_error(error),
+        Err(error) => handle_missing_models_error(error, output),
     }
 }

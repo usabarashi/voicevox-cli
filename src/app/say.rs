@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
+use crate::app::{AppOutput, StdAppOutput};
 use crate::client::{emit_synthesized_audio, ensure_models_available, DaemonClient};
 use crate::ipc::{
     is_valid_synthesis_rate, OwnedSynthesizeOptions, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
@@ -21,6 +22,14 @@ pub struct SaySynthesisRequest<'a> {
 ///
 /// Returns an error if validation fails, setup fails, daemon connection fails, or playback/write fails.
 pub async fn run_say_synthesis(request: SaySynthesisRequest<'_>) -> Result<()> {
+    let output = StdAppOutput;
+    run_say_synthesis_with_output(request, &output).await
+}
+
+pub async fn run_say_synthesis_with_output(
+    request: SaySynthesisRequest<'_>,
+    output: &dyn AppOutput,
+) -> Result<()> {
     if request.text.trim().is_empty() {
         return Err(anyhow!(
             "No text provided. Use command line argument, -f file, or pipe text to stdin."
@@ -34,13 +43,16 @@ pub async fn run_say_synthesis(request: SaySynthesisRequest<'_>) -> Result<()> {
         ));
     }
 
-    synthesize_with_daemon_retry(request).await
+    synthesize_with_daemon_retry(request, output).await
 }
 
-async fn synthesize_with_daemon_retry(request: SaySynthesisRequest<'_>) -> Result<()> {
+async fn synthesize_with_daemon_retry(
+    request: SaySynthesisRequest<'_>,
+    output: &dyn AppOutput,
+) -> Result<()> {
     if crate::paths::find_models_dir().is_err() {
         if !request.quiet {
-            println!("Voice models not found. Setting up VOICEVOX...");
+            output.info("Voice models not found. Setting up VOICEVOX...");
         }
         ensure_models_available().await?;
     }
@@ -57,7 +69,7 @@ async fn synthesize_with_daemon_retry(request: SaySynthesisRequest<'_>) -> Resul
         }
         Err(error) => {
             if !request.quiet {
-                eprintln!("Failed to connect to daemon: {error}");
+                output.error(&format!("Failed to connect to daemon: {error}"));
             }
             Err(error)
         }

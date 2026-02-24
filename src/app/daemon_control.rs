@@ -2,8 +2,7 @@ use anyhow::Result;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
-
-use tokio::net::UnixStream;
+use std::time::Duration;
 
 use crate::app::{AppOutput, StdAppOutput};
 use crate::daemon::{check_and_prevent_duplicate, exit_codes as exit_daemon, DaemonError};
@@ -84,6 +83,50 @@ enum ExecutionDecision {
 impl ExecutionDecision {
     const fn exit(code: i32) -> Self {
         Self::Exit(code)
+    }
+}
+
+trait DaemonControlOs {
+    fn is_responsive(&self, socket_path: &Path) -> bool;
+    fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>>;
+    fn pid_memory_info_line(&self, pid_num: u32) -> Option<String>;
+    fn kill_term(&self, pid: u32) -> bool;
+}
+
+struct SystemDaemonControlOs;
+
+impl DaemonControlOs for SystemDaemonControlOs {
+    fn is_responsive(&self, socket_path: &Path) -> bool {
+        std::os::unix::net::UnixStream::connect(socket_path).is_ok()
+    }
+
+    fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>> {
+        crate::daemon::process::find_daemon_processes()
+    }
+
+    fn pid_memory_info_line(&self, pid_num: u32) -> Option<String> {
+        let ps_output = std::process::Command::new("ps")
+            .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
+            .output()
+            .ok()?;
+
+        if !ps_output.status.success() {
+            return None;
+        }
+
+        String::from_utf8_lossy(&ps_output.stdout)
+            .lines()
+            .nth(1)
+            .map(str::trim)
+            .map(ToOwned::to_owned)
+    }
+
+    fn kill_term(&self, pid: u32) -> bool {
+        std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .status()
+            .is_ok_and(|status| status.success())
     }
 }
 
@@ -224,10 +267,6 @@ fn print_daemon_start_banner(socket_path: &Path, output: &dyn AppOutput) {
     output.info("Models: Load and unload per request (no caching)");
 }
 
-async fn daemon_is_responsive(socket_path: &Path) -> bool {
-    UnixStream::connect(socket_path).await.is_ok()
-}
-
 fn print_socket_path_line(socket_path: &Path, output: &dyn AppOutput) {
     output.info(&format!("Socket: {}", socket_path.display()));
 }
@@ -237,33 +276,31 @@ fn print_socket_not_running(socket_path: &Path, output: &dyn AppOutput) {
     output.info(&format!("   Socket: {}", socket_path.display()));
 }
 
-fn print_pid_memory_info(pid_num: u32, output: &dyn AppOutput) {
-    let ps_output = std::process::Command::new("ps")
-        .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
-        .output();
-
-    let Ok(ps_output) = ps_output else {
-        return;
-    };
-    if !ps_output.status.success() {
-        return;
-    }
-
-    let info = String::from_utf8_lossy(&ps_output.stdout);
-    if let Some(line) = info.lines().nth(1).map(str::trim) {
+fn print_pid_memory_info(pid_num: u32, output: &dyn AppOutput, os: &dyn DaemonControlOs) {
+    if let Some(line) = os.pid_memory_info_line(pid_num) {
         output.info(&format!("Memory Info: {line}"));
     }
 }
 
 async fn handle_stop_daemon(socket_path: &Path, output: &dyn AppOutput) -> Result<()> {
+    let os = SystemDaemonControlOs;
+    handle_stop_daemon_with_os(socket_path, output, &os, Duration::from_millis(1000)).await
+}
+
+async fn handle_stop_daemon_with_os(
+    socket_path: &Path,
+    output: &dyn AppOutput,
+    os: &dyn DaemonControlOs,
+    post_kill_delay: Duration,
+) -> Result<()> {
     output.info("Stopping VOICEVOX daemon...");
 
-    if !daemon_is_responsive(socket_path).await {
+    if !os.is_responsive(socket_path) {
         print_socket_not_running(socket_path, output);
         return Ok(());
     }
 
-    let pids = match crate::daemon::process::find_daemon_processes() {
+    let pids = match os.find_daemon_processes() {
         Ok(pids) => pids,
         Err(error) => {
             output.info(&format!("Failed to find daemon process: {error}"));
@@ -278,48 +315,55 @@ async fn handle_stop_daemon(socket_path: &Path, output: &dyn AppOutput) -> Resul
     }
 
     for pid_num in pids {
-        stop_daemon_process(pid_num, socket_path, output).await;
+        stop_daemon_process_with_os(pid_num, socket_path, output, os, post_kill_delay).await;
     }
 
     Ok(())
 }
 
-async fn stop_daemon_process(pid: u32, socket_path: &Path, output: &dyn AppOutput) {
-    let kill_result = std::process::Command::new("kill")
-        .arg("-TERM")
-        .arg(pid.to_string())
-        .status();
+async fn stop_daemon_process_with_os(
+    pid: u32,
+    socket_path: &Path,
+    output: &dyn AppOutput,
+    os: &dyn DaemonControlOs,
+    post_kill_delay: Duration,
+) {
+    if os.kill_term(pid) {
+        output.info(&format!("Daemon stopped (PID: {pid})"));
+        tokio::time::sleep(post_kill_delay).await;
 
-    match kill_result {
-        Ok(status) if status.success() => {
-            output.info(&format!("Daemon stopped (PID: {pid})"));
-            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-
-            if daemon_is_responsive(socket_path).await {
-                output.info("Daemon may still be running");
-            } else {
-                output.info("Socket cleanup confirmed");
-            }
+        if os.is_responsive(socket_path) {
+            output.info("Daemon may still be running");
+        } else {
+            output.info("Socket cleanup confirmed");
         }
-        _ => {
-            output.info(&format!("Failed to stop daemon (PID: {pid})"));
-            output.info(&format!("   Try: kill -9 {pid}"));
-        }
+    } else {
+        output.info(&format!("Failed to stop daemon (PID: {pid})"));
+        output.info(&format!("   Try: kill -9 {pid}"));
     }
 }
 
 async fn handle_status_daemon(socket_path: &Path, output: &dyn AppOutput) -> Result<()> {
+    let os = SystemDaemonControlOs;
+    handle_status_daemon_with_os(socket_path, output, &os).await
+}
+
+async fn handle_status_daemon_with_os(
+    socket_path: &Path,
+    output: &dyn AppOutput,
+    os: &dyn DaemonControlOs,
+) -> Result<()> {
     output.info("VOICEVOX Daemon Status");
     output.info("========================");
 
-    if daemon_is_responsive(socket_path).await {
+    if os.is_responsive(socket_path) {
         output.info("Status:  Running and responsive");
         print_socket_path_line(socket_path, output);
 
-        if let Ok(pids) = crate::daemon::process::find_daemon_processes() {
+        if let Ok(pids) = os.find_daemon_processes() {
             for pid_num in pids {
                 output.info(&format!("Process ID: {pid_num}"));
-                print_pid_memory_info(pid_num, output);
+                print_pid_memory_info(pid_num, output, os);
             }
         }
     } else {
@@ -359,4 +403,117 @@ pub async fn run_daemon_cli_with_output(
 
     print_daemon_start_banner(&socket_path, output);
     crate::daemon::run_daemon(socket_path, flags.start_mode.is_foreground()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::output::BufferAppOutput;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    struct FakeDaemonControlOs {
+        responsive: Mutex<VecDeque<bool>>,
+        pids: Vec<u32>,
+        pids_error: Option<String>,
+        memory_line: Option<String>,
+        kill_ok: bool,
+    }
+
+    impl DaemonControlOs for FakeDaemonControlOs {
+        fn is_responsive(&self, _socket_path: &Path) -> bool {
+            self.responsive
+                .lock()
+                .expect("responsive lock")
+                .pop_front()
+                .unwrap_or(false)
+        }
+
+        fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>> {
+            match &self.pids_error {
+                Some(message) => Err(anyhow::anyhow!(message.clone())),
+                None => Ok(self.pids.clone()),
+            }
+        }
+
+        fn pid_memory_info_line(&self, _pid_num: u32) -> Option<String> {
+            self.memory_line.clone()
+        }
+
+        fn kill_term(&self, _pid: u32) -> bool {
+            self.kill_ok
+        }
+    }
+
+    #[tokio::test]
+    async fn status_uses_os_abstraction_for_pid_and_memory_output() {
+        let output = BufferAppOutput::default();
+        let os = FakeDaemonControlOs {
+            responsive: Mutex::new(VecDeque::from([true])),
+            pids: vec![1234],
+            pids_error: None,
+            memory_line: Some("20480 0.1 00:00:01".to_string()),
+            kill_ok: false,
+        };
+
+        handle_status_daemon_with_os(Path::new("/tmp/test.sock"), &output, &os)
+            .await
+            .expect("status ok");
+
+        let text = output.infos().join("\n");
+        assert!(text.contains("Status:  Running and responsive"));
+        assert!(text.contains("Process ID: 1234"));
+        assert!(text.contains("Memory Info: 20480 0.1 00:00:01"));
+    }
+
+    #[tokio::test]
+    async fn stop_reports_kill_failure_without_shelling_out() {
+        let output = BufferAppOutput::default();
+        let os = FakeDaemonControlOs {
+            responsive: Mutex::new(VecDeque::from([true])),
+            pids: vec![42],
+            pids_error: None,
+            memory_line: None,
+            kill_ok: false,
+        };
+
+        handle_stop_daemon_with_os(
+            Path::new("/tmp/test.sock"),
+            &output,
+            &os,
+            Duration::from_millis(0),
+        )
+        .await
+        .expect("stop ok");
+
+        let text = output.infos().join("\n");
+        assert!(text.contains("Stopping VOICEVOX daemon..."));
+        assert!(text.contains("Failed to stop daemon (PID: 42)"));
+        assert!(text.contains("Try: kill -9 42"));
+    }
+
+    #[tokio::test]
+    async fn stop_reports_socket_cleanup_after_successful_kill() {
+        let output = BufferAppOutput::default();
+        let os = FakeDaemonControlOs {
+            responsive: Mutex::new(VecDeque::from([true, false])),
+            pids: vec![7],
+            pids_error: None,
+            memory_line: None,
+            kill_ok: true,
+        };
+
+        handle_stop_daemon_with_os(
+            Path::new("/tmp/test.sock"),
+            &output,
+            &os,
+            Duration::from_millis(0),
+        )
+        .await
+        .expect("stop ok");
+
+        let text = output.infos().join("\n");
+        assert!(text.contains("Daemon stopped (PID: 7)"));
+        assert!(text.contains("Socket cleanup confirmed"));
+    }
 }

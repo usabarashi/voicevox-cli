@@ -6,6 +6,7 @@ pub mod app;
 pub mod client;
 pub mod config;
 pub mod core;
+mod core_speakers;
 pub mod daemon;
 pub mod ipc;
 pub mod mcp;

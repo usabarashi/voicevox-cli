@@ -132,42 +132,9 @@ impl CoreSynthesis for VoicevoxCore {
     }
 
     fn get_speakers(&self) -> Result<Self::SpeakerData<'_>, Self::Error> {
-        let speakers = self
-            .synthesizer
-            .metas()
-            .iter()
-            .map(|meta| Speaker {
-                #[cfg(feature = "compact_str")]
-                name: meta.name.clone().into(),
-                #[cfg(not(feature = "compact_str"))]
-                name: meta.name.clone(),
-                #[cfg(feature = "compact_str")]
-                speaker_uuid: meta.speaker_uuid.clone().into(),
-                #[cfg(not(feature = "compact_str"))]
-                speaker_uuid: meta.speaker_uuid.clone(),
-                styles: meta
-                    .styles
-                    .iter()
-                    .map(|style| crate::voice::Style {
-                        #[cfg(feature = "compact_str")]
-                        name: style.name.clone().into(),
-                        #[cfg(not(feature = "compact_str"))]
-                        name: style.name.clone(),
-                        id: style.id.0,
-                        #[cfg(feature = "compact_str")]
-                        style_type: Some(format!("{:?}", style.r#type).into()),
-                        #[cfg(not(feature = "compact_str"))]
-                        style_type: Some(format!("{:?}", style.r#type)),
-                    })
-                    .collect(),
-                #[cfg(feature = "compact_str")]
-                version: meta.version.to_string().into(),
-                #[cfg(not(feature = "compact_str"))]
-                version: meta.version.to_string(),
-            })
-            .collect();
-
-        Ok(speakers)
+        Ok(crate::core_speakers::collect_speakers_from_synthesizer(
+            &self.synthesizer,
+        ))
     }
 }
 

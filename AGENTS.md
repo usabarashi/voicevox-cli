@@ -61,6 +61,10 @@ voicevox-daemon --start             # Manual daemon startup for persistent opera
 voicevox-mcp-server                 # MCP protocol server for AI assistant integration
 ```
 
+## Development Notes
+
+- `nix flake check` uses the Git-tracked flake source snapshot. Newly created files may be excluded until they are tracked (for example via `git add -N <path>`).
+
 ## MCP Integration
 
 ### Available Tools

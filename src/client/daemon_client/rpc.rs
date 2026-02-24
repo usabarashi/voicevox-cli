@@ -15,7 +15,7 @@ fn unexpected_daemon_response(context: &str) -> anyhow::Error {
     anyhow!("Unexpected response {context}")
 }
 
-async fn assert_compatible_daemon(socket_path: &Path) -> Result<()> {
+async fn assert_compatible_daemon(socket_path: &Path, required_capability: &str) -> Result<()> {
     let response = request_daemon_once(
         socket_path,
         &OwnedRequest::GetServerInfo,
@@ -37,9 +37,9 @@ async fn assert_compatible_daemon(socket_path: &Path) -> Result<()> {
                     protocol_version
                 ));
             }
-            if !capabilities.iter().any(|cap| cap == "synthesize") {
+            if !capabilities.iter().any(|cap| cap == required_capability) {
                 return Err(anyhow!(
-                    "Daemon does not advertise required capability: synthesize"
+                    "Daemon does not advertise required capability: {required_capability}"
                 ));
             }
             Ok(())
@@ -63,7 +63,7 @@ pub async fn daemon_mode(
     quiet: bool,
     socket_path: &Path,
 ) -> Result<()> {
-    assert_compatible_daemon(socket_path).await?;
+    assert_compatible_daemon(socket_path, "synthesize").await?;
     let request = OwnedRequest::Synthesize {
         text: text.to_string(),
         style_id,
@@ -94,7 +94,7 @@ pub async fn daemon_mode(
 /// Returns an error if daemon connection, request/response serialization, or response
 /// decoding fails, or if the daemon returns an error response.
 pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
-    assert_compatible_daemon(socket_path).await?;
+    assert_compatible_daemon(socket_path, "list_speakers").await?;
     let response = request_daemon_once(
         socket_path,
         &DaemonRequest::ListSpeakers,

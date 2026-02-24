@@ -25,18 +25,28 @@ fn missing_capability_error(capability: &str) -> anyhow::Error {
     anyhow!("Daemon does not advertise required capability: {capability}")
 }
 
+#[derive(Debug, Clone)]
+enum CompatibilityInfo {
+    LegacyCompatible,
+    Negotiated { capabilities: Vec<String> },
+}
+
 pub struct DaemonClient {
     stream: UnixStream,
+    compatibility: CompatibilityInfo,
 }
 
 impl DaemonClient {
     async fn from_stream(stream: UnixStream) -> Result<Self> {
-        let mut client = Self { stream };
-        client.ensure_compatible_server().await?;
+        let mut client = Self {
+            stream,
+            compatibility: CompatibilityInfo::LegacyCompatible,
+        };
+        client.compatibility = client.negotiate_compatibility().await?;
         Ok(client)
     }
 
-    async fn ensure_compatible_server(&mut self) -> Result<()> {
+    async fn negotiate_compatibility(&mut self) -> Result<CompatibilityInfo> {
         match self
             .send_request_and_receive_response(OwnedRequest::GetServerInfo)
             .await?
@@ -57,12 +67,23 @@ impl DaemonClient {
                 if !capabilities.iter().any(|cap| cap == "synthesize") {
                     return Err(missing_capability_error("synthesize"));
                 }
-                Ok(())
+                Ok(CompatibilityInfo::Negotiated { capabilities })
             }
-            OwnedResponse::Pong => Ok(()),
+            OwnedResponse::Pong => Ok(CompatibilityInfo::LegacyCompatible),
             _ => Err(unexpected_daemon_response(
                 "while checking daemon compatibility",
             )),
+        }
+    }
+
+    fn ensure_capability(&self, capability: &str) -> Result<()> {
+        match &self.compatibility {
+            CompatibilityInfo::LegacyCompatible => Ok(()),
+            CompatibilityInfo::Negotiated { capabilities } => capabilities
+                .iter()
+                .any(|cap| cap == capability)
+                .then_some(())
+                .ok_or_else(|| missing_capability_error(capability)),
         }
     }
 
@@ -168,6 +189,7 @@ impl DaemonClient {
         style_id: u32,
         options: OwnedSynthesizeOptions,
     ) -> Result<Vec<u8>> {
+        self.ensure_capability("synthesize")?;
         let request = OwnedRequest::Synthesize {
             text: text.to_string(),
             style_id,
@@ -190,6 +212,7 @@ impl DaemonClient {
     /// Returns an error if request/response I/O fails, decoding fails, or the daemon
     /// returns an error response.
     pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
+        self.ensure_capability("list_speakers")?;
         match self
             .send_request_and_receive_response(OwnedRequest::ListSpeakers)
             .await?
@@ -210,6 +233,7 @@ impl DaemonClient {
     /// Returns an error if request/response I/O fails, decoding fails, or the daemon
     /// returns an error response.
     pub async fn list_models(&mut self) -> Result<Vec<AvailableModel>> {
+        self.ensure_capability("list_models")?;
         match self
             .send_request_and_receive_response(OwnedRequest::ListModels)
             .await?

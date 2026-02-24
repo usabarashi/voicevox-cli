@@ -192,9 +192,11 @@ impl VoicevoxCore {
         let model = VoiceModelFile::open(&model_path)
             .map_err(|e| anyhow!("Failed to open model {model_id}: {e}"))?;
 
-        self.synthesizer
-            .load_voice_model(&model)
-            .map_err(|e| anyhow!("Failed to load model {model_id}: {e}"))
+        match self.synthesizer.load_voice_model(&model) {
+            Ok(()) => Ok(()),
+            Err(error) if is_already_loaded_error(&error.to_string()) => Ok(()),
+            Err(error) => Err(anyhow!("Failed to load model {model_id}: {error}")),
+        }
     }
 
     /// Unloads a voice model by file path.
@@ -211,4 +213,8 @@ impl VoicevoxCore {
             .unload_voice_model(voice_model_id)
             .map_err(|e| anyhow!("Failed to unload model: {e}"))
     }
+}
+
+fn is_already_loaded_error(message: &str) -> bool {
+    message.contains("既に読み込まれています") || message.to_ascii_lowercase().contains("already loaded")
 }

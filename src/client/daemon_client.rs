@@ -267,6 +267,13 @@ async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
                 println!(" done!");
                 println!("VOICEVOX daemon started successfully");
                 Ok(())
+            } else if output.status.code() == Some(crate::daemon::exit_codes::ALREADY_RUNNING) {
+                // Another process may have started the daemon concurrently, or a running daemon
+                // was detected during the detached startup path. Retry connecting before failing.
+                wait_for_daemon_startup(socket_path).await?;
+                println!(" done!");
+                println!("VOICEVOX daemon is already running");
+                Ok(())
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 Err(anyhow!("Daemon failed to start: {}", stderr.trim()))

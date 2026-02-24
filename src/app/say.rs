@@ -75,3 +75,32 @@ async fn synthesize_with_daemon_retry(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::output::BufferAppOutput;
+
+    #[tokio::test]
+    async fn rejects_empty_text_before_side_effects() {
+        let output = BufferAppOutput::default();
+        let request = SaySynthesisRequest {
+            text: "   ",
+            style_id: 1,
+            rate: 1.0,
+            output_file: None,
+            quiet: true,
+            socket_path: PathBuf::from("/tmp/unused.sock"),
+        };
+
+        let error = run_say_synthesis_with_output(request, &output)
+            .await
+            .expect_err("expected validation error");
+
+        assert!(error
+            .to_string()
+            .contains("No text provided. Use command line argument"));
+        assert!(output.infos().is_empty());
+        assert!(output.errors().is_empty());
+    }
+}

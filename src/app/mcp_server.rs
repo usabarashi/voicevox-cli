@@ -144,3 +144,37 @@ pub async fn run_mcp_server_app_with_output(output: &dyn AppOutput) -> Result<()
 
     crate::mcp::run_mcp_server().await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::output::BufferAppOutput;
+    use std::path::PathBuf;
+
+    #[test]
+    fn warns_for_not_responding_daemon() {
+        let output = BufferAppOutput::default();
+
+        warn_nonfatal_daemon_issue(&DaemonError::NotResponding { attempts: 5 }, &output);
+
+        let errors = output.errors().join("\n");
+        assert!(errors.contains("Warning: Daemon started but is not responding after 5 attempts."));
+        assert!(errors.contains("Audio synthesis may not be available."));
+    }
+
+    #[test]
+    fn warns_with_detail_for_socket_permission_issue() {
+        let output = BufferAppOutput::default();
+        let socket_path = PathBuf::from("/tmp/voicevox.sock");
+
+        warn_nonfatal_daemon_issue(
+            &DaemonError::SocketPermissionDenied { path: socket_path },
+            &output,
+        );
+
+        let errors = output.errors().join("\n");
+        assert!(errors.contains("Warning: Permission denied when starting daemon."));
+        assert!(errors.contains("Socket file may be owned by another user: /tmp/voicevox.sock"));
+        assert!(errors.contains("Audio synthesis may not be available."));
+    }
+}

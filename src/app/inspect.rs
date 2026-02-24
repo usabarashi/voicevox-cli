@@ -175,3 +175,56 @@ pub async fn run_list_speakers_command_with_output(
         Err(error) => handle_missing_models_error(error, output),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::output::BufferAppOutput;
+    use crate::voice::{Speaker, Style};
+    use std::path::PathBuf;
+
+    #[test]
+    fn print_list_models_output_shows_no_models_message() {
+        let output = BufferAppOutput::default();
+
+        print_list_models_output(&[], &output);
+
+        assert_eq!(output.infos(), vec![NO_MODELS_MESSAGE.to_string()]);
+    }
+
+    #[test]
+    fn print_list_models_output_includes_default_style_and_tips() {
+        let output = BufferAppOutput::default();
+        let models = vec![AvailableModel {
+            model_id: 12,
+            file_path: PathBuf::from("/tmp/12.vvm"),
+            speakers: vec![Speaker {
+                name: "Test Speaker".into(),
+                speaker_uuid: String::new().into(),
+                styles: vec![
+                    Style {
+                        name: "Normal".into(),
+                        id: 42,
+                        style_type: None,
+                    },
+                    Style {
+                        name: "Happy".into(),
+                        id: 7,
+                        style_type: Some("talk".into()),
+                    },
+                ]
+                .into(),
+                version: String::new().into(),
+            }]
+            .into(),
+        }];
+
+        print_list_models_output(&models, &output);
+
+        let infos = output.infos().join("\n");
+        assert!(infos.contains("Available voice models:"));
+        assert!(infos.contains("Model 12 (/tmp/12.vvm)"));
+        assert!(infos.contains("Default style ID (auto-selected by --model): 7"));
+        assert!(infos.contains("Use --list-speakers for detailed speaker information"));
+    }
+}

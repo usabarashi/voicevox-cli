@@ -1,105 +1,62 @@
 # AGENTS.md
 
-VOICEVOX CLI - Command-line text-to-speech tool using VOICEVOX Core.
+VOICEVOX CLI design and implementation guidelines.
 
-## Architecture
+## System Shape
 
-Client-server model with three main binaries:
+- Client-server architecture with three binaries:
+- `voicevox-say`: CLI client
+- `voicevox-daemon`: synthesis daemon
+- `voicevox-mcp-server`: MCP server
+- Unix domain socket IPC between client and daemon
 
-- `voicevox-say`: CLI client for text-to-speech synthesis
-- `voicevox-daemon`: Background server handling VOICEVOX Core operations
-- `voicevox-mcp-server`: MCP integration for AI assistants
+## Current Project Policy
 
-Key design principles:
+- Optimize for the current architecture and current IPC contract.
+- Backward compatibility is not a default requirement.
+- `voicevox-say` and `voicevox-daemon` are released as a matched set.
+- Do not add runtime client-daemon version/feature negotiation unless explicitly requested.
 
-- Unix socket IPC for client-daemon communication
-- Dynamic VVM model loading (no persistent memory caching)
-- Automatic daemon lifecycle management
-- Transparent auto-startup for seamless user experience
+## Design Guidelines
 
-### Cache Strategy
+- Keep binary entrypoints (`src/bin/*`) thin.
+- Put use-case orchestration in `src/app/*`.
+- Keep daemon internals modular: request handling, startup, process control, and synthesis policy should stay separated.
+- Prefer explicit policies over implicit behavior (example: serialized synthesis policy, no model cache policy).
+- Favor simple fixed contracts over compatibility layers when changing IPC.
 
-- Do not cache voice models in memory. Voice models are large and persistent caching increases memory pressure significantly.
-- Prioritize user experience based on end-to-end latency: audio playback time is typically the dominant portion, so voice model caching is not implemented as an optimization strategy.
+## Synthesis and Model Handling
 
-## Implementation Details
+- Do not cache voice models in memory.
+- Load/unload models per request to keep memory usage predictable.
+- Prioritize end-to-end user experience (including playback time), not only synthesis latency.
+- Keep synthesis and playback concerns separated where practical.
+- Keep text segmentation logic replaceable (strategy-style abstractions are preferred).
 
-### Binary Modules (`src/bin/`)
+## Client/Daemon Behavior
 
-- `client.rs`: Main CLI interface implementing `voicevox-say` command
-- `daemon.rs`: Background server handling VOICEVOX Core operations
-- `mcp_server.rs`: MCP protocol server for AI assistant integration
+- Client should support automatic daemon startup and retry on first connection failure.
+- Startup/retry/backoff behavior should be shared, not duplicated across call paths.
+- User-facing startup messages should be concise and actionable.
 
-### Core Modules (`src/`)
+## IPC Guidelines
 
-- `client/`: Client-side logic including audio playback and model management
-- `daemon/`: Server implementation with request handling and lifecycle management
-- `core/`: VOICEVOX Core FFI bindings and voice synthesis interface
-- `ipc/`: Inter-process communication protocol for Unix socket messaging
-- `synthesis/`: Streaming synthesis engine for processing long text segments
-- `mcp/`: MCP protocol tools and request handlers
+- IPC types in `src/ipc.rs` define the source of truth for client-daemon communication.
+- Prefer explicit request/response enums with clear error paths.
+- When changing IPC, update client and daemon together in the same change.
+- Remove obsolete IPC variants instead of keeping unused compatibility branches.
 
-### Daemon Auto-Start Mechanism
+## Module Responsibilities
 
-1. Client attempts Unix socket connection
-2. On connection failure, checks for available VVM models
-3. Automatically spawns daemon with `--start --detach`
-4. Retries connection with exponential backoff
-5. Provides user feedback during startup process
+- `src/app/*`: application/use-case orchestration
+- `src/client/*`: CLI-side daemon connection, playback, downloads/setup
+- `src/daemon/*`: daemon startup, socket server, process control, request execution
+- `src/synthesis/*`: synthesis backend preparation, streaming, segmentation, shared synthesis services
+- `src/mcp/*`: MCP protocol handling and tool execution
+- `src/core*`: VOICEVOX Core bindings/integration
 
-### Synthesis Modes
+## Implementation Notes
 
-- **Direct mode**: Single synthesis request sent to daemon, audio played through client
-- **Streaming mode**: Long text segmented and processed with concurrent synthesis and playback
-- **MCP mode**: Dual-path operation supporting both streaming (default) and daemon-based synthesis
-
-## Command Interface
-
-```bash
-voicevox-say "テキスト"              # Text-to-speech with automatic daemon startup
-voicevox-daemon --start             # Manual daemon startup for persistent operation
-voicevox-mcp-server                 # MCP protocol server for AI assistant integration
-```
-
-## Development Notes
-
-- `nix flake check` uses the Git-tracked flake source snapshot. Newly created files may be excluded until they are tracked (for example via `git add -N <path>`).
-
-## MCP Integration
-
-### Available Tools
-
-- `text_to_speech`: Convert Japanese text to speech with configurable voice style, rate, and streaming
-- `list_voice_styles`: Query available voice styles with optional filtering by speaker or style name
-
-### Instruction System
-
-The MCP server dynamically loads behavior instructions to guide AI assistant interactions.
-
-**Loading Priority (XDG Base Directory compliant):**
-
-1. **Environment variable**: `VOICEVOX_MCP_INSTRUCTIONS` (highest priority)
-2. **XDG user config**: `$XDG_CONFIG_HOME/voicevox/VOICEVOX.md` (user-specific settings)
-3. **Config fallback**: `~/.config/voicevox/VOICEVOX.md` (when XDG_CONFIG_HOME is not set)
-4. **Executable directory**: `VOICEVOX.md` bundled with the binary (distribution default)
-5. **Current directory**: `VOICEVOX.md` in working directory (development use)
-
-**Configuration examples:**
-
-```bash
-# Method 1: Environment variable (highest priority)
-export VOICEVOX_MCP_INSTRUCTIONS=/path/to/custom/instructions.md
-voicevox-mcp-server
-
-# Method 2: XDG_CONFIG_HOME (if set)
-mkdir -p $XDG_CONFIG_HOME/voicevox
-cp custom-instructions.md $XDG_CONFIG_HOME/voicevox/VOICEVOX.md
-voicevox-mcp-server
-
-# Method 3: XDG user configuration
-mkdir -p ~/.config/voicevox
-cp custom-instructions.md ~/.config/voicevox/VOICEVOX.md
-voicevox-mcp-server
-```
-
-Server operates normally without instruction files. Default behavior defined in [VOICEVOX.md](VOICEVOX.md).
+- `nix flake check` uses the Git-tracked flake source snapshot.
+- New files may be excluded until tracked (for example `git add -N <path>`).
+- MCP instruction loading behavior is defined by the implementation and `VOICEVOX.md`; keep `AGENTS.md` focused on design/implementation guidance.

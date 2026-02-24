@@ -216,5 +216,6 @@ impl VoicevoxCore {
 }
 
 fn is_already_loaded_error(message: &str) -> bool {
-    message.contains("既に読み込まれています") || message.to_ascii_lowercase().contains("already loaded")
+    message.contains("既に読み込まれています")
+        || message.to_ascii_lowercase().contains("already loaded")
 }

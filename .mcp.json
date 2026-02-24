@@ -4,7 +4,7 @@
             "command": "bash",
             "args": [
                 "-c",
-                "bash scripts/voicevox-reset.sh; ./target/debug/voicevox-mcp-server"
+                "bash scripts/voicevox-reset.sh; ./target/release/voicevox-mcp-server"
             ]
         }
     }

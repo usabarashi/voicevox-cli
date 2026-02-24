@@ -1,12 +1,17 @@
 pub mod process;
 pub mod server;
+pub mod socket_probe;
+pub mod start_process;
+pub mod state;
 
 use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
 
 pub use process::{check_and_prevent_duplicate, find_daemon_processes};
-pub use server::{handle_client, run_daemon, DaemonState};
+pub use server::{handle_client, run_daemon};
+pub use start_process::{find_daemon_binary, start_daemon_detached, StartDaemonOutcome};
+pub use state::DaemonState;
 
 #[derive(Error, Debug)]
 pub enum DaemonError {

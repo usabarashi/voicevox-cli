@@ -247,6 +247,21 @@
               mkdir -p $out
             '';
           };
+
+          # Test suite verification
+          tests = mkRustPackage {
+            pname = "voicevox-cli-tests";
+
+            buildPhase = ''
+              runHook preBuild
+              cargo test --release --all-targets --all-features
+              runHook postBuild
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+            '';
+          };
         };
 
         apps = appAttrs // { default = appAttrs.voicevox-say; };
@@ -270,6 +285,11 @@
           ];
 
           shellHook = ''
+            # Work around Nix Darwin cc-wrapper linker conflicts when host/build SDK env vars differ.
+            unset DEVELOPER_DIR_FOR_BUILD
+            unset SDKROOT_FOR_BUILD
+            unset NIX_APPLE_SDK_VERSION_FOR_BUILD
+
             # Create project-home directory for CARGO_HOME
             mkdir -p .project-home
             export CARGO_HOME="$PWD/.project-home/.cargo"
@@ -280,8 +300,10 @@
             echo "  cargo build --bin voicevox-daemon  - Build daemon"
             echo "  cargo run --bin voicevox-say       - Run client"
             echo "  nix build                          - Build with Nix"
+            echo "  nix flake check                    - Run formatting/scripts/build/clippy/tests"
             echo "  nix run                            - Run voicevox-say directly"
             echo "  voicevox-reset                     - Reset daemon state (kill processes + remove socket)"
+            echo "  cargo test                         - Also works in this shell (FOR_BUILD SDK vars sanitized)"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
           '';

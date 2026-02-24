@@ -18,6 +18,12 @@ impl StreamingSynthesizer {
     /// Returns an error if the daemon cannot be reached.
     pub async fn new() -> Result<Self> {
         let daemon_client = DaemonClient::connect_with_retry().await?;
+        Self::new_with_client(daemon_client)
+    }
+
+    /// Creates a streaming synthesizer with an already-connected daemon client.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn new_with_client(daemon_client: DaemonClient) -> Result<Self> {
         let config = Config::default();
         let text_splitter = TextSplitter::from_config(&config.text_splitter);
         Ok(Self {

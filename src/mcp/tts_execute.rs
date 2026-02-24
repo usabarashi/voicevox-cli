@@ -4,11 +4,10 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
-use crate::client::DaemonClient;
 use crate::mcp::playback::{play_daemon_audio_with_cancellation, PlaybackOutcome};
 use crate::mcp::tool_types::text_result;
 use crate::mcp::tts_params::{parse_synthesize_params, text_char_count, SynthesizeParams};
-use crate::synthesis::StreamingSynthesizer;
+use crate::synthesis::{prepare_backend, PreparedBackend};
 
 fn cancelled_message(reason: &str) -> String {
     if reason.is_empty() {
@@ -47,12 +46,6 @@ fn daemon_playback_result(
         ),
         PlaybackOutcome::Cancelled(reason) => cancelled_result(&reason),
     }
-}
-
-async fn connect_daemon_client_for_tool() -> Result<DaemonClient> {
-    DaemonClient::connect_with_retry()
-        .await
-        .context("Failed to connect to VOICEVOX daemon after multiple attempts")
 }
 
 /// Executes the `text_to_speech` tool without external cancellation.
@@ -102,9 +95,11 @@ async fn handle_streaming_synthesis_cancellable(
         .context("Failed to create audio output stream")?;
     let sink = Arc::new(Sink::connect_new(stream.mixer()));
 
-    let mut synthesizer = StreamingSynthesizer::new()
-        .await
-        .context("Failed to create streaming synthesizer")?;
+    let mut synthesizer = match prepare_backend(true).await {
+        Ok(PreparedBackend::Streaming(synthesizer)) => synthesizer,
+        Ok(PreparedBackend::Daemon(_)) => unreachable!(),
+        Err(error) => return Err(error.context("Failed to create streaming synthesizer")),
+    };
 
     let sink_clone = Arc::clone(&sink);
     let text_len = text_char_count(&text);
@@ -150,8 +145,9 @@ async fn handle_daemon_synthesis(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<crate::mcp::tool_types::ToolCallResult> {
-    let mut client = match connect_daemon_client_for_tool().await {
-        Ok(client) => client,
+    let mut client = match prepare_backend(false).await {
+        Ok(PreparedBackend::Daemon(client)) => client,
+        Ok(PreparedBackend::Streaming(_)) => unreachable!(),
         Err(error) => {
             return Ok(text_result(
                 format!("Failed to connect to VOICEVOX daemon: {error}"),

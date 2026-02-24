@@ -2,6 +2,7 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+pub mod app;
 pub mod client;
 pub mod config;
 pub mod core;

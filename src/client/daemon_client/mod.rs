@@ -17,8 +17,8 @@ fn daemon_response_error(context: &str, message: &str) -> anyhow::Error {
     anyhow!("{context}: {message}")
 }
 
-fn unexpected_daemon_response(context: &str) -> anyhow::Error {
-    anyhow!("Unexpected response {context}")
+fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {
+    anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")
 }
 
 pub struct DaemonClient {
@@ -143,7 +143,10 @@ impl DaemonClient {
             OwnedResponse::Error { message } => {
                 Err(daemon_response_error("Synthesis error", &message))
             }
-            _ => Err(unexpected_daemon_response("type")),
+            _ => Err(unexpected_daemon_response(
+                "handling synthesize request",
+                "SynthesizeResult or Error",
+            )),
         }
     }
 
@@ -162,7 +165,10 @@ impl DaemonClient {
             OwnedResponse::Error { message } => {
                 Err(daemon_response_error("List speakers error", &message))
             }
-            _ => Err(unexpected_daemon_response("type")),
+            _ => Err(unexpected_daemon_response(
+                "listing speakers",
+                "SpeakersListWithModels or Error",
+            )),
         }
     }
 
@@ -181,7 +187,10 @@ impl DaemonClient {
             OwnedResponse::Error { message } => {
                 Err(daemon_response_error("List models error", &message))
             }
-            _ => Err(unexpected_daemon_response("type")),
+            _ => Err(unexpected_daemon_response(
+                "listing models",
+                "ModelsList or Error",
+            )),
         }
     }
 }

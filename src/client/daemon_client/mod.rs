@@ -1,4 +1,5 @@
 mod launcher;
+mod policy;
 mod rpc;
 mod transport;
 
@@ -11,6 +12,7 @@ use crate::paths::get_socket_path;
 use crate::voice::{AvailableModel, Speaker};
 
 pub use crate::daemon::find_daemon_binary;
+pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 pub use rpc::{daemon_mode, list_speakers_daemon};
 
 fn daemon_response_error(context: &str, message: &str) -> anyhow::Error {
@@ -68,19 +70,19 @@ impl DaemonClient {
     ///
     /// Returns an error if all retry attempts fail.
     pub async fn connect_with_retry_at(socket_path: &Path) -> Result<Self> {
-        use crate::daemon::startup;
+        let policy = DaemonConnectRetryPolicy::default();
 
         let mut last_error = None;
-        let mut retry_delay = startup::initial_retry_delay();
+        let mut retry_delay = policy.initial_delay;
 
-        for attempt in 0..startup::MAX_CONNECT_ATTEMPTS {
+        for attempt in 0..policy.attempts {
             match Self::new_at(socket_path).await {
                 Ok(client) => return Ok(client),
                 Err(error) => {
                     last_error = Some(error);
-                    if attempt < startup::MAX_CONNECT_ATTEMPTS - 1 {
+                    if attempt < policy.attempts - 1 {
                         tokio::time::sleep(retry_delay).await;
-                        retry_delay = (retry_delay * 2).min(startup::max_retry_delay());
+                        retry_delay = (retry_delay * 2).min(policy.max_delay);
                     }
                 }
             }
@@ -89,7 +91,7 @@ impl DaemonClient {
         Err(last_error.unwrap_or_else(|| {
             anyhow!(
                 "Failed to connect to daemon after {} attempts",
-                startup::MAX_CONNECT_ATTEMPTS
+                policy.attempts
             )
         }))
     }
@@ -140,7 +142,7 @@ impl DaemonClient {
 
         match self.send_request_and_receive_response(request).await? {
             OwnedResponse::SynthesizeResult { wav_data } => Ok(wav_data),
-            OwnedResponse::Error { message } => {
+            OwnedResponse::Error { code: _, message } => {
                 Err(daemon_response_error("Synthesis error", &message))
             }
             _ => Err(unexpected_daemon_response(
@@ -162,7 +164,7 @@ impl DaemonClient {
             .await?
         {
             OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
-            OwnedResponse::Error { message } => {
+            OwnedResponse::Error { code: _, message } => {
                 Err(daemon_response_error("List speakers error", &message))
             }
             _ => Err(unexpected_daemon_response(
@@ -184,7 +186,7 @@ impl DaemonClient {
             .await?
         {
             OwnedResponse::ModelsList { models } => Ok(models),
-            OwnedResponse::Error { message } => {
+            OwnedResponse::Error { code: _, message } => {
                 Err(daemon_response_error("List models error", &message))
             }
             _ => Err(unexpected_daemon_response(

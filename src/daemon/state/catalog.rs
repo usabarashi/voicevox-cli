@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::core::VoicevoxCore;
-use crate::ipc::OwnedResponse;
-
 pub(super) struct ModelCatalog {
     style_to_model_map: HashMap<u32, u32>,
     model_default_style_map: HashMap<u32, u32>,
@@ -13,6 +11,8 @@ pub(super) struct ModelCatalog {
 }
 
 impl ModelCatalog {
+    // Catalog is intentionally a startup-time snapshot. Runtime model add/remove is not
+    // observed until daemon restart under the current fixed-contract architecture.
     fn build_model_default_style_map(
         speakers: &[crate::voice::Speaker],
         style_to_model_map: &HashMap<u32, u32>,
@@ -78,16 +78,15 @@ impl ModelCatalog {
             .map(|model| model.file_path.as_path())
     }
 
-    pub(super) fn speakers_list_response(&self) -> OwnedResponse {
-        OwnedResponse::SpeakersListWithModels {
-            speakers: self.all_speakers.clone(),
-            style_to_model: self.style_to_model_map.clone(),
-        }
+    pub(super) fn speakers(&self) -> &[crate::voice::Speaker] {
+        &self.all_speakers
     }
 
-    pub(super) fn models_list_response(&self) -> OwnedResponse {
-        OwnedResponse::ModelsList {
-            models: self.available_models.clone(),
-        }
+    pub(super) fn style_to_model_map(&self) -> &HashMap<u32, u32> {
+        &self.style_to_model_map
+    }
+
+    pub(super) fn available_models(&self) -> &[crate::voice::AvailableModel] {
+        &self.available_models
     }
 }

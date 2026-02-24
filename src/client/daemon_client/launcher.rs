@@ -1,18 +1,12 @@
 use anyhow::{anyhow, Result};
 use std::path::Path;
-use std::time::Duration;
 use tokio::net::UnixStream;
 
 use super::transport::{connect_socket_with_timeout, DAEMON_CONNECTION_TIMEOUT};
+use super::policy::DaemonAutoStartPolicy;
 use crate::daemon::{
     ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
 };
-
-const DAEMON_STARTUP_GRACE_PERIOD: Duration = Duration::from_millis(1000);
-const DAEMON_FINAL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-const DAEMON_STARTUP_MAX_RETRIES: u32 = 20;
-const DAEMON_STARTUP_INITIAL_DELAY: Duration = Duration::from_millis(500);
-const DAEMON_STARTUP_MAX_DELAY: Duration = Duration::from_secs(4);
 
 async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
     use std::io::Write;
@@ -40,13 +34,8 @@ async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
     print!("  Starting daemon process");
     std::io::stdout().flush()?;
 
-    let startup_options = EnsureDaemonRunningOptions {
-        connect_timeout: DAEMON_CONNECTION_TIMEOUT,
-        wait_attempts: DAEMON_STARTUP_MAX_RETRIES,
-        initial_retry_delay: DAEMON_STARTUP_INITIAL_DELAY,
-        max_retry_delay: DAEMON_STARTUP_MAX_DELAY,
-        ..EnsureDaemonRunningOptions::default()
-    };
+    let policy = DaemonAutoStartPolicy::cli_default();
+    let startup_options: EnsureDaemonRunningOptions = policy.ensure_running;
 
     match ensure_daemon_running(socket_path, startup_options, |_| {
         print!(".");
@@ -85,9 +74,10 @@ pub(crate) async fn connect_or_start(socket_path: &Path) -> Result<UnixStream> {
     })?;
 
     start_daemon_automatically(socket_path).await?;
-    tokio::time::sleep(DAEMON_STARTUP_GRACE_PERIOD).await;
+    let policy = DaemonAutoStartPolicy::cli_default();
+    tokio::time::sleep(policy.startup_grace_period).await;
 
-    connect_socket_with_timeout(socket_path, DAEMON_FINAL_CONNECTION_TIMEOUT)
+    connect_socket_with_timeout(socket_path, policy.final_connection_timeout)
         .await
         .map_err(|e| {
             anyhow!(

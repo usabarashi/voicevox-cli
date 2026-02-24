@@ -1,16 +1,17 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::client::DaemonClient;
+use crate::app::connect_daemon_client_auto_start;
 use crate::mcp::tool_types::text_result;
 use crate::mcp::voice_style_query::{
     filter_speakers, normalized_filters, render_voice_styles_result, ListVoiceStylesParams,
 };
 
-async fn connect_daemon_client_for_tool() -> Result<DaemonClient> {
-    DaemonClient::connect_with_retry()
+async fn connect_daemon_client_for_tool() -> Result<crate::client::DaemonClient> {
+    let socket_path = crate::paths::get_socket_path();
+    connect_daemon_client_auto_start(&socket_path)
         .await
-        .context("Failed to connect to VOICEVOX daemon after multiple attempts")
+        .context("Failed to connect to VOICEVOX daemon")
 }
 
 /// Executes the `list_voice_styles` tool with optional speaker/style filters.

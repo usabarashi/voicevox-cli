@@ -1,8 +1,8 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::app::{AppOutput, StdAppOutput};
-use crate::client::{list_speakers_daemon, DaemonClient};
+use crate::app::{connect_daemon_client_auto_start, AppOutput, StdAppOutput};
+use crate::client::list_speakers_daemon;
 use crate::paths::find_openjtalk_dict;
 use crate::voice::{format_speakers_output, scan_available_models, AvailableModel, Speaker};
 
@@ -67,7 +67,7 @@ pub async fn run_list_models_command_with_output(
     socket_path: &Path,
     output: &dyn AppOutput,
 ) -> Result<()> {
-    match DaemonClient::new_with_auto_start_at(socket_path).await {
+    match connect_daemon_client_auto_start(socket_path).await {
         Ok(mut client) => {
             let models = client.list_models().await?;
             print_list_models_output(&models, output);
@@ -166,7 +166,7 @@ pub async fn run_list_speakers_command_with_output(
         return Ok(());
     }
 
-    match DaemonClient::new_with_auto_start_at(socket_path).await {
+    match connect_daemon_client_auto_start(socket_path).await {
         Ok(mut client) => {
             let speakers = client.list_speakers().await?;
             print_speakers(&speakers, output);

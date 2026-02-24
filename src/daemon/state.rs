@@ -1,13 +1,15 @@
-use crate::ipc::{OwnedRequest, OwnedResponse};
+use crate::ipc::{DaemonErrorCode, OwnedRequest, OwnedResponse};
 
 mod catalog;
 mod executor;
 mod policy;
+mod result;
 
 use anyhow::Result;
 use catalog::ModelCatalog;
 use executor::DaemonSynthesisExecutor;
 use policy::SerializedSynthesisPolicy;
+use result::{DaemonServiceError, DaemonServiceErrorKind, DaemonServiceResult};
 
 pub struct DaemonState {
     catalog: ModelCatalog,
@@ -33,19 +35,58 @@ impl DaemonState {
         })
     }
 
-    pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
+    fn to_ipc_error(error: DaemonServiceError) -> OwnedResponse {
+        let code = match error.kind {
+            DaemonServiceErrorKind::InvalidTargetId => DaemonErrorCode::InvalidTargetId,
+            DaemonServiceErrorKind::ModelLoadFailed => DaemonErrorCode::ModelLoadFailed,
+            DaemonServiceErrorKind::SynthesisFailed => DaemonErrorCode::SynthesisFailed,
+        };
+        OwnedResponse::Error {
+            code,
+            message: error.message,
+        }
+    }
+
+    fn to_ipc_response(result: DaemonServiceResult) -> OwnedResponse {
+        match result {
+            DaemonServiceResult::SynthesizeResult { wav_data } => {
+                OwnedResponse::SynthesizeResult { wav_data }
+            }
+            DaemonServiceResult::SpeakersListWithModels {
+                speakers,
+                style_to_model,
+            } => OwnedResponse::SpeakersListWithModels {
+                speakers,
+                style_to_model,
+            },
+            DaemonServiceResult::ModelsList { models } => OwnedResponse::ModelsList { models },
+        }
+    }
+
+    async fn execute_request(&self, request: OwnedRequest) -> Result<DaemonServiceResult, DaemonServiceError> {
         match request {
             OwnedRequest::Synthesize {
                 text,
                 style_id,
                 options,
-            } => {
-                self.synthesis_policy
-                    .synthesize(&self.catalog, text, style_id, options.rate)
-                    .await
-            }
-            OwnedRequest::ListSpeakers => self.catalog.speakers_list_response(),
-            OwnedRequest::ListModels => self.catalog.models_list_response(),
+            } => self
+                .synthesis_policy
+                .synthesize(&self.catalog, text, style_id, options.rate)
+                .await,
+            OwnedRequest::ListSpeakers => Ok(DaemonServiceResult::SpeakersListWithModels {
+                speakers: self.catalog.speakers().to_vec(),
+                style_to_model: self.catalog.style_to_model_map().clone(),
+            }),
+            OwnedRequest::ListModels => Ok(DaemonServiceResult::ModelsList {
+                models: self.catalog.available_models().to_vec(),
+            }),
+        }
+    }
+
+    pub async fn handle_request(&self, request: OwnedRequest) -> OwnedResponse {
+        match self.execute_request(request).await {
+            Ok(result) => Self::to_ipc_response(result),
+            Err(error) => Self::to_ipc_error(error),
         }
     }
 }

@@ -172,10 +172,9 @@ impl ActiveRequests {
         let tool_name = tool_name.to_owned();
         let active_requests = self.clone();
 
-        let runtime_handle = tokio::runtime::Handle::current();
-        tokio::task::spawn_blocking(move || {
+        crate::mcp::execution_runtime::spawn_non_send_tool_task(move || {
             // `execute_tool_request` may hold non-`Send` audio state across `.await`.
-            runtime_handle.block_on(async move {
+            Box::pin(async move {
                 let result =
                     tools::execute_tool_request(&tool_name, arguments, Some(abort_rx)).await;
 
@@ -196,7 +195,7 @@ impl ActiveRequests {
 
                 // Send response via channel
                 let _ = active_requests.response_sender.send(response);
-            });
+            })
         });
     }
 }

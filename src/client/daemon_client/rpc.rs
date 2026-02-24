@@ -47,7 +47,9 @@ pub async fn daemon_mode(
             crate::client::audio::emit_synthesized_audio(&wav_data, output_file, quiet)?;
             Ok(())
         }
-        OwnedResponse::Error { message } => Err(daemon_response_error("Daemon error", &message)),
+        OwnedResponse::Error { code: _, message } => {
+            Err(daemon_response_error("Daemon error", &message))
+        }
         _ => Err(unexpected_daemon_response(
             "handling synthesize request",
             "SynthesizeResult or Error",
@@ -78,7 +80,9 @@ pub async fn list_speakers_daemon(socket_path: &Path) -> Result<()> {
             print_speakers(&speakers, Some(&style_to_model));
             Ok(())
         }
-        OwnedResponse::Error { message } => Err(daemon_response_error("Daemon error", &message)),
+        OwnedResponse::Error { code: _, message } => {
+            Err(daemon_response_error("Daemon error", &message))
+        }
         _ => Err(unexpected_daemon_response(
             "listing speakers",
             "SpeakersListWithModels or Error",

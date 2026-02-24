@@ -1,9 +1,8 @@
 use tokio::sync::Mutex;
 
-use crate::ipc::OwnedResponse;
-
 use super::catalog::ModelCatalog;
 use super::executor::DaemonSynthesisExecutor;
+use super::result::{DaemonServiceError, DaemonServiceResult};
 
 /// Explicitly serialized synthesis policy.
 ///
@@ -26,7 +25,7 @@ impl SerializedSynthesisPolicy {
         text: String,
         requested_id: u32,
         rate: f32,
-    ) -> OwnedResponse {
+    ) -> Result<DaemonServiceResult, DaemonServiceError> {
         let executor = self.executor.lock().await;
         executor.synthesize(catalog, text, requested_id, rate)
     }

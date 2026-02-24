@@ -1,20 +1,14 @@
 use crate::app::{AppOutput, StdAppOutput};
+use crate::client::DaemonAutoStartPolicy;
 use crate::daemon::{
-    ensure_daemon_running, startup, DaemonError, DaemonResult, EnsureDaemonRunningOptions,
+    ensure_daemon_running, DaemonError, DaemonResult,
 };
 use crate::paths::get_socket_path;
 use anyhow::Result;
 
 async fn ensure_daemon_running_for_mcp(_output: &dyn AppOutput) -> DaemonResult<()> {
     let socket_path = get_socket_path();
-    let options = EnsureDaemonRunningOptions {
-        remove_stale_socket: true,
-        connect_timeout: startup::connect_timeout(),
-        wait_attempts: startup::MAX_CONNECT_ATTEMPTS,
-        initial_retry_delay: startup::initial_retry_delay(),
-        max_retry_delay: startup::max_retry_delay(),
-        sleep_before_first_check: false,
-    };
+    let options = DaemonAutoStartPolicy::mcp_default();
 
     ensure_daemon_running(&socket_path, options, |_| {})
         .await

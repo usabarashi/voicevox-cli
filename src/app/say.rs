@@ -1,9 +1,11 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-use crate::app::{AppOutput, StdAppOutput};
-use crate::client::{emit_synthesized_audio, ensure_models_available, DaemonClient};
-use crate::synthesis::{synthesize_bytes, validate_basic_request, TextSynthesisRequest};
+use crate::app::{
+    validate_text_synthesis_request, AppOutput, DaemonSynthesisBytesRequest, StdAppOutput,
+    synthesize_bytes_via_daemon,
+};
+use crate::client::emit_synthesized_audio;
 
 pub struct SaySynthesisRequest<'a> {
     pub text: &'a str,
@@ -28,12 +30,7 @@ pub async fn run_say_synthesis_with_output(
     request: SaySynthesisRequest<'_>,
     output: &dyn AppOutput,
 ) -> Result<()> {
-    validate_basic_request(&TextSynthesisRequest {
-        text: request.text,
-        style_id: request.style_id,
-        rate: request.rate,
-    })?;
-
+    validate_text_synthesis_request(request.text, request.style_id, request.rate)?;
     synthesize_with_daemon_retry(request, output).await
 }
 
@@ -41,27 +38,23 @@ async fn synthesize_with_daemon_retry(
     request: SaySynthesisRequest<'_>,
     output: &dyn AppOutput,
 ) -> Result<()> {
-    if crate::paths::find_models_dir().is_err() {
-        if !request.quiet {
-            output.info("Voice models not found. Setting up VOICEVOX...");
-        }
-        ensure_models_available().await?;
-    }
+    let synth_request = DaemonSynthesisBytesRequest {
+        text: request.text,
+        style_id: request.style_id,
+        rate: request.rate,
+        socket_path: &request.socket_path,
+        ensure_models_if_missing: true,
+        quiet_setup_messages: request.quiet,
+    };
 
-    match DaemonClient::new_with_auto_start_at(&request.socket_path).await {
-        Ok(mut client) => {
-            let synth_req = TextSynthesisRequest {
-                text: request.text,
-                style_id: request.style_id,
-                rate: request.rate,
-            };
-            let wav_data = synthesize_bytes(&mut client, &synth_req).await?;
+    match synthesize_bytes_via_daemon(&synth_request, output).await {
+        Ok(wav_data) => {
             emit_synthesized_audio(&wav_data, request.output_file, request.quiet)?;
             Ok(())
         }
         Err(error) => {
             if !request.quiet {
-                output.error(&format!("Failed to connect to daemon: {error}"));
+                output.error(&format!("Synthesis request failed: {error}"));
             }
             Err(error)
         }

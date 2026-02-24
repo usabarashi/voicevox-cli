@@ -51,8 +51,17 @@ pub enum DaemonResponse {
         models: Vec<AvailableModel>,
     },
     Error {
+        code: DaemonErrorCode,
         message: String,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonErrorCode {
+    InvalidTargetId,
+    ModelLoadFailed,
+    SynthesisFailed,
+    Internal,
 }
 
 /// Request type for owned data

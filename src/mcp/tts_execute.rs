@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
+use crate::app::{synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput};
 use crate::mcp::playback::{
     append_wav_segments_to_sink, play_daemon_audio_with_cancellation,
     wait_for_sink_with_cancellation, PlaybackOutcome,
@@ -11,7 +12,7 @@ use crate::mcp::playback::{
 use crate::mcp::tool_types::text_result;
 use crate::mcp::tts_params::{parse_synthesize_params, text_char_count, SynthesizeParams};
 use crate::synthesis::{
-    prepare_backend_with_config, synthesize_bytes, synthesize_streaming_segments,
+    prepare_backend_with_config, synthesize_streaming_segments,
     validate_basic_request, PreparedBackend, TextSynthesisRequest,
 };
 
@@ -146,10 +147,18 @@ async fn handle_daemon_synthesis(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<crate::mcp::tool_types::ToolCallResult> {
-    let config = crate::config::Config::default();
-    let mut client = match prepare_backend_with_config(false, &config).await {
-        Ok(PreparedBackend::Daemon(client)) => client,
-        Ok(PreparedBackend::Streaming(_)) => unreachable!(),
+    let socket_path = crate::paths::get_socket_path();
+    let output = NoopAppOutput;
+    let synth_request = DaemonSynthesisBytesRequest {
+        text: &params.text,
+        style_id: params.style_id,
+        rate: params.rate,
+        socket_path: &socket_path,
+        ensure_models_if_missing: false,
+        quiet_setup_messages: true,
+    };
+    let wav_data = match synthesize_bytes_via_daemon(&synth_request, &output).await {
+        Ok(wav_data) => wav_data,
         Err(error) => {
             return Ok(text_result(
                 format!("Failed to connect to VOICEVOX daemon: {error}"),
@@ -157,15 +166,6 @@ async fn handle_daemon_synthesis(
             ));
         }
     };
-
-    let request = TextSynthesisRequest {
-        text: &params.text,
-        style_id: params.style_id,
-        rate: params.rate,
-    };
-    let wav_data = synthesize_bytes(&mut client, &request)
-        .await
-        .context("Synthesis failed")?;
 
     let audio_size = wav_data.len();
     let text_len = text_char_count(&params.text);

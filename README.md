@@ -47,6 +47,11 @@ voicevox-mcp-server
 
 [See detailed MCP documentation](docs/mcp-usage.md)
 
+## Usage Notes
+
+- If you customize `VOICEVOX_SOCKET_PATH`, use a directory owned by the same user with restrictive permissions (recommended: `0700` for the directory).
+- In shared environments, avoid placing the socket in a world-writable directory.
+
 ## Troubleshooting
 
 ```bash

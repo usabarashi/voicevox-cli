@@ -1,10 +1,12 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 
 use crate::mcp::protocol::{JsonRpcResponse, INTERNAL_ERROR};
 use crate::mcp::tools::{self, ToolCallResult, ToolContent};
+
+const MAX_CONCURRENT_TOOL_EXECUTIONS: usize = 4;
 
 fn serialize_result_response(
     id: Value,
@@ -46,15 +48,17 @@ fn tool_execution_error_result(error: &anyhow::Error) -> ToolCallResult {
 #[derive(Debug, Clone)]
 pub struct ActiveRequests {
     abort_channels: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
-    response_sender: mpsc::UnboundedSender<JsonRpcResponse>,
+    response_sender: mpsc::Sender<JsonRpcResponse>,
+    execution_slots: Arc<Semaphore>,
 }
 
 impl ActiveRequests {
     #[must_use]
-    pub fn new(response_sender: mpsc::UnboundedSender<JsonRpcResponse>) -> Self {
+    pub fn new(response_sender: mpsc::Sender<JsonRpcResponse>) -> Self {
         Self {
             abort_channels: Arc::new(Mutex::new(HashMap::new())),
             response_sender,
+            execution_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_TOOL_EXECUTIONS)),
         }
     }
 
@@ -164,6 +168,19 @@ impl ActiveRequests {
         tool_name: &str,
         arguments: Value,
     ) {
+        let permit = match Arc::clone(&self.execution_slots).try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                let response = JsonRpcResponse::error(
+                    id,
+                    INTERNAL_ERROR,
+                    "Too many concurrent tool executions".to_string(),
+                );
+                let _ = self.response_sender.send(response).await;
+                return;
+            }
+        };
+
         let (abort_tx, abort_rx) = oneshot::channel::<String>();
 
         // Register the cancellation channel
@@ -175,6 +192,7 @@ impl ActiveRequests {
         crate::mcp::execution_runtime::spawn_non_send_tool_task(move || {
             // `execute_tool_request` may hold non-`Send` audio state across `.await`.
             Box::pin(async move {
+                let _permit = permit;
                 let result =
                     tools::execute_tool_request(&tool_name, arguments, Some(abort_rx)).await;
 
@@ -194,7 +212,7 @@ impl ActiveRequests {
                 };
 
                 // Send response via channel
-                let _ = active_requests.response_sender.send(response);
+                let _ = active_requests.response_sender.send(response).await;
             })
         });
     }

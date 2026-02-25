@@ -2,8 +2,23 @@ use crate::daemon::{DaemonError, DaemonResult};
 use anyhow::Result;
 use std::fs;
 use std::io;
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::process;
+
+fn allow_unsafe_path_commands() -> bool {
+    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
+}
+
+fn pgrep_command_path() -> &'static str {
+    if Path::new("/usr/bin/pgrep").is_file() {
+        "/usr/bin/pgrep"
+    } else if allow_unsafe_path_commands() {
+        "pgrep"
+    } else {
+        "/usr/bin/pgrep"
+    }
+}
 
 fn current_uid_string() -> String {
     // SAFETY: `getuid` is thread-safe and has no preconditions.
@@ -21,7 +36,7 @@ fn parse_other_pids(stdout: &[u8]) -> Vec<u32> {
 }
 
 fn pgrep_voicevox_daemon_output(match_mode: PgrepMatchMode) -> io::Result<process::Output> {
-    let mut command = process::Command::new("pgrep");
+    let mut command = process::Command::new(pgrep_command_path());
     command
         .arg(match_mode.flag())
         .arg("-u")
@@ -83,6 +98,24 @@ fn remove_stale_socket(socket_path: &Path) -> DaemonResult<()> {
         "Removing stale socket file: {}",
         socket_path.display()
     ));
+
+    match fs::symlink_metadata(socket_path) {
+        Ok(metadata) if !metadata.file_type().is_socket() => {
+            return Err(DaemonError::StartupFailed {
+                message: format!(
+                    "Refusing to remove non-socket path configured as daemon socket: {}",
+                    socket_path.display()
+                ),
+            });
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(DaemonError::StartupFailed {
+                message: format!("Failed to inspect socket path: {error}"),
+            });
+        }
+    }
 
     fs::remove_file(socket_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::PermissionDenied => DaemonError::SocketPermissionDenied {

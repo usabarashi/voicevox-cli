@@ -5,6 +5,27 @@ use tokio::sync::oneshot;
 
 use crate::client::audio::{create_temp_wav_file, play_audio_from_memory};
 
+fn allow_unsafe_path_commands() -> bool {
+    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
+}
+
+fn preferred_audio_players() -> Vec<&'static str> {
+    let mut players = Vec::new();
+    for path in [
+        "/usr/bin/afplay",
+        "/opt/homebrew/bin/play",
+        "/usr/local/bin/play",
+    ] {
+        if std::path::Path::new(path).is_file() {
+            players.push(path);
+        }
+    }
+    if allow_unsafe_path_commands() {
+        players.extend(["afplay", "play"]);
+    }
+    players
+}
+
 pub(crate) enum PlaybackOutcome {
     Completed,
     Cancelled(String),
@@ -120,7 +141,7 @@ async fn play_system_player_with_cancel(
 
     let mut last_error = None;
 
-    for command in ["afplay", "play"] {
+    for command in preferred_audio_players() {
         match run_player_with_cancel(command, &temp_path, cancel_rx).await {
             Ok(Some(outcome)) => return Ok(outcome),
             Ok(None) => {}

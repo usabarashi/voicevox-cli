@@ -1,3 +1,4 @@
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
 use super::{
@@ -34,15 +35,39 @@ pub enum EnsureDaemonRunningOutcome {
     AlreadyRunningRecovered,
 }
 
-async fn remove_stale_socket_if_requested(socket_path: &Path, remove_stale_socket: bool) {
+async fn remove_stale_socket_if_requested(
+    socket_path: &Path,
+    remove_stale_socket: bool,
+) -> DaemonResult<()> {
     if !remove_stale_socket {
-        return;
+        return Ok(());
     }
 
-    match tokio::fs::remove_file(socket_path).await {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Ok(()) => {}
-        Err(_) => {}
+    match tokio::fs::symlink_metadata(socket_path).await {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(metadata) if metadata.file_type().is_socket() => {
+            tokio::fs::remove_file(socket_path).await.map_err(|error| {
+                DaemonError::StartupFailed {
+                    message: format!(
+                        "Failed to remove stale socket {}: {error}",
+                        socket_path.display()
+                    ),
+                }
+            })?;
+            Ok(())
+        }
+        Ok(_) => Err(DaemonError::StartupFailed {
+            message: format!(
+                "Refusing to remove non-socket path configured as daemon socket: {}",
+                socket_path.display()
+            ),
+        }),
+        Err(error) => Err(DaemonError::StartupFailed {
+            message: format!(
+                "Failed to inspect socket path {}: {error}",
+                socket_path.display()
+            ),
+        }),
     }
 }
 
@@ -104,7 +129,7 @@ where
         return Ok(EnsureDaemonRunningOutcome::AlreadyResponsive);
     }
 
-    remove_stale_socket_if_requested(socket_path, options.remove_stale_socket).await;
+    remove_stale_socket_if_requested(socket_path, options.remove_stale_socket).await?;
 
     match start_daemon_detached(Some(socket_path)).await? {
         StartDaemonOutcome::Started => wait_ready_with_options(socket_path, options, on_retry)

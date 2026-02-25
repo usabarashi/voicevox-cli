@@ -3,12 +3,16 @@ use std::collections::HashMap;
 use crate::voice::{AvailableModel, Speaker};
 
 pub(super) enum DaemonServiceResult {
-    SynthesizeResult { wav_data: Vec<u8> },
+    SynthesizeResult {
+        wav_data: Vec<u8>,
+    },
     SpeakersListWithModels {
         speakers: Vec<Speaker>,
         style_to_model: HashMap<u32, u32>,
     },
-    ModelsList { models: Vec<AvailableModel> },
+    ModelsList {
+        models: Vec<AvailableModel>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -5,6 +5,7 @@ mod executor;
 mod policy;
 mod result;
 
+use crate::synthesis::{validate_basic_request, TextSynthesisRequest};
 use anyhow::Result;
 use catalog::ModelCatalog;
 use executor::DaemonSynthesisExecutor;
@@ -63,16 +64,32 @@ impl DaemonState {
         }
     }
 
-    async fn execute_request(&self, request: OwnedRequest) -> Result<DaemonServiceResult, DaemonServiceError> {
+    async fn execute_request(
+        &self,
+        request: OwnedRequest,
+    ) -> Result<DaemonServiceResult, DaemonServiceError> {
         match request {
             OwnedRequest::Synthesize {
                 text,
                 style_id,
                 options,
-            } => self
-                .synthesis_policy
-                .synthesize(&self.catalog, text, style_id, options.rate)
-                .await,
+            } => {
+                validate_basic_request(&TextSynthesisRequest {
+                    text: &text,
+                    style_id,
+                    rate: options.rate,
+                })
+                .map_err(|error| {
+                    DaemonServiceError::new(
+                        DaemonServiceErrorKind::SynthesisFailed,
+                        format!("Invalid synthesis request: {error}"),
+                    )
+                })?;
+
+                self.synthesis_policy
+                    .synthesize(&self.catalog, text, style_id, options.rate)
+                    .await
+            }
             OwnedRequest::ListSpeakers => Ok(DaemonServiceResult::SpeakersListWithModels {
                 speakers: self.catalog.speakers().to_vec(),
                 style_to_model: self.catalog.style_to_model_map().clone(),

@@ -5,8 +5,8 @@ use std::path::Path;
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 use crate::voice::{format_speakers_output, Speaker};
 
-use super::transport::{request_daemon_once, DAEMON_CONNECTION_TIMEOUT, DAEMON_RESPONSE_TIMEOUT};
 use super::daemon_response_error;
+use super::transport::{request_daemon_once, DAEMON_CONNECTION_TIMEOUT, DAEMON_RESPONSE_TIMEOUT};
 
 fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {
     anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")

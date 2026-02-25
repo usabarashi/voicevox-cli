@@ -3,11 +3,13 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::ipc::{
-    is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
+    is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MAX_SYNTHESIS_TEXT_LENGTH,
+    MIN_SYNTHESIS_RATE,
 };
 
 pub(crate) const MAX_STYLE_ID: u32 = 1000;
-pub(crate) const MAX_TEXT_LENGTH: usize = 10_000;
+#[cfg(test)]
+pub(crate) const MAX_TEXT_LENGTH: usize = MAX_SYNTHESIS_TEXT_LENGTH;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SynthesizeParams {
@@ -39,10 +41,12 @@ pub(crate) fn validate_synthesize_params(params: &SynthesizeParams) -> Result<()
         .then_some(())
         .ok_or_else(|| anyhow!("Text cannot be empty"))?;
 
-    (text_char_count <= MAX_TEXT_LENGTH)
+    (text_char_count <= MAX_SYNTHESIS_TEXT_LENGTH)
         .then_some(())
         .ok_or_else(|| {
-            anyhow!("Text too long: {text_char_count} characters (max: {MAX_TEXT_LENGTH})")
+            anyhow!(
+                "Text too long: {text_char_count} characters (max: {MAX_SYNTHESIS_TEXT_LENGTH})"
+            )
         })?;
 
     is_valid_synthesis_rate(params.rate)

@@ -1,12 +1,15 @@
 use anyhow::{anyhow, Context, Result};
 use futures_util::{SinkExt, StreamExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::Path;
 use std::time::Duration;
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-use crate::ipc::{OwnedRequest, OwnedResponse};
+use crate::ipc::{
+    OwnedRequest, OwnedResponse, MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES,
+};
 
 pub(crate) const DAEMON_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const DAEMON_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -22,11 +25,76 @@ fn decode_response_frame(frame: &[u8]) -> Result<OwnedResponse> {
         .map_err(|e| anyhow!("Failed to deserialize response: {e}"))
 }
 
+fn current_uid() -> u32 {
+    // SAFETY: `getuid` has no preconditions.
+    unsafe { libc::getuid() }
+}
+
+fn validate_socket_path(socket_path: &Path) -> Result<()> {
+    let metadata = match std::fs::symlink_metadata(socket_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(anyhow!(
+                "Failed to inspect daemon socket {}: {error}",
+                socket_path.display()
+            ));
+        }
+    };
+
+    if !metadata.file_type().is_socket() {
+        return Err(anyhow!(
+            "Refusing to connect to non-socket daemon path: {}",
+            socket_path.display()
+        ));
+    }
+
+    let uid = current_uid();
+    if metadata.uid() != uid {
+        return Err(anyhow!(
+            "Refusing to connect to daemon socket owned by another user: {}",
+            socket_path.display()
+        ));
+    }
+
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode & 0o022 != 0 {
+        return Err(anyhow!(
+            "Daemon socket permissions are too permissive (mode {:o}): {}",
+            mode,
+            socket_path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+fn verify_peer_credentials(stream: &UnixStream) -> Result<()> {
+    let cred = stream
+        .peer_cred()
+        .map_err(|error| anyhow!("Failed to read daemon peer credentials: {error}"))?;
+    let peer_uid = cred.uid();
+    let uid = current_uid();
+    if peer_uid != uid {
+        return Err(anyhow!(
+            "Refusing daemon connection from different uid (expected {uid}, got {peer_uid})"
+        ));
+    }
+    Ok(())
+}
+
+fn daemon_response_codec() -> LengthDelimitedCodec {
+    LengthDelimitedCodec::builder()
+        .max_frame_length(MAX_DAEMON_RESPONSE_FRAME_BYTES.max(MAX_DAEMON_REQUEST_FRAME_BYTES))
+        .new_codec()
+}
+
 pub(crate) async fn connect_socket_with_timeout(
     socket_path: &Path,
     timeout_duration: Duration,
 ) -> Result<UnixStream> {
-    timeout(timeout_duration, UnixStream::connect(socket_path))
+    validate_socket_path(socket_path)?;
+    let stream = timeout(timeout_duration, UnixStream::connect(socket_path))
         .await
         .map_err(|_| anyhow!("Timeout connecting to daemon"))?
         .map_err(|e| {
@@ -34,7 +102,9 @@ pub(crate) async fn connect_socket_with_timeout(
                 "Failed to connect to daemon at {}: {e}",
                 socket_path.display()
             )
-        })
+        })?;
+    verify_peer_credentials(&stream)?;
+    Ok(stream)
 }
 
 pub(crate) async fn connect_daemon_with_timeout(
@@ -53,7 +123,7 @@ pub(crate) async fn request_daemon_once(
     response_timeout_duration: Duration,
 ) -> Result<OwnedResponse> {
     let stream = connect_daemon_with_timeout(socket_path, connect_timeout_duration).await?;
-    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    let mut framed = Framed::new(stream, daemon_response_codec());
 
     let request_data = encode_request_frame(request)?;
     framed
@@ -75,7 +145,7 @@ pub(crate) async fn send_request_and_receive_response(
     request: &OwnedRequest,
 ) -> Result<OwnedResponse> {
     let request_data = encode_request_frame(request)?;
-    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    let mut framed = Framed::new(stream, daemon_response_codec());
     framed.send(request_data.into()).await?;
     let response_data = timeout(DAEMON_RESPONSE_TIMEOUT, framed.next())
         .await

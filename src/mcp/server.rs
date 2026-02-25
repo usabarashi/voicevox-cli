@@ -6,6 +6,9 @@ use tokio::sync::mpsc;
 use crate::mcp::protocol::{JsonRpcResponse, INVALID_REQUEST, PARSE_ERROR};
 use crate::mcp::requests::ActiveRequests;
 
+const RESPONSE_QUEUE_CAPACITY: usize = 64;
+const MAX_JSONRPC_LINE_BYTES: usize = 256 * 1024;
+
 /// Runs the MCP server loop over stdio and dispatches JSON-RPC requests/notifications.
 ///
 /// # Errors
@@ -19,7 +22,7 @@ pub async fn run_mcp_server() -> Result<()> {
     let mut lines = reader.lines();
 
     // Create response channel for async tool execution
-    let (response_tx, mut response_rx) = mpsc::unbounded_channel::<JsonRpcResponse>();
+    let (response_tx, mut response_rx) = mpsc::channel::<JsonRpcResponse>(RESPONSE_QUEUE_CAPACITY);
     let active_requests = ActiveRequests::new(response_tx);
 
     let shutdown = tokio::signal::ctrl_c();
@@ -68,6 +71,16 @@ async fn process_line(
         Some(_) => return Ok(LoopControl::Continue), // Empty line, continue
         None => return Ok(LoopControl::Break),       // EOF, terminate
     };
+
+    if line.len() > MAX_JSONRPC_LINE_BYTES {
+        let error_response = JsonRpcResponse::error(
+            Value::Null,
+            INVALID_REQUEST,
+            "Request too large".to_string(),
+        );
+        send_response(&error_response, stdout).await?;
+        return Ok(LoopControl::Continue);
+    }
 
     let Some(raw_request) = parse_json_request(&line, stdout).await? else {
         return Ok(LoopControl::Continue); // Parse error handled, continue

@@ -112,15 +112,19 @@ pub fn get_socket_path() -> PathBuf {
         .map(PathBuf::from)
         .filter(|path| path.is_dir())
     {
-        return base_dir.join(SOCKET_FILENAME);
+        return base_dir.join(APP_NAME).join(SOCKET_FILENAME);
     }
 
     if let Some(home_dir) = std::env::var_os("HOME").map(PathBuf::from) {
-        return home_dir.join(".local/state").join(SOCKET_FILENAME);
+        return home_dir
+            .join(".local/state")
+            .join(APP_NAME)
+            .join(SOCKET_FILENAME);
     }
 
     dirs::state_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(APP_NAME)
         .join(SOCKET_FILENAME)
 }
 

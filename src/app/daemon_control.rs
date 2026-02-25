@@ -7,6 +7,20 @@ use std::time::Duration;
 use crate::app::{AppOutput, StdAppOutput};
 use crate::daemon::{check_and_prevent_duplicate, exit_codes as exit_daemon, DaemonError};
 
+fn allow_unsafe_path_commands() -> bool {
+    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
+}
+
+fn system_command_path(preferred: &'static str, fallback_name: &'static str) -> &'static str {
+    if std::path::Path::new(preferred).is_file() {
+        preferred
+    } else if allow_unsafe_path_commands() {
+        fallback_name
+    } else {
+        preferred
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum StartMode {
     Foreground,
@@ -105,7 +119,7 @@ impl DaemonControlOs for SystemDaemonControlOs {
     }
 
     fn pid_memory_info_line(&self, pid_num: u32) -> Option<String> {
-        let ps_output = std::process::Command::new("ps")
+        let ps_output = std::process::Command::new(system_command_path("/bin/ps", "ps"))
             .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
             .output()
             .ok()?;
@@ -122,7 +136,7 @@ impl DaemonControlOs for SystemDaemonControlOs {
     }
 
     fn kill_term(&self, pid: u32) -> bool {
-        std::process::Command::new("kill")
+        std::process::Command::new(system_command_path("/bin/kill", "kill"))
             .arg("-TERM")
             .arg(pid.to_string())
             .status()

@@ -2,8 +2,8 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use tokio::net::UnixStream;
 
-use super::transport::{connect_socket_with_timeout, DAEMON_CONNECTION_TIMEOUT};
 use super::policy::DaemonAutoStartPolicy;
+use super::transport::{connect_socket_with_timeout, DAEMON_CONNECTION_TIMEOUT};
 use crate::daemon::{
     ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
 };

@@ -1,8 +1,6 @@
 use crate::app::{AppOutput, StdAppOutput};
 use crate::client::DaemonAutoStartPolicy;
-use crate::daemon::{
-    ensure_daemon_running, DaemonError, DaemonResult,
-};
+use crate::daemon::{ensure_daemon_running, DaemonError, DaemonResult};
 use crate::paths::get_socket_path;
 use anyhow::Result;
 

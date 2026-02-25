@@ -13,8 +13,8 @@ use crate::mcp::playback::{
 use crate::mcp::tool_types::text_result;
 use crate::mcp::tts_params::{parse_synthesize_params, text_char_count, SynthesizeParams};
 use crate::synthesis::{
-    prepare_backend_with_config, synthesize_streaming_segments,
-    validate_basic_request, PreparedBackend, TextSynthesisRequest,
+    prepare_backend_with_config, synthesize_streaming_segments, validate_basic_request,
+    PreparedBackend, TextSynthesisRequest,
 };
 
 fn cancelled_message(reason: &str) -> String {

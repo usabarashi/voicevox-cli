@@ -24,14 +24,18 @@ pub fn find_daemon_binary() -> Result<PathBuf, DaemonError> {
         }
     }
 
-    [
-        PathBuf::from("./target/debug/voicevox-daemon"),
-        PathBuf::from("./target/release/voicevox-daemon"),
-    ]
-    .into_iter()
-    .find(|p| p.exists())
-    .or_else(|| find_in_path("voicevox-daemon"))
-    .ok_or(DaemonError::DaemonBinaryNotFound)
+    if std::env::var_os("VOICEVOX_ALLOW_UNSAFE_DAEMON_LOOKUP").is_some() {
+        return [
+            PathBuf::from("./target/debug/voicevox-daemon"),
+            PathBuf::from("./target/release/voicevox-daemon"),
+        ]
+        .into_iter()
+        .find(|p| p.exists())
+        .or_else(|| find_in_path("voicevox-daemon"))
+        .ok_or(DaemonError::DaemonBinaryNotFound);
+    }
+
+    Err(DaemonError::DaemonBinaryNotFound)
 }
 
 fn find_in_path(binary_name: &str) -> Option<PathBuf> {

@@ -35,7 +35,9 @@ pub fn daemon_response_error(context: &str, code: DaemonErrorCode, message: &str
 }
 
 pub fn find_daemon_rpc_error(error: &anyhow::Error) -> Option<&DaemonRpcError> {
-    error.chain().find_map(|cause| cause.downcast_ref::<DaemonRpcError>())
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<DaemonRpcError>())
 }
 
 pub fn format_daemon_rpc_error_for_mcp(error: &anyhow::Error) -> String {
@@ -65,18 +67,18 @@ pub fn format_daemon_rpc_error_for_cli(error: &anyhow::Error) -> String {
     };
 
     match daemon_error.code() {
-        DaemonErrorCode::InvalidTargetId => format!(
-            "Invalid style/model ID. {}",
-            daemon_error.message()
-        ),
-        DaemonErrorCode::ModelLoadFailed => format!(
-            "Failed to load VOICEVOX model. {}",
-            daemon_error.message()
-        ),
+        DaemonErrorCode::InvalidTargetId => {
+            format!("Invalid style/model ID. {}", daemon_error.message())
+        }
+        DaemonErrorCode::ModelLoadFailed => {
+            format!("Failed to load VOICEVOX model. {}", daemon_error.message())
+        }
         DaemonErrorCode::SynthesisFailed => {
             format!("VOICEVOX synthesis failed. {}", daemon_error.message())
         }
-        DaemonErrorCode::Internal => format!("VOICEVOX daemon internal error. {}", daemon_error.message()),
+        DaemonErrorCode::Internal => {
+            format!("VOICEVOX daemon internal error. {}", daemon_error.message())
+        }
     }
 }
 
@@ -97,7 +99,11 @@ mod tests {
 
     #[test]
     fn daemon_rpc_error_is_discoverable_through_anyhow_chain() {
-        let err = daemon_response_error("Synthesis error", DaemonErrorCode::InvalidTargetId, "bad id");
+        let err = daemon_response_error(
+            "Synthesis error",
+            DaemonErrorCode::InvalidTargetId,
+            "bad id",
+        );
         let wrapped = err.context("top level");
 
         let daemon_err = find_daemon_rpc_error(&wrapped).expect("daemon rpc error in chain");

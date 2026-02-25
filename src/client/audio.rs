@@ -4,6 +4,27 @@ use std::process::Command;
 use std::{env, io::Write};
 use tempfile::{Builder, NamedTempFile};
 
+fn allow_unsafe_path_commands() -> bool {
+    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
+}
+
+fn preferred_audio_players() -> Vec<&'static str> {
+    let mut players = Vec::new();
+    for path in [
+        "/usr/bin/afplay",
+        "/opt/homebrew/bin/play",
+        "/usr/local/bin/play",
+    ] {
+        if std::path::Path::new(path).is_file() {
+            players.push(path);
+        }
+    }
+    if allow_unsafe_path_commands() {
+        players.extend(["afplay", "play"]);
+    }
+    players
+}
+
 /// Plays synthesized WAV audio from memory using rodio or a system player fallback.
 ///
 /// # Errors
@@ -63,7 +84,7 @@ fn play_audio_via_system(wav_data: &[u8]) -> Result<()> {
     let temp_file = create_temp_wav_file(wav_data)?;
     let temp_path = temp_file.path();
 
-    try_players(["afplay", "play"], |command| {
+    try_players(preferred_audio_players(), |command| {
         try_system_player(command, temp_path)
     })
 }

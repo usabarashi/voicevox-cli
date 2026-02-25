@@ -34,7 +34,10 @@ pub async fn connect_daemon_client_auto_start(socket_path: &Path) -> Result<Daem
     DaemonClient::new_with_auto_start_at(socket_path).await
 }
 
-async fn ensure_models_on_demand(request: &DaemonSynthesisBytesRequest<'_>, output: &dyn AppOutput) -> Result<()> {
+async fn ensure_models_on_demand(
+    request: &DaemonSynthesisBytesRequest<'_>,
+    output: &dyn AppOutput,
+) -> Result<()> {
     if !request.ensure_models_if_missing {
         return Ok(());
     }

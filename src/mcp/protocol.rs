@@ -498,7 +498,7 @@ mod tests {
 
     #[tokio::test]
     async fn tools_call_rejects_missing_tool_name() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
         let active_requests = ActiveRequests::new(tx);
         let response = process_tools_call(json!(1), Some(json!({})), &active_requests).await;
 
@@ -515,7 +515,7 @@ mod tests {
 
     #[tokio::test]
     async fn tools_call_rejects_non_object_arguments() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
         let active_requests = ActiveRequests::new(tx);
         let params = json!({
             "name": "list_voice_styles",

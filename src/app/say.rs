@@ -2,8 +2,8 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::app::{
-    validate_text_synthesis_request, AppOutput, DaemonSynthesisBytesRequest, StdAppOutput,
-    synthesize_bytes_via_daemon,
+    synthesize_bytes_via_daemon, validate_text_synthesis_request, AppOutput,
+    DaemonSynthesisBytesRequest, StdAppOutput,
 };
 use crate::client::{emit_synthesized_audio, format_daemon_rpc_error_for_cli};
 

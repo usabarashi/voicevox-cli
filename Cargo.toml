@@ -37,7 +37,7 @@ tempfile = "3.23"
 # MCP Server dependencies
 jsonrpc-lite = "0.6"
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.30", features = ["signal", "socket", "uio", "fs"] }
+nix = { version = "0.31", features = ["signal", "socket", "uio", "fs"] }
 
 rodio = { version = "0.21", default-features = false, features = ["playback", "wav"] }
 

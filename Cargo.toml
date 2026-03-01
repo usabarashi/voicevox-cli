@@ -39,7 +39,7 @@ jsonrpc-lite = "0.6"
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30", features = ["signal", "socket", "uio", "fs"] }
 
-rodio = { version = "0.21", default-features = false, features = ["playback", "wav"] }
+rodio = { version = "0.22", default-features = false, features = ["playback", "wav"] }
 
 tokio = { version = "1.47", features = [
     "net", "process", "time", "signal", "sync",

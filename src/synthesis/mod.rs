@@ -1,6 +1,7 @@
 pub mod executor;
 pub mod service;
 pub mod streaming;
+pub mod wav;
 
 pub use executor::{prepare_backend, prepare_backend_with_config, PreparedBackend};
 pub use service::{

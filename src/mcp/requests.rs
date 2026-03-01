@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 
 use crate::mcp::protocol::{JsonRpcResponse, INTERNAL_ERROR};
-use crate::mcp::tools::{self, ToolCallResult, ToolContent};
+use crate::mcp::tools::{self, ToolCallResult};
 
 const MAX_CONCURRENT_TOOL_EXECUTIONS: usize = 4;
 
@@ -20,13 +20,7 @@ fn serialize_result_response(
 }
 
 fn tool_execution_error_result(error: &anyhow::Error) -> ToolCallResult {
-    ToolCallResult {
-        content: vec![ToolContent {
-            content_type: "text".to_string(),
-            text: format!("Tool execution error: {error}"),
-        }],
-        is_error: Some(true),
-    }
+    crate::mcp::tool_types::text_result(format!("Tool execution error: {error}"), true)
 }
 
 /// Manages active requests and their cancellation tokens.

@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -8,16 +9,31 @@ pub struct ToolCallResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ToolContent {
-    #[serde(rename = "type")]
-    pub content_type: String,
-    pub text: String,
+#[serde(tag = "type")]
+pub enum ToolContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "resource")]
+    EmbeddedResource { resource: BlobResource },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlobResource {
+    pub blob: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
 }
 
 fn text_content(text: impl Into<String>) -> ToolContent {
-    ToolContent {
-        content_type: "text".to_string(),
-        text: text.into(),
+    ToolContent::Text { text: text.into() }
+}
+
+fn audio_content(wav_data: &[u8]) -> ToolContent {
+    ToolContent::EmbeddedResource {
+        resource: BlobResource {
+            blob: base64::engine::general_purpose::STANDARD.encode(wav_data),
+            mime_type: "audio/wav".to_string(),
+        },
     }
 }
 
@@ -25,5 +41,12 @@ pub(crate) fn text_result(text: impl Into<String>, is_error: bool) -> ToolCallRe
     ToolCallResult {
         content: vec![text_content(text)],
         is_error: is_error.then_some(true),
+    }
+}
+
+pub(crate) fn audio_result(summary: impl Into<String>, wav_data: &[u8]) -> ToolCallResult {
+    ToolCallResult {
+        content: vec![text_content(summary), audio_content(wav_data)],
+        is_error: None,
     }
 }

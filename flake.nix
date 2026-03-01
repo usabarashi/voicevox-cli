@@ -282,6 +282,9 @@
 
             # Development utilities
             voicevoxResetWrapper
+
+            # TLC model checker for modeling/*.tla
+            tlaplus
           ];
 
           shellHook = ''
@@ -304,6 +307,7 @@
             echo "  nix run                            - Run voicevox-say directly"
             echo "  voicevox-reset                     - Reset daemon state (kill processes + remove socket)"
             echo "  cargo test                         - Also works in this shell (FOR_BUILD SDK vars sanitized)"
+            echo "  tlc -deadlock -config X.cfg X.tla  - Run TLC model checker (in modeling/)"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
           '';

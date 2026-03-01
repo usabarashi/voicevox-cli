@@ -38,6 +38,7 @@ tempfile = "=3.23.0"
 
 # MCP Server dependencies
 
+base64 = "0.22"
 rodio = { version = "0.21", default-features = false, features = ["playback", "wav"] }
 
 tokio = { version = "1.47", default-features = false, features = [

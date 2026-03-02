@@ -60,6 +60,26 @@ ConnectedImpliesReady ==
 TerminalPhaseStable ==
     pc["client"] = "Done" => client_phase \in {"connected", "failed"}
 
+ConnectedIsTerminal ==
+    client_phase = "connected" => pc["client"] = "Done"
+
+FailedIsTerminal ==
+    client_phase = "failed" => pc["client"] = "Done"
+
+PreRetryBackoffInitialized ==
+    client_phase \in {"initial_connect", "check_models", "start_daemon", "grace_wait"}
+        => /\ attempt = 0
+           /\ delay = INITIAL_DELAY
+
+RetryLoopDelayDiscipline ==
+    client_phase = "retry_loop"
+        => delay =
+            IF attempt = 0
+            THEN INITIAL_DELAY
+            ELSE IF INITIAL_DELAY * (2 ^ attempt) <= MAX_DELAY
+                 THEN INITIAL_DELAY * (2 ^ attempt)
+                 ELSE MAX_DELAY
+
 \* ================================================================
 \* Initial State
 \* ================================================================

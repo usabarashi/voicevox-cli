@@ -94,6 +94,14 @@ ClientStatePcConsistency ==
         /\ (pc[c] = "UnloadModel" => client_state[c] \in {"synthesizing", "unloading_model"})
         /\ (pc[c] = "ReleaseMutex" => client_state[c] \in {"responding", "unloading_model"})
 
+DoneHasResponse ==
+    \A c \in Clients:
+        client_state[c] = "done" => response[c] \in {"ok", "error"}
+
+DonePcConsistency ==
+    \A c \in Clients:
+        pc[c] = "Done" => client_state[c] \in {"done", "aborted"}
+
 \* ================================================================
 \* Initial State
 \* ================================================================

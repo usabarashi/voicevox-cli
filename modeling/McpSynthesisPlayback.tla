@@ -272,6 +272,10 @@ CancelStopsPlayback ==
     [](user_wants_cancel /\ client_state = "playing"
        => <>(client_state = "cancelled"))
 
+CancelEventuallyTerminatesClient ==
+    [](user_wants_cancel /\ pc["client"] # "Done_client"
+       => <>(client_state = "cancelled"))
+
 CancelDoesNotInterruptServer ==
     [](user_wants_cancel /\ server_state \in {"synthesizing", "encoding", "responding"}
        => <>(pc["server"] = "Done_server"))

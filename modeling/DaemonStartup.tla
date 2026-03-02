@@ -45,7 +45,7 @@ TypeOK ==
     /\ stale_remove_allowed \in BOOLEAN
     /\ \A d \in Daemons: daemon_phase[d] \in
         {"init", "check_socket", "remove_stale", "check_pgrep",
-         "bind_socket", "listening", "aborted", "failed"}
+         "bind_socket", "listening", "stopped", "aborted", "failed"}
     /\ socket_exists => socket_path_kind \in {"socket", "non_socket"}
     /\ ~socket_exists => socket_path_kind = "none"
 
@@ -170,6 +170,25 @@ BindSocket(d) ==
                                 socket_path_kind, stale_remove_allowed >>
     /\ pc' = [pc EXCEPT ![d] = "Done"]
 
+StopRunning(d) ==
+    /\ pc[d] = "Done"
+    /\ daemon_phase[d] = "listening"
+    /\ socket_owner = d
+    /\ socket_responsive
+    /\ \/ /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "stopped"]
+          /\ socket_exists' = FALSE
+          /\ socket_responsive' = FALSE
+          /\ socket_owner' = "nobody"
+          /\ running_daemons' = running_daemons \ {d}
+          /\ socket_path_kind' = "none"
+       \/ /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "stopped"]
+          /\ socket_exists' = TRUE
+          /\ socket_responsive' = FALSE
+          /\ socket_owner' = d
+          /\ running_daemons' = running_daemons \ {d}
+          /\ socket_path_kind' = "socket"
+    /\ UNCHANGED << stale_remove_allowed, pc >>
+
 \* ================================================================
 \* Specification
 \* ================================================================
@@ -182,7 +201,8 @@ Next ==
             \/ CheckSocket(d)
             \/ RemoveStale(d)
             \/ CheckPgrep(d)
-            \/ BindSocket(d))
+            \/ BindSocket(d)
+            \/ StopRunning(d))
     \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
@@ -191,6 +211,7 @@ Fairness ==
         \/ RemoveStale(d)
         \/ CheckPgrep(d)
         \/ BindSocket(d)
+        \/ StopRunning(d)
     )
 
 Spec == Init /\ [][Next]_vars /\ Fairness
@@ -203,10 +224,10 @@ AtLeastOneStarts ==
     (running_daemons = {} /\ ~socket_responsive
      /\ Cardinality({d \in Daemons: pc[d] = "CheckSocket"}) >= 1)
         => <>(socket_responsive
-              \/ \A d \in Daemons: daemon_phase[d] \in {"aborted", "failed"})
+              \/ \A d \in Daemons: daemon_phase[d] \in {"aborted", "failed", "stopped"})
 
 AllTerminate ==
-    \A d \in Daemons: <>(daemon_phase[d] \in {"listening", "aborted", "failed"})
+    \A d \in Daemons: <>(daemon_phase[d] \in {"listening", "stopped", "aborted", "failed"})
 
 \* ================================================================
 \* Symmetry

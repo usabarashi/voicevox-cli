@@ -9,20 +9,39 @@ pub(super) struct DaemonSynthesisExecutor {
     core: VoicevoxCore,
 }
 
-impl DaemonSynthesisExecutor {
-    pub(super) fn new(core: VoicevoxCore) -> Self {
-        Self { core }
-    }
+/// RAII guard that unloads a voice model on drop.
+///
+/// Guarantees `model_loaded = FALSE` even on panic or task cancellation,
+/// matching `DaemonRequestHandling.tla` `ClientDisconnect`:
+///   `mutex_holder = c => model_loaded' = FALSE`
+struct ModelUnloadGuard<'a> {
+    core: &'a VoicevoxCore,
+    model_id: u32,
+    model_path: Option<&'a Path>,
+}
 
-    fn unload_model_if_known(core: &VoicevoxCore, model_id: u32, model_path: Option<&Path>) {
-        let Some(model_path) = model_path else {
-            crate::logging::warn(&format!("Model {model_id} not found in available models"));
+impl Drop for ModelUnloadGuard<'_> {
+    fn drop(&mut self) {
+        let Some(model_path) = self.model_path else {
+            crate::logging::warn(&format!(
+                "Model {} not found in available models",
+                self.model_id
+            ));
             return;
         };
 
-        if let Err(error) = core.unload_voice_model_by_path(model_path) {
-            crate::logging::warn(&format!("Failed to unload model {model_id}: {error}"));
+        if let Err(error) = self.core.unload_voice_model_by_path(model_path) {
+            crate::logging::warn(&format!(
+                "Failed to unload model {}: {error}",
+                self.model_id
+            ));
         }
+    }
+}
+
+impl DaemonSynthesisExecutor {
+    pub(super) fn new(core: VoicevoxCore) -> Self {
+        Self { core }
     }
 
     pub(super) fn synthesize(
@@ -51,8 +70,16 @@ impl DaemonSynthesisExecutor {
             ));
         }
 
+        // RAII guard ensures the model is always unloaded, even on panic or
+        // task cancellation. Matches DaemonRequestHandling.tla ClientDisconnect:
+        //   mutex_holder = c => model_loaded' = FALSE
+        let _model_guard = ModelUnloadGuard {
+            core: &self.core,
+            model_id,
+            model_path,
+        };
+
         let synthesis_result = self.core.synthesize_with_rate(&text, style_id, rate);
-        Self::unload_model_if_known(&self.core, model_id, model_path);
 
         match synthesis_result {
             Ok(wav_data) => Ok(DaemonServiceResult::SynthesizeResult { wav_data }),

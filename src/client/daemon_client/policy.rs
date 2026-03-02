@@ -34,7 +34,7 @@ impl DaemonAutoStartPolicy {
             final_connection_timeout: Duration::from_secs(5),
             ensure_running: EnsureDaemonRunningOptions {
                 connect_timeout: super::transport::DAEMON_CONNECTION_TIMEOUT,
-                wait_attempts: 20,
+                wait_attempts: daemon::startup::MAX_CONNECT_ATTEMPTS,
                 initial_retry_delay: Duration::from_millis(500),
                 max_retry_delay: Duration::from_secs(4),
                 ..EnsureDaemonRunningOptions::default()

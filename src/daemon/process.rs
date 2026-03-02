@@ -135,10 +135,11 @@ fn check_for_other_daemons() -> DaemonResult<()> {
             check_pgrep_output(&output.stdout)
         }
         Ok(_) => Ok(()), // No processes found or empty output
-        Err(_) => {
-            crate::logging::warn("Could not check for existing processes (pgrep not available)");
-            Ok(())
-        }
+        Err(_) => Err(DaemonError::StartupFailed {
+            message: "Cannot verify no other daemon is running (pgrep not available). \
+                      Please install procps (pgrep) to enable daemon startup."
+                .to_string(),
+        }),
     }
 }
 

@@ -12,7 +12,7 @@
 (*   - MutexExclusion:  at most 1 synthesis executing at any time          *)
 (*   - SemaphoreBound:  at most MAX_CLIENTS concurrent handlers            *)
 (*   - ModelCleanup:    model always unloaded after synthesis attempt       *)
-(*   - ResponseLiveness: every client eventually receives a response       *)
+(*   - ClientTermination: every client eventually reaches a terminal state *)
 (*                                                                         *)
 (* Process: ClientHandler(c) for c in Clients                              *)
 (*   AcquirePermit -> ChooseRequest ->                                     *)
@@ -54,17 +54,17 @@ TypeOK ==
     /\ \A c \in Clients:
         /\ client_state[c] \in {"idle", "has_permit", "waiting_mutex",
                "loading_model", "synthesizing", "unloading_model",
-               "responding", "done"}
+               "responding", "done", "aborted"}
         /\ request_type[c] \in RequestTypes
         /\ synthesis_outcome[c] \in SynthesisOutcomes
         /\ response[c] \in {"none", "ok", "error"}
 
 ActiveHandlers ==
-    {c \in Clients: client_state[c] \notin {"idle", "done"}}
+    {c \in Clients: client_state[c] \notin {"idle", "done", "aborted"}}
 
 MutexExclusion ==
     Cardinality({c \in Clients:
-        client_state[c] \in {"loading_model", "synthesizing", "unloading_model"}
+        pc[c] \in {"LoadModel", "Synthesize", "UnloadModel", "ReleaseMutex"}
     }) <= 1
 
 SemaphoreBound ==
@@ -86,6 +86,13 @@ MutexConsistency ==
 
 ModelOnlyUnderMutex ==
     model_loaded => (mutex_holder # "nobody")
+
+ClientStatePcConsistency ==
+    \A c \in Clients:
+        /\ (pc[c] = "LoadModel" => client_state[c] \in {"waiting_mutex", "loading_model"})
+        /\ (pc[c] = "Synthesize" => client_state[c] \in {"loading_model", "synthesizing"})
+        /\ (pc[c] = "UnloadModel" => client_state[c] \in {"synthesizing", "unloading_model"})
+        /\ (pc[c] = "ReleaseMutex" => client_state[c] \in {"responding", "unloading_model"})
 
 \* ================================================================
 \* Initial State
@@ -164,7 +171,7 @@ Synthesize(c) ==
 
 UnloadModel(c) ==
     /\ pc[c] = "UnloadModel"
-    /\ client_state' = [client_state EXCEPT ![c] = "responding"]
+    /\ client_state' = [client_state EXCEPT ![c] = "unloading_model"]
     /\ model_loaded' = FALSE
     /\ IF synthesis_outcome[c] = "success"
        THEN response' = [response EXCEPT ![c] = "ok"]
@@ -175,8 +182,9 @@ UnloadModel(c) ==
 ReleaseMutex(c) ==
     /\ pc[c] = "ReleaseMutex"
     /\ mutex_holder' = "nobody"
+    /\ client_state' = [client_state EXCEPT ![c] = "responding"]
     /\ pc' = [pc EXCEPT ![c] = "SendResponse"]
-    /\ UNCHANGED << semaphore, model_loaded, client_state, request_type,
+    /\ UNCHANGED << semaphore, model_loaded, request_type,
                     synthesis_outcome, response >>
 
 SendResponse(c) ==
@@ -185,6 +193,21 @@ SendResponse(c) ==
     /\ semaphore' = semaphore + 1
     /\ pc' = [pc EXCEPT ![c] = "Done"]
     /\ UNCHANGED << mutex_holder, model_loaded, request_type, synthesis_outcome, response >>
+
+ClientDisconnect(c) ==
+    /\ pc[c] \in {"ChooseRequest", "AcquireMutex", "LoadModel",
+                  "Synthesize", "UnloadModel", "ReleaseMutex", "SendResponse"}
+    /\ client_state[c] \in {"has_permit", "waiting_mutex", "loading_model",
+                            "synthesizing", "unloading_model", "responding"}
+    /\ client_state' = [client_state EXCEPT ![c] = "aborted"]
+    /\ response' = response
+    /\ semaphore' = semaphore + 1
+    /\ IF mutex_holder = c
+       THEN /\ mutex_holder' = "nobody"
+            /\ model_loaded' = FALSE
+       ELSE /\ UNCHANGED << mutex_holder, model_loaded >>
+    /\ pc' = [pc EXCEPT ![c] = "Done"]
+    /\ UNCHANGED << request_type, synthesis_outcome >>
 
 \* ================================================================
 \* Specification
@@ -202,7 +225,8 @@ Next ==
             \/ Synthesize(c)
             \/ UnloadModel(c)
             \/ ReleaseMutex(c)
-            \/ SendResponse(c))
+            \/ SendResponse(c)
+            \/ ClientDisconnect(c))
     \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
@@ -215,6 +239,7 @@ Fairness ==
         \/ UnloadModel(c)
         \/ ReleaseMutex(c)
         \/ SendResponse(c)
+        \/ ClientDisconnect(c)
     )
 
 Spec == Init /\ [][Next]_vars /\ Fairness
@@ -223,7 +248,7 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 \* Liveness
 \* ================================================================
 
-ResponseLiveness ==
+ClientTermination ==
     \A c \in Clients: <>(pc[c] = "Done")
 
 \* ================================================================

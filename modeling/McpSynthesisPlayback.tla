@@ -27,9 +27,11 @@ EXTENDS Integers, TLC
 \* ================================================================
 
 VARIABLES server_state, client_state, audio_location,
+          synthesis_mode, mode_after_request,
           synthesis_succeeded, user_wants_cancel, pc
 
 vars == << server_state, client_state, audio_location,
+           synthesis_mode, mode_after_request,
            synthesis_succeeded, user_wants_cancel, pc >>
 
 Procs == {"user", "server", "client"}
@@ -44,11 +46,10 @@ TypeOK ==
                           "decoding", "playing", "done", "cancelled"}
     /\ audio_location \in {"nowhere", "at_server_raw", "at_server_encoded",
                             "at_client_encoded", "at_client_decoded"}
+    /\ synthesis_mode \in {"daemon", "streaming"}
+    /\ mode_after_request \in {"unset", "daemon", "streaming"}
     /\ synthesis_succeeded \in BOOLEAN
     /\ user_wants_cancel \in BOOLEAN
-
-ServerNeverPlays ==
-    server_state \in {"idle", "synthesizing", "encoding", "responding"}
 
 AudioDataIntegrity ==
     /\ (audio_location = "at_server_raw" =>
@@ -75,6 +76,14 @@ EncodingDecodingSeparation ==
     /\ (server_state = "encoding" => audio_location \in {"at_server_raw", "at_server_encoded"})
     /\ (client_state = "decoding" => audio_location \in {"at_client_encoded", "at_client_decoded"})
 
+ModeStabilityAfterRequest ==
+    /\ (mode_after_request = "unset"
+        \/ synthesis_mode = mode_after_request)
+    /\ (client_state = "requesting" \/ mode_after_request # "unset")
+
+CancelledCleansAudio ==
+    client_state = "cancelled" => audio_location = "nowhere"
+
 \* ================================================================
 \* Initial State
 \* ================================================================
@@ -83,6 +92,8 @@ Init ==
     /\ server_state = "idle"
     /\ client_state = "requesting"
     /\ audio_location = "nowhere"
+    /\ synthesis_mode = "daemon"
+    /\ mode_after_request = "unset"
     /\ synthesis_succeeded = FALSE
     /\ user_wants_cancel = FALSE
     /\ pc = [p \in Procs |->
@@ -96,9 +107,11 @@ Init ==
 
 UserAction ==
     /\ pc["user"] = "UserAction"
-    /\ \/ (user_wants_cancel' = TRUE /\ UNCHANGED << server_state, client_state, audio_location, synthesis_succeeded >>)
-       \/ UNCHANGED << server_state, client_state, audio_location, synthesis_succeeded, user_wants_cancel >>
-    /\ pc' = [pc EXCEPT !["user"] = "Done_user"]
+    /\ pc["client"] # "Done_client"
+    /\ user_wants_cancel' \in {user_wants_cancel, TRUE}
+    /\ UNCHANGED << server_state, client_state, audio_location,
+                    synthesis_mode, mode_after_request,
+                    synthesis_succeeded, pc >>
 
 \* ================================================================
 \* Server Actions
@@ -109,7 +122,8 @@ WaitRequest ==
     /\ client_state = "waiting"
     /\ server_state' = "synthesizing"
     /\ pc' = [pc EXCEPT !["server"] = "SynthesizeAction"]
-    /\ UNCHANGED << client_state, audio_location, synthesis_succeeded, user_wants_cancel >>
+    /\ UNCHANGED << client_state, audio_location, synthesis_mode, mode_after_request,
+                    synthesis_succeeded, user_wants_cancel >>
 
 SynthesizeAction ==
     /\ pc["server"] = "SynthesizeAction"
@@ -118,7 +132,8 @@ SynthesizeAction ==
        \/ (/\ synthesis_succeeded' = FALSE
            /\ UNCHANGED audio_location)
     /\ pc' = [pc EXCEPT !["server"] = "Encode"]
-    /\ UNCHANGED << server_state, client_state, user_wants_cancel >>
+    /\ UNCHANGED << server_state, client_state, synthesis_mode, mode_after_request,
+                    user_wants_cancel >>
 
 Encode ==
     /\ pc["server"] = "Encode"
@@ -128,16 +143,20 @@ Encode ==
        ELSE /\ server_state' = "responding"
             /\ UNCHANGED audio_location
     /\ pc' = [pc EXCEPT !["server"] = "Respond"]
-    /\ UNCHANGED << client_state, synthesis_succeeded, user_wants_cancel >>
+    /\ UNCHANGED << client_state, synthesis_mode, mode_after_request,
+                    synthesis_succeeded, user_wants_cancel >>
 
 Respond ==
     /\ pc["server"] = "Respond"
     /\ IF synthesis_succeeded
-       THEN audio_location' = "at_client_encoded"
+       THEN IF user_wants_cancel
+            THEN audio_location' = "nowhere"
+            ELSE audio_location' = "at_client_encoded"
        ELSE UNCHANGED audio_location
     /\ server_state' = "idle"
     /\ pc' = [pc EXCEPT !["server"] = "Done_server"]
-    /\ UNCHANGED << client_state, synthesis_succeeded, user_wants_cancel >>
+    /\ UNCHANGED << client_state, synthesis_mode, mode_after_request,
+                    synthesis_succeeded, user_wants_cancel >>
 
 \* ================================================================
 \* Client Actions
@@ -145,6 +164,8 @@ Respond ==
 
 SendRequest ==
     /\ pc["client"] = "SendRequest"
+    /\ synthesis_mode' \in {"daemon", "streaming"}
+    /\ mode_after_request' = synthesis_mode'
     /\ client_state' = "waiting"
     /\ pc' = [pc EXCEPT !["client"] = "ReceiveResponse"]
     /\ UNCHANGED << server_state, audio_location, synthesis_succeeded, user_wants_cancel >>
@@ -154,48 +175,58 @@ ReceiveResponse ==
     /\ pc["server"] = "Done_server"
     /\ IF user_wants_cancel
        THEN /\ client_state' = "cancelled"
+            /\ audio_location' = "nowhere"
             /\ pc' = [pc EXCEPT !["client"] = "Done_client"]
        ELSE IF ~synthesis_succeeded
             THEN /\ client_state' = "done"
+                 /\ UNCHANGED audio_location
                  /\ pc' = [pc EXCEPT !["client"] = "Done_client"]
             ELSE /\ client_state' = "received"
+                 /\ UNCHANGED audio_location
                  /\ pc' = [pc EXCEPT !["client"] = "Decode"]
-    /\ UNCHANGED << server_state, audio_location, synthesis_succeeded, user_wants_cancel >>
+    /\ UNCHANGED << server_state, synthesis_mode, mode_after_request,
+                    synthesis_succeeded, user_wants_cancel >>
 
 Decode ==
     /\ pc["client"] = "Decode"
     /\ IF user_wants_cancel
        THEN /\ client_state' = "cancelled"
             /\ pc' = [pc EXCEPT !["client"] = "Done_client"]
-            /\ UNCHANGED audio_location
+            /\ audio_location' = "nowhere"
        ELSE /\ client_state' = "decoding"
             /\ audio_location' = "at_client_decoded"
             /\ pc' = [pc EXCEPT !["client"] = "CheckBeforePlay"]
-    /\ UNCHANGED << server_state, synthesis_succeeded, user_wants_cancel >>
+    /\ UNCHANGED << server_state, synthesis_mode, mode_after_request,
+                    synthesis_succeeded, user_wants_cancel >>
 
 CheckBeforePlay ==
     /\ pc["client"] = "CheckBeforePlay"
     /\ IF user_wants_cancel
        THEN /\ client_state' = "cancelled"
+            /\ audio_location' = "nowhere"
             /\ pc' = [pc EXCEPT !["client"] = "Done_client"]
        ELSE /\ client_state' = "playing"
+            /\ UNCHANGED audio_location
             /\ pc' = [pc EXCEPT !["client"] = "Playback"]
-    /\ UNCHANGED << server_state, audio_location, synthesis_succeeded, user_wants_cancel >>
+    /\ UNCHANGED << server_state, synthesis_mode, mode_after_request,
+                    synthesis_succeeded, user_wants_cancel >>
 
 Playback ==
     /\ pc["client"] = "Playback"
     /\ IF user_wants_cancel
-       THEN client_state' = "cancelled"
-       ELSE client_state' = "done"
+       THEN /\ client_state' = "cancelled"
+            /\ audio_location' = "nowhere"
+       ELSE /\ client_state' = "done"
+            /\ UNCHANGED audio_location
     /\ pc' = [pc EXCEPT !["client"] = "Done_client"]
-    /\ UNCHANGED << server_state, audio_location, synthesis_succeeded, user_wants_cancel >>
+    /\ UNCHANGED << server_state, synthesis_mode, mode_after_request,
+                    synthesis_succeeded, user_wants_cancel >>
 
 \* ================================================================
 \* Specification
 \* ================================================================
 
 Terminated ==
-    /\ pc["user"] = "Done_user"
     /\ pc["server"] = "Done_server"
     /\ pc["client"] = "Done_client"
 
@@ -213,7 +244,6 @@ Next ==
     \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
-    /\ WF_vars(UserAction)
     /\ WF_vars(WaitRequest)
     /\ WF_vars(SynthesizeAction)
     /\ WF_vars(Encode)
@@ -233,11 +263,20 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 ClientTermination ==
     <>(client_state \in {"done", "cancelled"})
 
+NoOrphanedPlayback ==
+    ~(user_wants_cancel
+      /\ server_state \in {"synthesizing", "encoding", "responding"}
+      /\ client_state = "playing")
+
 CancelStopsPlayback ==
     [](user_wants_cancel /\ client_state = "playing"
        => <>(client_state = "cancelled"))
 
+CancelDoesNotInterruptServer ==
+    [](user_wants_cancel /\ server_state \in {"synthesizing", "encoding", "responding"}
+       => <>(pc["server"] = "Done_server"))
+
 ServerReturnsToIdle ==
-    <>(server_state = "idle")
+    [](server_state # "idle" => <>(server_state = "idle"))
 
 =============================================================================

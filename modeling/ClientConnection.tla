@@ -44,16 +44,21 @@ TypeOK ==
                           "grace_wait", "retry_loop", "final_connect",
                           "connected", "failed"}
     /\ attempt \in 0..MAX_ATTEMPTS
-    /\ delay \in 1..(MAX_DELAY * 2 + 1)
+    /\ delay \in INITIAL_DELAY..MAX_DELAY
 
-FiniteRetries ==
-    attempt <= MAX_ATTEMPTS
+FinalConnectUsesMaxAttempts ==
+    client_phase = "final_connect" => attempt = MAX_ATTEMPTS
 
-DelayBound ==
-    delay <= MAX_DELAY * 2 + 1
+ClientPcPhaseConsistency ==
+    /\ (pc["client"] = "RetryLoop" => client_phase = "retry_loop")
+    /\ (pc["client"] = "FinalConnect" => client_phase = "final_connect")
+    /\ (pc["client"] = "Done" => client_phase \in {"connected", "failed"})
 
 ConnectedImpliesReady ==
-    client_phase = "connected" => daemon_state = "ready"
+    (pc["client"] # "Done" /\ client_phase = "connected") => daemon_state = "ready"
+
+TerminalPhaseStable ==
+    pc["client"] = "Done" => client_phase \in {"connected", "failed"}
 
 \* ================================================================
 \* Initial State
@@ -61,7 +66,7 @@ ConnectedImpliesReady ==
 
 Init ==
     /\ daemon_state = "not_running"
-    /\ models_available = TRUE
+    /\ models_available \in BOOLEAN
     /\ client_phase = "initial_connect"
     /\ attempt = 0
     /\ delay = INITIAL_DELAY
@@ -140,10 +145,15 @@ FinalConnect ==
 
 EnvironmentLoop ==
     /\ pc["env"] = "EnvironmentLoop"
-    /\ \/ (daemon_state = "starting" /\ daemon_state' = "ready")
-       \/ (daemon_state = "starting" /\ daemon_state' = "crashed")
-       \/ UNCHANGED daemon_state
-    /\ UNCHANGED << models_available, client_phase, attempt, delay >>
+    /\ IF pc["client"] = "Done"
+       THEN /\ UNCHANGED << daemon_state, models_available, client_phase >>
+       ELSE /\ \/ (daemon_state = "not_running" /\ daemon_state' \in {"not_running", "starting"})
+               \/ (daemon_state = "starting" /\ daemon_state' \in {"starting", "ready", "crashed"})
+               \/ (daemon_state = "ready" /\ daemon_state' \in {"ready", "crashed"})
+               \/ (daemon_state = "crashed" /\ daemon_state' \in {"crashed", "not_running"})
+            /\ models_available' \in BOOLEAN
+            /\ client_phase' = client_phase
+    /\ UNCHANGED << attempt, delay >>
     /\ pc' = [pc EXCEPT !["env"] = "EnvironmentLoop"]
 
 \* ================================================================

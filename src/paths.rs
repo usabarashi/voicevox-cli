@@ -254,7 +254,7 @@ fn validated_ort_dylib_path() -> Option<PathBuf> {
         .filter(|p| {
             p.file_name()
                 .and_then(|f| f.to_str())
-                .is_some_and(|f| is_valid_onnxruntime_filename(f))
+                .is_some_and(is_valid_onnxruntime_filename)
         })
         .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
         .filter(|p| p.is_file())

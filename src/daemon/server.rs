@@ -217,19 +217,36 @@ fn set_socket_permissions(socket_path: &Path) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an error if socket cleanup/bind fails, daemon state initialization fails,
+/// Returns an error if socket bind fails, daemon state initialization fails,
 /// socket accept fails, or final socket cleanup fails during shutdown.
+///
+/// Daemon state (VoicevoxCore, model catalog) is initialized before binding
+/// the socket, ensuring the daemon is fully ready before clients can connect.
+/// This matches the TLA+ `ConnectedImpliesReady` invariant.
+///
+/// Stale socket removal is handled by `check_and_prevent_duplicate` before
+/// this function is called. The `bind` call is the atomic safety gate:
+/// if the socket already exists (another daemon bound it), bind fails
+/// with `EADDRINUSE`, matching the TLA+ model's atomic `BindSocket`.
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     ensure_socket_parent_dir(&socket_path)?;
-    remove_socket_if_exists(&socket_path)?;
+
+    let state = Arc::new(DaemonState::new()?);
 
     let socket_guard = SocketFileGuard::new(socket_path.clone());
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = UnixListener::bind(&socket_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AddrInUse {
+            anyhow!(
+                "Socket already in use: {}. Another daemon may be running.",
+                socket_path.display()
+            )
+        } else {
+            e.into()
+        }
+    })?;
     set_socket_permissions(&socket_path)?;
     crate::logging::info("VOICEVOX daemon started successfully");
     crate::logging::info(&format!("Listening on: {}", socket_path.display()));
-
-    let state = Arc::new(DaemonState::new()?);
 
     if !foreground {
         crate::logging::info("Running in background mode. Use Ctrl+C to stop gracefully.");

@@ -65,6 +65,9 @@ fast-strings = ["compact_str"]
 small-vectors = ["smallvec"]
 performance = ["simd", "fast-strings", "small-vectors", "mimalloc"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

@@ -11,6 +11,11 @@ pub(crate) const MAX_STYLE_ID: u32 = 1000;
 #[cfg(test)]
 pub(crate) const MAX_TEXT_LENGTH: usize = MAX_SYNTHESIS_TEXT_LENGTH;
 
+#[must_use]
+pub(crate) const fn is_valid_style_id(id: u32) -> bool {
+    id <= MAX_STYLE_ID
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct SynthesizeParams {
     pub(crate) text: String,
@@ -55,7 +60,7 @@ pub(crate) fn validate_synthesize_params(params: &SynthesizeParams) -> Result<()
             anyhow!("Rate must be between {MIN_SYNTHESIS_RATE:.1} and {MAX_SYNTHESIS_RATE:.1}")
         })?;
 
-    (params.style_id <= MAX_STYLE_ID)
+    is_valid_style_id(params.style_id)
         .then_some(())
         .ok_or_else(|| {
             anyhow!(
@@ -73,4 +78,19 @@ pub(crate) fn parse_synthesize_params(arguments: Value) -> Result<SynthesizePara
         serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
     validate_synthesize_params(&params)?;
     Ok(params)
+}
+
+#[cfg(kani)]
+mod kani_proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn style_id_boundary() {
+        let id: u32 = kani::any();
+        if id <= MAX_STYLE_ID {
+            assert!(is_valid_style_id(id));
+        } else {
+            assert!(!is_valid_style_id(id));
+        }
+    }
 }

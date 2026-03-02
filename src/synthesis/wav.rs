@@ -72,6 +72,20 @@ struct WavHeader {
     data_size: usize,
 }
 
+/// Computes the next chunk position with RIFF even-byte alignment.
+/// Returns `None` if the advance would exceed `data_len`.
+fn next_chunk_pos(pos: usize, chunk_size: usize, data_len: usize) -> Option<usize> {
+    let mut next = pos.checked_add(8)?.checked_add(chunk_size)?;
+    if next % 2 != 0 {
+        next = next.checked_add(1)?;
+    }
+    if next + 8 <= data_len {
+        Some(next)
+    } else {
+        None
+    }
+}
+
 fn parse_wav_header(data: &[u8]) -> Result<WavHeader> {
     ensure!(data.len() >= RIFF_HEADER_LEN, "WAV data too short");
     ensure!(&data[0..4] == b"RIFF", "Missing RIFF marker");
@@ -112,10 +126,9 @@ fn parse_wav_header(data: &[u8]) -> Result<WavHeader> {
             });
         }
 
-        pos += 8 + chunk_size;
-        // Align to even boundary
-        if pos % 2 != 0 {
-            pos += 1;
+        match next_chunk_pos(pos, chunk_size, data.len()) {
+            Some(next) => pos = next,
+            None => break,
         }
     }
 
@@ -153,7 +166,7 @@ mod tests {
     #[test]
     fn single_segment_returns_clone() {
         let wav = make_wav(&[1, 2, 3, 4], 1, 24000, 16);
-        let result = concatenate_wav_segments(&[wav.clone()]).unwrap();
+        let result = concatenate_wav_segments(std::slice::from_ref(&wav)).unwrap();
         assert_eq!(result, wav);
     }
 
@@ -181,5 +194,24 @@ mod tests {
     fn empty_segments_rejected() {
         let result = concatenate_wav_segments(&[]);
         assert!(result.is_err());
+    }
+}
+
+#[cfg(kani)]
+mod kani_proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn chunk_advance_no_overflow() {
+        let pos: usize = kani::any();
+        let chunk_size: usize = kani::any();
+        let data_len: usize = kani::any();
+        kani::assume(pos <= 4096);
+        kani::assume(chunk_size <= 4096);
+        kani::assume(data_len <= 8192);
+        if let Some(next) = next_chunk_pos(pos, chunk_size, data_len) {
+            assert!(next > pos);
+            assert!(next + 8 <= data_len);
+        }
     }
 }

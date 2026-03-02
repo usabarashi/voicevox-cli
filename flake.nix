@@ -83,7 +83,7 @@
         # ONNX Runtime library search path for build.rs (voicevox-ort-sys).
         # Actual library is loaded at runtime via dlopen (load-dynamic),
         # so only the path needs to exist at build time.
-        onnxruntimeLibDir = pkgs.runCommand "onnxruntime-lib" {} ''
+        onnxruntimeLibDir = pkgs.runCommand "onnxruntime-lib" { } ''
           mkdir -p $out/lib
         '';
 
@@ -171,8 +171,9 @@
         };
 
         # Development utility: reset daemon state
-        voicevoxResetWrapper =
-          pkgs.writeShellScriptBin "voicevox-reset" (builtins.readFile ./scripts/voicevox-reset.sh);
+        voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (
+          builtins.readFile ./scripts/voicevox-reset.sh
+        );
 
         mkApp = program: {
           type = "app";
@@ -196,39 +197,45 @@
 
         checks = {
           # Code formatting check
-          formatting = pkgs.runCommand "check-formatting" {
-            nativeBuildInputs = [ rustToolchain.defaultToolchain ];
-            src = srcFiltered;
-          } ''
-            cd $src
-            export HOME=$TMPDIR
-            cargo fmt --all --check
-            touch $out
-          '';
+          formatting =
+            pkgs.runCommand "check-formatting"
+              {
+                nativeBuildInputs = [ rustToolchain.defaultToolchain ];
+                src = srcFiltered;
+              }
+              ''
+                cd $src
+                export HOME=$TMPDIR
+                cargo fmt --all --check
+                touch $out
+              '';
 
           # Shell script syntax validation
-          scripts = pkgs.runCommand "check-scripts" {
-            nativeBuildInputs = with pkgs; [
-              bash
-              gnused
-              gnugrep
-            ];
-            src = srcFiltered;
-          } ''
-            test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
+          scripts =
+            pkgs.runCommand "check-scripts"
+              {
+                nativeBuildInputs = with pkgs; [
+                  bash
+                  gnused
+                  gnugrep
+                ];
+                src = srcFiltered;
+              }
+              ''
+                test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
 
-            for script in $src/scripts/*.sh; do
-              if [ -f "$script" ]; then
-                echo "Validating: $(basename "$script")"
-                if grep -q '@@.*@@' "$script"; then
-                  sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
-                else
-                  bash -n "$script"
-                fi
-              fi
-            done
-            touch $out
-          '';
+                for script in $src/scripts/*.sh; do
+                  if [ -f "$script" ]; then
+                    echo "Validating: $(basename "$script")"
+                    if grep -q '@@.*@@' "$script"; then
+                      sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
+                    else
+                      bash -n "$script"
+                    fi
+                  fi
+                done
+                touch $out
+              '';
 
           # Build verification
           build = voicevoxCli;
@@ -264,7 +271,9 @@
           };
         };
 
-        apps = appAttrs // { default = appAttrs.voicevox-say; };
+        apps = appAttrs // {
+          default = appAttrs.voicevox-say;
+        };
 
         devShells.default = pkgs.mkShell {
           # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
@@ -307,6 +316,7 @@
             echo "  nix run                            - Run voicevox-say directly"
             echo "  voicevox-reset                     - Reset daemon state (kill processes + remove socket)"
             echo "  cargo test                         - Also works in this shell (FOR_BUILD SDK vars sanitized)"
+            echo "  cargo kani                         - Run Kani proofs (install: cargo install --locked kani-verifier && cargo kani setup)"
             echo "  tlc -deadlock -config X.cfg X.tla  - Run TLC model checker (in modeling/)"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
@@ -317,8 +327,7 @@
     )
     // {
       overlays.default = final: _prev: {
-        voicevox-cli =
-          (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
+        voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;
       };
 

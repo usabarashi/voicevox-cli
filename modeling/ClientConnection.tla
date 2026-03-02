@@ -1,17 +1,7 @@
 ------------------------------ MODULE ClientConnection ------------------------------
 (***************************************************************************)
-(* Models the VOICEVOX client connection protocol with automatic daemon    *)
-(* startup and exponential backoff retry.                                  *)
-(*                                                                         *)
-(* Corresponding implementation:                                           *)
-(*   src/client/daemon_client/launcher.rs  -- connect_or_start             *)
-(*   src/daemon/bootstrap.rs              -- ensure_daemon_running         *)
-(*   src/daemon/socket_probe.rs           -- wait_for_socket_ready_with_backoff *)
-(*                                                                         *)
-(* Processes:                                                              *)
-(*   Client: InitialConnect -> CheckModels -> StartDaemon -> GraceWait ->  *)
-(*           RetryLoop -> FinalConnect                                     *)
-(*   Environment: non-deterministic daemon startup                         *)
+(* Models client connection with auto-start, backoff retry, and            *)
+(* transient connection failures even while daemon state is ready.          *)
 (***************************************************************************)
 
 EXTENDS Integers, TLC
@@ -25,17 +15,11 @@ ASSUME MAX_ATTEMPTS \in Nat /\ MAX_ATTEMPTS > 0
 ASSUME INITIAL_DELAY \in Nat /\ INITIAL_DELAY > 0
 ASSUME MAX_DELAY \in Nat /\ MAX_DELAY >= INITIAL_DELAY
 
-\* ================================================================
-\* Variables
-\* ================================================================
+VARIABLES daemon_state, models_available, client_phase, attempt, delay,
+          last_connect_result, pc
 
-VARIABLES daemon_state, models_available, client_phase, attempt, delay, pc
-
-vars == << daemon_state, models_available, client_phase, attempt, delay, pc >>
-
-\* ================================================================
-\* Invariants
-\* ================================================================
+vars == << daemon_state, models_available, client_phase, attempt, delay,
+           last_connect_result, pc >>
 
 TypeOK ==
     /\ daemon_state \in {"not_running", "starting", "ready", "crashed"}
@@ -45,6 +29,7 @@ TypeOK ==
                           "connected", "failed"}
     /\ attempt \in 0..MAX_ATTEMPTS
     /\ delay \in INITIAL_DELAY..MAX_DELAY
+    /\ last_connect_result \in {"none", "ok", "refused"}
 
 FinalConnectUsesMaxAttempts ==
     client_phase = "final_connect" => attempt = MAX_ATTEMPTS
@@ -80,9 +65,9 @@ RetryLoopDelayDiscipline ==
                  THEN INITIAL_DELAY * (2 ^ attempt)
                  ELSE MAX_DELAY
 
-\* ================================================================
-\* Initial State
-\* ================================================================
+LastConnectResultConsistency ==
+    /\ (client_phase = "connected" => last_connect_result = "ok")
+    /\ (last_connect_result = "ok" /\ pc["client"] # "Done" => daemon_state = "ready")
 
 Init ==
     /\ daemon_state = "not_running"
@@ -90,19 +75,21 @@ Init ==
     /\ client_phase = "initial_connect"
     /\ attempt = 0
     /\ delay = INITIAL_DELAY
+    /\ last_connect_result = "none"
     /\ pc = [p \in {"client", "env"} |->
                 IF p = "client" THEN "InitialConnect" ELSE "EnvironmentLoop"]
-
-\* ================================================================
-\* Client Actions
-\* ================================================================
 
 InitialConnect ==
     /\ pc["client"] = "InitialConnect"
     /\ IF daemon_state = "ready"
-       THEN /\ client_phase' = "connected"
-            /\ pc' = [pc EXCEPT !["client"] = "Done"]
+       THEN /\ \/ /\ client_phase' = "connected"
+                  /\ last_connect_result' = "ok"
+                  /\ pc' = [pc EXCEPT !["client"] = "Done"]
+               \/ /\ client_phase' = "check_models"
+                  /\ last_connect_result' = "refused"
+                  /\ pc' = [pc EXCEPT !["client"] = "CheckModels"]
        ELSE /\ client_phase' = "check_models"
+            /\ last_connect_result' = "none"
             /\ pc' = [pc EXCEPT !["client"] = "CheckModels"]
     /\ UNCHANGED << daemon_state, models_available, attempt, delay >>
 
@@ -113,7 +100,7 @@ CheckModels ==
             /\ pc' = [pc EXCEPT !["client"] = "Done"]
        ELSE /\ client_phase' = "start_daemon"
             /\ pc' = [pc EXCEPT !["client"] = "StartDaemon"]
-    /\ UNCHANGED << daemon_state, models_available, attempt, delay >>
+    /\ UNCHANGED << daemon_state, models_available, attempt, delay, last_connect_result >>
 
 StartDaemon ==
     /\ pc["client"] = "StartDaemon"
@@ -122,7 +109,7 @@ StartDaemon ==
        ELSE UNCHANGED daemon_state
     /\ client_phase' = "grace_wait"
     /\ pc' = [pc EXCEPT !["client"] = "GraceWait"]
-    /\ UNCHANGED << models_available, attempt, delay >>
+    /\ UNCHANGED << models_available, attempt, delay, last_connect_result >>
 
 GraceWait ==
     /\ pc["client"] = "GraceWait"
@@ -130,38 +117,51 @@ GraceWait ==
     /\ attempt' = 0
     /\ delay' = INITIAL_DELAY
     /\ pc' = [pc EXCEPT !["client"] = "RetryLoop"]
-    /\ UNCHANGED << daemon_state, models_available >>
+    /\ UNCHANGED << daemon_state, models_available, last_connect_result >>
 
 RetryLoop ==
     /\ pc["client"] = "RetryLoop"
     /\ IF attempt >= MAX_ATTEMPTS
        THEN /\ client_phase' = "final_connect"
             /\ pc' = [pc EXCEPT !["client"] = "FinalConnect"]
-            /\ UNCHANGED << daemon_state, models_available, attempt, delay >>
+            /\ UNCHANGED << daemon_state, models_available, attempt, delay, last_connect_result >>
        ELSE IF daemon_state = "ready"
-            THEN /\ client_phase' = "connected"
-                 /\ pc' = [pc EXCEPT !["client"] = "Done"]
-                 /\ UNCHANGED << daemon_state, models_available, attempt, delay >>
+            THEN /\ \/ /\ client_phase' = "connected"
+                       /\ last_connect_result' = "ok"
+                       /\ pc' = [pc EXCEPT !["client"] = "Done"]
+                       /\ UNCHANGED << daemon_state, models_available, attempt, delay >>
+                    \/ /\ attempt' = attempt + 1
+                       /\ IF attempt + 1 < MAX_ATTEMPTS
+                          THEN IF delay * 2 <= MAX_DELAY
+                               THEN delay' = delay * 2
+                               ELSE delay' = MAX_DELAY
+                          ELSE UNCHANGED delay
+                       /\ client_phase' = "retry_loop"
+                       /\ last_connect_result' = "refused"
+                       /\ pc' = [pc EXCEPT !["client"] = "RetryLoop"]
+                       /\ UNCHANGED << daemon_state, models_available >>
             ELSE /\ attempt' = attempt + 1
                  /\ IF attempt + 1 < MAX_ATTEMPTS
                     THEN IF delay * 2 <= MAX_DELAY
                          THEN delay' = delay * 2
                          ELSE delay' = MAX_DELAY
                     ELSE UNCHANGED delay
-                 /\ UNCHANGED << daemon_state, models_available, client_phase >>
+                 /\ client_phase' = "retry_loop"
+                 /\ last_connect_result' = "none"
                  /\ pc' = [pc EXCEPT !["client"] = "RetryLoop"]
+                 /\ UNCHANGED << daemon_state, models_available >>
 
 FinalConnect ==
     /\ pc["client"] = "FinalConnect"
     /\ IF daemon_state = "ready"
-       THEN client_phase' = "connected"
-       ELSE client_phase' = "failed"
+       THEN /\ \/ /\ client_phase' = "connected"
+                  /\ last_connect_result' = "ok"
+               \/ /\ client_phase' = "failed"
+                  /\ last_connect_result' = "refused"
+       ELSE /\ client_phase' = "failed"
+            /\ last_connect_result' = "none"
     /\ pc' = [pc EXCEPT !["client"] = "Done"]
     /\ UNCHANGED << daemon_state, models_available, attempt, delay >>
-
-\* ================================================================
-\* Environment Actions
-\* ================================================================
 
 EnvironmentLoop ==
     /\ pc["env"] = "EnvironmentLoop"
@@ -171,12 +171,8 @@ EnvironmentLoop ==
        \/ (daemon_state = "crashed" /\ daemon_state' \in {"crashed", "not_running"})
     /\ models_available' \in BOOLEAN
     /\ client_phase' = client_phase
-    /\ UNCHANGED << attempt, delay >>
+    /\ UNCHANGED << attempt, delay, last_connect_result >>
     /\ pc' = [pc EXCEPT !["env"] = "EnvironmentLoop"]
-
-\* ================================================================
-\* Specification
-\* ================================================================
 
 Next ==
     \/ InitialConnect
@@ -197,10 +193,6 @@ Fairness ==
     /\ WF_vars(EnvironmentLoop)
 
 Spec == Init /\ [][Next]_vars /\ Fairness
-
-\* ================================================================
-\* Liveness
-\* ================================================================
 
 EventualTermination ==
     <>(client_phase \in {"connected", "failed"})

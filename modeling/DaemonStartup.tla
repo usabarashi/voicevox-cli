@@ -1,30 +1,17 @@
 ------------------------------- MODULE DaemonStartup -------------------------------
 (***************************************************************************)
-(* Models the VOICEVOX daemon singleton startup protocol.                  *)
-(*                                                                         *)
-(* Verifies that concurrent startup attempts cannot result in multiple     *)
-(* daemons listening on the same socket.                                   *)
-(*                                                                         *)
-(* Corresponding implementation:                                           *)
-(*   src/daemon/process.rs     -- check_and_prevent_duplicate              *)
-(*   src/daemon/server.rs      -- run_daemon, UnixListener::bind           *)
-(*                                                                         *)
-(* Process: DaemonStart(d) for d in Daemons                                *)
-(*   CheckSocket -> [RemoveStale] -> CheckPgrep -> BindSocket              *)
+(* Models daemon singleton startup with concurrent attempts and            *)
+(* external socket-path interference (TOCTOU-like environment changes).    *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, TLC
 
 CONSTANTS
-    Daemons,            \* Set of potential daemon instances
-    MAX_RESTARTS        \* Bounded restart attempts per daemon
+    Daemons,
+    MAX_RESTARTS
 
 ASSUME Daemons # {} /\ IsFiniteSet(Daemons)
 ASSUME MAX_RESTARTS \in Nat
-
-\* ================================================================
-\* Variables
-\* ================================================================
 
 VARIABLES socket_exists, socket_responsive, socket_owner,
           running_daemons, socket_path_kind, stale_remove_allowed,
@@ -33,10 +20,6 @@ VARIABLES socket_exists, socket_responsive, socket_owner,
 vars == << socket_exists, socket_responsive, socket_owner,
            running_daemons, socket_path_kind, stale_remove_allowed,
            daemon_phase, restart_count, pc >>
-
-\* ================================================================
-\* Invariants
-\* ================================================================
 
 TypeOK ==
     /\ socket_exists \in BOOLEAN
@@ -79,14 +62,8 @@ ResponsiveImpliesExists ==
 
 StaleRemovalFailurePath ==
     \A d \in Daemons:
-        daemon_phase[d] = "failed" =>
-            /\ socket_exists
-            /\ ~socket_responsive
-            /\ (socket_path_kind = "non_socket" \/ ~stale_remove_allowed)
-
-\* ================================================================
-\* Initial State
-\* ================================================================
+        daemon_phase[d] = "failed" /\ running_daemons = {} =>
+            ~socket_responsive
 
 Init ==
     /\ socket_exists \in BOOLEAN
@@ -102,10 +79,6 @@ Init ==
     /\ daemon_phase = [d \in Daemons |-> "init"]
     /\ restart_count = [d \in Daemons |-> 0]
     /\ pc = [d \in Daemons |-> "CheckSocket"]
-
-\* ================================================================
-\* Actions
-\* ================================================================
 
 CheckSocket(d) ==
     /\ pc[d] = "CheckSocket"
@@ -135,18 +108,20 @@ RemoveStale(d) ==
     /\ IF socket_exists /\ ~socket_responsive
        THEN /\ IF socket_path_kind = "socket" /\ stale_remove_allowed
                THEN /\ socket_exists' = FALSE
+                    /\ socket_responsive' = FALSE
                     /\ socket_owner' = "nobody"
                     /\ socket_path_kind' = "none"
                     /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "check_pgrep"]
                     /\ pc' = [pc EXCEPT ![d] = "CheckPgrep"]
-               ELSE /\ UNCHANGED << socket_exists, socket_owner, socket_path_kind >>
+               ELSE /\ UNCHANGED << socket_exists, socket_responsive,
+                                    socket_owner, socket_path_kind >>
                     /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "failed"]
                     /\ pc' = [pc EXCEPT ![d] = "Done"]
-       ELSE /\ UNCHANGED << socket_exists, socket_owner, socket_path_kind >>
+       ELSE /\ UNCHANGED << socket_exists, socket_responsive,
+                            socket_owner, socket_path_kind >>
             /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "check_pgrep"]
             /\ pc' = [pc EXCEPT ![d] = "CheckPgrep"]
-    /\ UNCHANGED << socket_responsive, running_daemons, stale_remove_allowed,
-                    restart_count >>
+    /\ UNCHANGED << running_daemons, stale_remove_allowed, restart_count >>
 
 CheckPgrep(d) ==
     /\ pc[d] = "CheckPgrep"
@@ -210,9 +185,23 @@ RestartAttempt(d) ==
     /\ UNCHANGED << socket_exists, socket_responsive, socket_owner,
                     running_daemons, socket_path_kind, stale_remove_allowed >>
 
-\* ================================================================
-\* Specification
-\* ================================================================
+ExternalInterference ==
+    /\ running_daemons = {}
+    /\ \E new_exists \in BOOLEAN,
+         new_responsive \in BOOLEAN,
+         new_kind \in {"none", "socket", "non_socket"},
+         new_owner \in Daemons \cup {"nobody"}:
+        /\ new_responsive => new_exists
+        /\ new_exists => new_kind \in {"socket", "non_socket"}
+        /\ ~new_exists => new_kind = "none"
+        /\ IF new_exists THEN new_owner \in Daemons ELSE new_owner = "nobody"
+        /\ new_responsive => new_owner \in running_daemons
+        /\ socket_exists' = new_exists
+        /\ socket_responsive' = new_responsive
+        /\ socket_owner' = new_owner
+        /\ socket_path_kind' = new_kind
+    /\ stale_remove_allowed' \in BOOLEAN
+    /\ UNCHANGED << running_daemons, daemon_phase, restart_count, pc >>
 
 Terminated ==
     \A d \in Daemons: pc[d] = "Done"
@@ -225,6 +214,7 @@ Next ==
             \/ BindSocket(d)
             \/ StopRunning(d)
             \/ RestartAttempt(d))
+    \/ ExternalInterference
     \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
@@ -239,10 +229,6 @@ Fairness ==
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
-\* ================================================================
-\* Liveness
-\* ================================================================
-
 AtLeastOneStarts ==
     []((running_daemons = {} /\ ~socket_responsive
         /\ \E d \in Daemons: pc[d] # "Done")
@@ -250,10 +236,6 @@ AtLeastOneStarts ==
 
 AllTerminate ==
     <>[](\A d \in Daemons: pc[d] = "Done")
-
-\* ================================================================
-\* Symmetry
-\* ================================================================
 
 DaemonSymmetry == Permutations(Daemons)
 

@@ -1,66 +1,47 @@
 --------------------------- MODULE DaemonRequestHandling ---------------------------
 (***************************************************************************)
-(* Models the VOICEVOX daemon's concurrent request handling.               *)
-(*                                                                         *)
-(* Corresponding implementation:                                           *)
-(*   src/daemon/server.rs        -- accept_loop, semaphore, handle_client  *)
-(*   src/daemon/state/policy.rs  -- SerializedSynthesisPolicy (Mutex)      *)
-(*   src/daemon/state/executor.rs -- load/synthesize/unload sequence       *)
-(*   src/ipc.rs                  -- DaemonRequest / DaemonResponse         *)
-(*                                                                         *)
-(* Key properties verified:                                                *)
-(*   - MutexExclusion:  at most 1 synthesis executing at any time          *)
-(*   - SemaphoreBound:  at most MAX_CLIENTS concurrent handlers            *)
-(*   - ModelCleanup:    model always unloaded after synthesis attempt       *)
-(*   - ClientTermination: every client eventually reaches a terminal state *)
-(*                                                                         *)
-(* Process: ClientHandler(c) for c in Clients                              *)
-(*   AcquirePermit -> ChooseRequest ->                                     *)
-(*     [Synthesize path] AcquireMutex -> LoadModel -> Synthesize ->        *)
-(*                       UnloadModel -> ReleaseMutex -> SendResponse       *)
-(*     [List path] SendResponse                                            *)
+(* Models daemon request handling with bounded repeated requests per client *)
+(* and disconnection from both permit-wait and in-flight states.           *)
 (***************************************************************************)
 
 EXTENDS Integers, FiniteSets, TLC
 
 CONSTANTS
-    MAX_CLIENTS,    \* Semaphore capacity (32 in production, 3 for checking)
-    Clients         \* Set of client IDs (one more than MAX_CLIENTS to test blocking)
+    MAX_CLIENTS,
+    MAX_REQUESTS,
+    Clients
 
 ASSUME MAX_CLIENTS \in Nat /\ MAX_CLIENTS > 0
+ASSUME MAX_REQUESTS \in Nat /\ MAX_REQUESTS > 0
 ASSUME Clients # {} /\ IsFiniteSet(Clients)
 
 RequestTypes == {"Synthesize", "ListSpeakers", "ListModels"}
 SynthesisOutcomes == {"success", "load_failed", "synthesis_failed", "invalid_target"}
 
-\* ================================================================
-\* Variables
-\* ================================================================
-
 VARIABLES semaphore, mutex_holder, model_loaded,
-          client_state, request_type, synthesis_outcome, response, pc
+          client_state, request_type, synthesis_outcome, response,
+          completed_requests, pc
 
 vars == << semaphore, mutex_holder, model_loaded,
-           client_state, request_type, synthesis_outcome, response, pc >>
-
-\* ================================================================
-\* Invariants and Properties (define block)
-\* ================================================================
+           client_state, request_type, synthesis_outcome, response,
+           completed_requests, pc >>
 
 TypeOK ==
     /\ semaphore \in 0..MAX_CLIENTS
     /\ mutex_holder \in Clients \cup {"nobody"}
     /\ model_loaded \in BOOLEAN
     /\ \A c \in Clients:
-        /\ client_state[c] \in {"idle", "has_permit", "waiting_mutex",
+        /\ client_state[c] \in {"waiting_permit", "has_permit", "waiting_mutex",
                "loading_model", "synthesizing", "unloading_model",
                "responding", "done", "aborted"}
         /\ request_type[c] \in RequestTypes
         /\ synthesis_outcome[c] \in SynthesisOutcomes
         /\ response[c] \in {"none", "ok", "error"}
+        /\ completed_requests[c] \in 0..MAX_REQUESTS
 
 ActiveHandlers ==
-    {c \in Clients: client_state[c] \notin {"idle", "done", "aborted"}}
+    {c \in Clients: client_state[c] \in
+        {"has_permit", "waiting_mutex", "loading_model", "synthesizing", "unloading_model", "responding"}}
 
 MutexExclusion ==
     Cardinality({c \in Clients:
@@ -74,12 +55,10 @@ SemaphoreConsistency ==
     semaphore = MAX_CLIENTS - Cardinality(ActiveHandlers)
 
 ModelCleanup ==
-    \* At the point of releasing the mutex, the model has been unloaded
     \A c \in Clients:
         (pc[c] = "ReleaseMutex") => ~model_loaded
 
 MutexConsistency ==
-    \* Mutex held by c iff c's pc is in a mutex-protected step
     \A c \in Clients:
         (mutex_holder = c) <=>
         (pc[c] \in {"LoadModel", "Synthesize", "UnloadModel", "ReleaseMutex"})
@@ -89,6 +68,7 @@ ModelOnlyUnderMutex ==
 
 ClientStatePcConsistency ==
     \A c \in Clients:
+        /\ (pc[c] = "AcquirePermit" => client_state[c] \in {"waiting_permit", "done", "aborted"})
         /\ (pc[c] = "LoadModel" => client_state[c] \in {"waiting_mutex", "loading_model"})
         /\ (pc[c] = "Synthesize" => client_state[c] \in {"loading_model", "synthesizing"})
         /\ (pc[c] = "UnloadModel" => client_state[c] \in {"synthesizing", "unloading_model"})
@@ -102,31 +82,30 @@ DonePcConsistency ==
     \A c \in Clients:
         pc[c] = "Done" => client_state[c] \in {"done", "aborted"}
 
-\* ================================================================
-\* Initial State
-\* ================================================================
+CompletedRequestsBounded ==
+    \A c \in Clients: completed_requests[c] <= MAX_REQUESTS
 
 Init ==
     /\ semaphore = MAX_CLIENTS
     /\ mutex_holder = "nobody"
     /\ model_loaded = FALSE
-    /\ client_state = [c \in Clients |-> "idle"]
+    /\ client_state = [c \in Clients |-> "waiting_permit"]
     /\ request_type = [c \in Clients |-> "Synthesize"]
     /\ synthesis_outcome = [c \in Clients |-> "success"]
     /\ response = [c \in Clients |-> "none"]
+    /\ completed_requests = [c \in Clients |-> 0]
     /\ pc = [c \in Clients |-> "AcquirePermit"]
-
-\* ================================================================
-\* Actions
-\* ================================================================
 
 AcquirePermit(c) ==
     /\ pc[c] = "AcquirePermit"
+    /\ client_state[c] = "waiting_permit"
+    /\ completed_requests[c] < MAX_REQUESTS
     /\ semaphore > 0
     /\ semaphore' = semaphore - 1
     /\ client_state' = [client_state EXCEPT ![c] = "has_permit"]
     /\ pc' = [pc EXCEPT ![c] = "ChooseRequest"]
-    /\ UNCHANGED << mutex_holder, model_loaded, request_type, synthesis_outcome, response >>
+    /\ UNCHANGED << mutex_holder, model_loaded, request_type,
+                    synthesis_outcome, response, completed_requests >>
 
 ChooseRequest(c) ==
     /\ pc[c] = "ChooseRequest"
@@ -139,7 +118,8 @@ ChooseRequest(c) ==
            ELSE /\ client_state' = [client_state EXCEPT ![c] = "responding"]
                 /\ response' = [response EXCEPT ![c] = "ok"]
                 /\ pc' = [pc EXCEPT ![c] = "SendResponse"]
-    /\ UNCHANGED << semaphore, mutex_holder, model_loaded, synthesis_outcome >>
+    /\ UNCHANGED << semaphore, mutex_holder, model_loaded,
+                    synthesis_outcome, completed_requests >>
 
 AcquireMutex(c) ==
     /\ pc[c] = "AcquireMutex"
@@ -147,27 +127,22 @@ AcquireMutex(c) ==
     /\ mutex_holder' = c
     /\ pc' = [pc EXCEPT ![c] = "LoadModel"]
     /\ UNCHANGED << semaphore, model_loaded, client_state, request_type,
-                    synthesis_outcome, response >>
+                    synthesis_outcome, response, completed_requests >>
 
 LoadModel(c) ==
     /\ pc[c] = "LoadModel"
     /\ \E outcome \in {"success", "load_failed", "invalid_target"}:
         /\ synthesis_outcome' = [synthesis_outcome EXCEPT ![c] = outcome]
-        /\ IF outcome = "invalid_target"
-           THEN /\ client_state' = [client_state EXCEPT ![c] = "responding"]
+        /\ IF outcome = "success"
+           THEN /\ client_state' = [client_state EXCEPT ![c] = "loading_model"]
+                /\ model_loaded' = TRUE
+                /\ pc' = [pc EXCEPT ![c] = "Synthesize"]
+                /\ UNCHANGED response
+           ELSE /\ client_state' = [client_state EXCEPT ![c] = "responding"]
                 /\ response' = [response EXCEPT ![c] = "error"]
                 /\ pc' = [pc EXCEPT ![c] = "ReleaseMutex"]
                 /\ UNCHANGED model_loaded
-           ELSE IF outcome = "load_failed"
-                THEN /\ client_state' = [client_state EXCEPT ![c] = "responding"]
-                     /\ response' = [response EXCEPT ![c] = "error"]
-                     /\ pc' = [pc EXCEPT ![c] = "ReleaseMutex"]
-                     /\ UNCHANGED model_loaded
-                ELSE /\ client_state' = [client_state EXCEPT ![c] = "loading_model"]
-                     /\ model_loaded' = TRUE
-                     /\ pc' = [pc EXCEPT ![c] = "Synthesize"]
-                     /\ UNCHANGED response
-    /\ UNCHANGED << semaphore, mutex_holder, request_type >>
+    /\ UNCHANGED << semaphore, mutex_holder, request_type, completed_requests >>
 
 Synthesize(c) ==
     /\ pc[c] = "Synthesize"
@@ -175,7 +150,8 @@ Synthesize(c) ==
     /\ \E outcome \in {"success", "synthesis_failed"}:
         synthesis_outcome' = [synthesis_outcome EXCEPT ![c] = outcome]
     /\ pc' = [pc EXCEPT ![c] = "UnloadModel"]
-    /\ UNCHANGED << semaphore, mutex_holder, model_loaded, request_type, response >>
+    /\ UNCHANGED << semaphore, mutex_holder, model_loaded, request_type,
+                    response, completed_requests >>
 
 UnloadModel(c) ==
     /\ pc[c] = "UnloadModel"
@@ -185,7 +161,8 @@ UnloadModel(c) ==
        THEN response' = [response EXCEPT ![c] = "ok"]
        ELSE response' = [response EXCEPT ![c] = "error"]
     /\ pc' = [pc EXCEPT ![c] = "ReleaseMutex"]
-    /\ UNCHANGED << semaphore, mutex_holder, request_type, synthesis_outcome >>
+    /\ UNCHANGED << semaphore, mutex_holder, request_type,
+                    synthesis_outcome, completed_requests >>
 
 ReleaseMutex(c) ==
     /\ pc[c] = "ReleaseMutex"
@@ -193,16 +170,32 @@ ReleaseMutex(c) ==
     /\ client_state' = [client_state EXCEPT ![c] = "responding"]
     /\ pc' = [pc EXCEPT ![c] = "SendResponse"]
     /\ UNCHANGED << semaphore, model_loaded, request_type,
-                    synthesis_outcome, response >>
+                    synthesis_outcome, response, completed_requests >>
 
 SendResponse(c) ==
     /\ pc[c] = "SendResponse"
-    /\ client_state' = [client_state EXCEPT ![c] = "done"]
+    /\ completed_requests[c] < MAX_REQUESTS
+    /\ completed_requests' = [completed_requests EXCEPT ![c] = @ + 1]
     /\ semaphore' = semaphore + 1
-    /\ pc' = [pc EXCEPT ![c] = "Done"]
-    /\ UNCHANGED << mutex_holder, model_loaded, request_type, synthesis_outcome, response >>
+    /\ IF completed_requests[c] + 1 < MAX_REQUESTS
+       THEN /\ client_state' = [client_state EXCEPT ![c] = "waiting_permit"]
+            /\ response' = [response EXCEPT ![c] = "none"]
+            /\ pc' = [pc EXCEPT ![c] = "AcquirePermit"]
+       ELSE /\ client_state' = [client_state EXCEPT ![c] = "done"]
+            /\ UNCHANGED response
+            /\ pc' = [pc EXCEPT ![c] = "Done"]
+    /\ UNCHANGED << mutex_holder, model_loaded, request_type, synthesis_outcome >>
 
-ClientDisconnect(c) ==
+ClientDisconnectWaitingPermit(c) ==
+    /\ pc[c] = "AcquirePermit"
+    /\ client_state[c] = "waiting_permit"
+    /\ client_state' = [client_state EXCEPT ![c] = "aborted"]
+    /\ response' = response
+    /\ pc' = [pc EXCEPT ![c] = "Done"]
+    /\ UNCHANGED << semaphore, mutex_holder, model_loaded,
+                    request_type, synthesis_outcome, completed_requests >>
+
+ClientDisconnectActive(c) ==
     /\ pc[c] \in {"ChooseRequest", "AcquireMutex", "LoadModel",
                   "Synthesize", "UnloadModel", "ReleaseMutex", "SendResponse"}
     /\ client_state[c] \in {"has_permit", "waiting_mutex", "loading_model",
@@ -215,11 +208,7 @@ ClientDisconnect(c) ==
             /\ model_loaded' = FALSE
        ELSE /\ UNCHANGED << mutex_holder, model_loaded >>
     /\ pc' = [pc EXCEPT ![c] = "Done"]
-    /\ UNCHANGED << request_type, synthesis_outcome >>
-
-\* ================================================================
-\* Specification
-\* ================================================================
+    /\ UNCHANGED << request_type, synthesis_outcome, completed_requests >>
 
 Terminated ==
     \A c \in Clients: pc[c] = "Done"
@@ -234,7 +223,8 @@ Next ==
             \/ UnloadModel(c)
             \/ ReleaseMutex(c)
             \/ SendResponse(c)
-            \/ ClientDisconnect(c))
+            \/ ClientDisconnectWaitingPermit(c)
+            \/ ClientDisconnectActive(c))
     \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
@@ -251,21 +241,17 @@ Fairness ==
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
-\* ================================================================
-\* Liveness
-\* ================================================================
-
 ClientTermination ==
     \A c \in Clients: <>(pc[c] = "Done")
 
 WaitingMutexEventuallyLeavesWait ==
     \A c \in Clients:
-        [](pc[c] = "AcquireMutex"
-           => <>(pc[c] # "AcquireMutex" \/ client_state[c] = "aborted"))
+        [](pc[c] = "AcquireMutex" => <>(pc[c] # "AcquireMutex"))
 
-\* ================================================================
-\* Symmetry
-\* ================================================================
+WaitingPermitEventuallyLeavesWait ==
+    \A c \in Clients:
+        [](pc[c] = "AcquirePermit" /\ client_state[c] = "waiting_permit"
+          => <>(pc[c] # "AcquirePermit"))
 
 ClientSymmetry == Permutations(Clients)
 

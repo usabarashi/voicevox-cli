@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::Path;
 use tokio::net::UnixStream;
 
 use super::policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
-use super::transport::{connect_socket_with_timeout, DAEMON_CONNECTION_TIMEOUT};
+use super::transport::{DAEMON_CONNECTION_TIMEOUT, connect_socket_with_timeout};
 use crate::daemon::{
-    ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
+    EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome, ensure_daemon_running,
 };
 
 async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
@@ -84,15 +84,13 @@ async fn connect_after_start_with_retry(socket_path: &Path) -> Result<UnixStream
     tokio::time::sleep(auto_start_policy.startup_grace_period).await;
 
     let mut delay = retry_policy.initial_delay;
-    let mut last_error = None;
 
     for attempt in 0..retry_policy.attempts {
         match connect_socket_with_timeout(socket_path, auto_start_policy.final_connection_timeout)
             .await
         {
             Ok(stream) => return Ok(stream),
-            Err(error) => {
-                last_error = Some(error);
+            Err(_) => {
                 if attempt + 1 < retry_policy.attempts {
                     tokio::time::sleep(delay).await;
                     delay = (delay * 2).min(retry_policy.max_delay);
@@ -101,10 +99,17 @@ async fn connect_after_start_with_retry(socket_path: &Path) -> Result<UnixStream
         }
     }
 
+    // Final connect check without backoff sleep, matching the modeled FinalConnect step.
+    let final_error =
+        match connect_socket_with_timeout(socket_path, auto_start_policy.final_connection_timeout)
+            .await
+        {
+            Ok(stream) => return Ok(stream),
+            Err(error) => error,
+        };
+
     let attempts = retry_policy.attempts;
-    let last_error_text = last_error
-        .map(|error| error.to_string())
-        .unwrap_or_else(|| "unknown error".to_string());
+    let last_error_text = final_error.to_string();
 
     Err(anyhow!(
         "Daemon started but failed to connect at {} after {} attempts: {}",

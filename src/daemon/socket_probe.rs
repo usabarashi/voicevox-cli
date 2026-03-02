@@ -42,5 +42,6 @@ where
         }
     }
 
-    false
+    // Final connect check without additional sleep, mirroring ClientConnection.tla FinalConnect.
+    tokio::net::UnixStream::connect(socket_path).await.is_ok()
 }

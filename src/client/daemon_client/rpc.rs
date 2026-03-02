@@ -1,12 +1,12 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::path::Path;
 
 use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
-use crate::voice::{format_speakers_output, Speaker};
+use crate::voice::{Speaker, format_speakers_output};
 
 use super::daemon_response_error;
-use super::transport::{request_daemon_once, DAEMON_CONNECTION_TIMEOUT, DAEMON_RESPONSE_TIMEOUT};
+use super::transport::{DAEMON_CONNECTION_TIMEOUT, DAEMON_RESPONSE_TIMEOUT, request_daemon_once};
 
 fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {
     anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")

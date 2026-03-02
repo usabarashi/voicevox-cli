@@ -47,14 +47,12 @@ fn pgrep_voicevox_daemon_output(match_mode: PgrepMatchMode) -> io::Result<proces
 
 #[derive(Clone, Copy)]
 enum PgrepMatchMode {
-    Exact,
     FullCommandLine,
 }
 
 impl PgrepMatchMode {
     const fn flag(self) -> &'static str {
         match self {
-            Self::Exact => "-x",
             Self::FullCommandLine => "-f",
         }
     }
@@ -90,11 +88,32 @@ async fn handle_existing_socket(socket_path: &Path) -> DaemonResult<()> {
             })
         }
         Err(_) => {
+            // Re-check before stale cleanup to avoid TOCTOU removal when the socket
+            // became responsive between the first probe and cleanup.
+            if socket_is_responsive(socket_path).await? {
+                let pid = find_daemon_processes()
+                    .ok()
+                    .and_then(|pids| pids.into_iter().next())
+                    .unwrap_or(0);
+                return Err(DaemonError::AlreadyRunning { pid });
+            }
             if let Some(pid) = detect_other_daemon_pid()? {
                 return Err(DaemonError::AlreadyRunning { pid });
             }
             remove_stale_socket(socket_path)
         }
+    }
+}
+
+async fn socket_is_responsive(socket_path: &Path) -> DaemonResult<bool> {
+    match tokio::net::UnixStream::connect(socket_path).await {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            Err(DaemonError::SocketPermissionDenied {
+                path: socket_path.to_path_buf(),
+            })
+        }
+        Err(_) => Ok(false),
     }
 }
 
@@ -142,27 +161,16 @@ fn remove_stale_socket(socket_path: &Path) -> DaemonResult<()> {
 }
 
 fn check_for_other_daemons() -> DaemonResult<()> {
-    let output = pgrep_voicevox_daemon_output(PgrepMatchMode::Exact);
-
-    match output {
-        Ok(output) if output.status.success() && !output.stdout.is_empty() => {
-            check_pgrep_output(&output.stdout)
-        }
-        Ok(_) => Ok(()), // No processes found or empty output
+    match find_daemon_processes() {
+        Ok(pids) => match pids.first() {
+            Some(&pid) => Err(DaemonError::AlreadyRunning { pid }),
+            None => Ok(()),
+        },
         Err(_) => Err(DaemonError::StartupFailed {
             message: "Cannot verify no other daemon is running (pgrep not available). \
                       Please install procps (pgrep) to enable daemon startup."
                 .to_string(),
         }),
-    }
-}
-
-fn check_pgrep_output(stdout: &[u8]) -> DaemonResult<()> {
-    let other_pids = parse_other_pids(stdout);
-
-    match other_pids.first() {
-        Some(&pid) => Err(DaemonError::AlreadyRunning { pid }),
-        None => Ok(()),
     }
 }
 

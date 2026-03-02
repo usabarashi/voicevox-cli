@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use futures_util::{SinkExt, StreamExt};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::Path;
@@ -8,7 +8,7 @@ use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::ipc::{
-    OwnedRequest, OwnedResponse, MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES,
+    MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES, OwnedRequest, OwnedResponse,
 };
 
 pub(crate) const DAEMON_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);

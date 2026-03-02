@@ -4,7 +4,7 @@ mod policy;
 mod rpc;
 mod transport;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::Path;
 use tokio::net::UnixStream;
 
@@ -14,8 +14,8 @@ use crate::voice::{AvailableModel, Speaker};
 
 pub use crate::daemon::find_daemon_binary;
 pub use error::{
-    daemon_response_error, daemon_rpc_exit_code, find_daemon_rpc_error,
-    format_daemon_rpc_error_for_cli, format_daemon_rpc_error_for_mcp, DaemonRpcError,
+    DaemonRpcError, daemon_response_error, daemon_rpc_exit_code, find_daemon_rpc_error,
+    format_daemon_rpc_error_for_cli, format_daemon_rpc_error_for_mcp,
 };
 pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 pub use rpc::{daemon_mode, list_speakers_daemon};
@@ -73,14 +73,12 @@ impl DaemonClient {
     pub async fn connect_with_retry_at(socket_path: &Path) -> Result<Self> {
         let policy = DaemonConnectRetryPolicy::default();
 
-        let mut last_error = None;
         let mut retry_delay = policy.initial_delay;
 
         for attempt in 0..policy.attempts {
             match Self::new_at(socket_path).await {
                 Ok(client) => return Ok(client),
-                Err(error) => {
-                    last_error = Some(error);
+                Err(_) => {
                     if attempt < policy.attempts - 1 {
                         tokio::time::sleep(retry_delay).await;
                         retry_delay = (retry_delay * 2).min(policy.max_delay);
@@ -89,12 +87,13 @@ impl DaemonClient {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| {
-            anyhow!(
-                "Failed to connect to daemon after {} attempts",
-                policy.attempts
-            )
-        }))
+        // Final connect check without backoff sleep, matching the modeled FinalConnect step.
+        let final_error = match Self::new_at(socket_path).await {
+            Ok(client) => return Ok(client),
+            Err(error) => error,
+        };
+
+        Err(final_error)
     }
 
     /// Creates a new `DaemonClient` with automatic daemon startup if not running.

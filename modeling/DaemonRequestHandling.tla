@@ -247,7 +247,6 @@ Fairness ==
         \/ UnloadModel(c)
         \/ ReleaseMutex(c)
         \/ SendResponse(c)
-        \/ ClientDisconnect(c)
     )
 
 Spec == Init /\ [][Next]_vars /\ Fairness
@@ -258,6 +257,11 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 
 ClientTermination ==
     \A c \in Clients: <>(pc[c] = "Done")
+
+WaitingMutexEventuallyLeavesWait ==
+    \A c \in Clients:
+        [](pc[c] = "AcquireMutex"
+           => <>(pc[c] # "AcquireMutex" \/ client_state[c] = "aborted"))
 
 \* ================================================================
 \* Symmetry

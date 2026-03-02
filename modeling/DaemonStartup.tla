@@ -244,13 +244,12 @@ Spec == Init /\ [][Next]_vars /\ Fairness
 \* ================================================================
 
 AtLeastOneStarts ==
-    (running_daemons = {} /\ ~socket_responsive
-     /\ Cardinality({d \in Daemons: pc[d] = "CheckSocket"}) >= 1)
-        => <>(socket_responsive
-              \/ \A d \in Daemons: daemon_phase[d] \in {"aborted", "failed", "stopped"})
+    []((running_daemons = {} /\ ~socket_responsive
+        /\ \E d \in Daemons: pc[d] # "Done")
+       => <>(socket_responsive \/ \A d \in Daemons: pc[d] = "Done"))
 
 AllTerminate ==
-    \A d \in Daemons: <>(daemon_phase[d] \in {"listening", "stopped", "aborted", "failed"})
+    <>[](\A d \in Daemons: pc[d] = "Done")
 
 \* ================================================================
 \* Symmetry

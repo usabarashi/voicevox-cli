@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use tokio::net::UnixStream;
 
-use super::policy::DaemonAutoStartPolicy;
+use super::policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 use super::transport::{connect_socket_with_timeout, DAEMON_CONNECTION_TIMEOUT};
 use crate::daemon::{
     ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
@@ -74,15 +74,42 @@ pub(crate) async fn connect_or_start(socket_path: &Path) -> Result<UnixStream> {
     })?;
 
     start_daemon_automatically(socket_path).await?;
-    let policy = DaemonAutoStartPolicy::cli_default();
-    tokio::time::sleep(policy.startup_grace_period).await;
+    connect_after_start_with_retry(socket_path).await
+}
 
-    connect_socket_with_timeout(socket_path, policy.final_connection_timeout)
-        .await
-        .map_err(|e| {
-            anyhow!(
-                "Daemon started but failed to connect at {}: {e}",
-                socket_path.display()
-            )
-        })
+async fn connect_after_start_with_retry(socket_path: &Path) -> Result<UnixStream> {
+    let auto_start_policy = DaemonAutoStartPolicy::cli_default();
+    let retry_policy = DaemonConnectRetryPolicy::default();
+
+    tokio::time::sleep(auto_start_policy.startup_grace_period).await;
+
+    let mut delay = retry_policy.initial_delay;
+    let mut last_error = None;
+
+    for attempt in 0..retry_policy.attempts {
+        match connect_socket_with_timeout(socket_path, auto_start_policy.final_connection_timeout)
+            .await
+        {
+            Ok(stream) => return Ok(stream),
+            Err(error) => {
+                last_error = Some(error);
+                if attempt + 1 < retry_policy.attempts {
+                    tokio::time::sleep(delay).await;
+                    delay = (delay * 2).min(retry_policy.max_delay);
+                }
+            }
+        }
+    }
+
+    let attempts = retry_policy.attempts;
+    let last_error_text = last_error
+        .map(|error| error.to_string())
+        .unwrap_or_else(|| "unknown error".to_string());
+
+    Err(anyhow!(
+        "Daemon started but failed to connect at {} after {} attempts: {}",
+        socket_path.display(),
+        attempts,
+        last_error_text
+    ))
 }

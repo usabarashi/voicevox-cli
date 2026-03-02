@@ -89,7 +89,21 @@ async fn handle_existing_socket(socket_path: &Path) -> DaemonResult<()> {
                 path: socket_path.to_path_buf(),
             })
         }
-        Err(_) => remove_stale_socket(socket_path),
+        Err(_) => {
+            if let Some(pid) = detect_other_daemon_pid()? {
+                return Err(DaemonError::AlreadyRunning { pid });
+            }
+            remove_stale_socket(socket_path)
+        }
+    }
+}
+
+fn detect_other_daemon_pid() -> DaemonResult<Option<u32>> {
+    match find_daemon_processes() {
+        Ok(pids) => Ok(pids.into_iter().next()),
+        Err(error) => Err(DaemonError::StartupFailed {
+            message: format!("Failed to inspect daemon processes before stale cleanup: {error}"),
+        }),
     }
 }
 

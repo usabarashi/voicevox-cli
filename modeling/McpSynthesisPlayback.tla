@@ -194,6 +194,11 @@ Playback ==
 \* Specification
 \* ================================================================
 
+Terminated ==
+    /\ pc["user"] = "Done_user"
+    /\ pc["server"] = "Done_server"
+    /\ pc["client"] = "Done_client"
+
 Next ==
     \/ UserAction
     \/ WaitRequest
@@ -205,6 +210,7 @@ Next ==
     \/ Decode
     \/ CheckBeforePlay
     \/ Playback
+    \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
     /\ WF_vars(UserAction)

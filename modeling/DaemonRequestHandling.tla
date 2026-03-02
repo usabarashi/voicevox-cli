@@ -190,16 +190,20 @@ SendResponse(c) ==
 \* Specification
 \* ================================================================
 
+Terminated ==
+    \A c \in Clients: pc[c] = "Done"
+
 Next ==
-    \E c \in Clients:
-        \/ AcquirePermit(c)
-        \/ ChooseRequest(c)
-        \/ AcquireMutex(c)
-        \/ LoadModel(c)
-        \/ Synthesize(c)
-        \/ UnloadModel(c)
-        \/ ReleaseMutex(c)
-        \/ SendResponse(c)
+    \/ (\E c \in Clients:
+            \/ AcquirePermit(c)
+            \/ ChooseRequest(c)
+            \/ AcquireMutex(c)
+            \/ LoadModel(c)
+            \/ Synthesize(c)
+            \/ UnloadModel(c)
+            \/ ReleaseMutex(c)
+            \/ SendResponse(c))
+    \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
     \A c \in Clients: WF_vars(

@@ -128,12 +128,16 @@ BindSocket(d) ==
 \* Specification
 \* ================================================================
 
+Terminated ==
+    \A d \in Daemons: pc[d] = "Done"
+
 Next ==
-    \E d \in Daemons:
-        \/ CheckSocket(d)
-        \/ RemoveStale(d)
-        \/ CheckPgrep(d)
-        \/ BindSocket(d)
+    \/ (\E d \in Daemons:
+            \/ CheckSocket(d)
+            \/ RemoveStale(d)
+            \/ CheckPgrep(d)
+            \/ BindSocket(d))
+    \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
     \A d \in Daemons: WF_vars(

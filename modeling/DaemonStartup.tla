@@ -16,9 +16,11 @@
 EXTENDS Integers, FiniteSets, TLC
 
 CONSTANTS
-    Daemons     \* Set of potential daemon instances
+    Daemons,            \* Set of potential daemon instances
+    MAX_RESTARTS        \* Bounded restart attempts per daemon
 
 ASSUME Daemons # {} /\ IsFiniteSet(Daemons)
+ASSUME MAX_RESTARTS \in Nat
 
 \* ================================================================
 \* Variables
@@ -26,11 +28,11 @@ ASSUME Daemons # {} /\ IsFiniteSet(Daemons)
 
 VARIABLES socket_exists, socket_responsive, socket_owner,
           running_daemons, socket_path_kind, stale_remove_allowed,
-          daemon_phase, pc
+          daemon_phase, restart_count, pc
 
 vars == << socket_exists, socket_responsive, socket_owner,
            running_daemons, socket_path_kind, stale_remove_allowed,
-           daemon_phase, pc >>
+           daemon_phase, restart_count, pc >>
 
 \* ================================================================
 \* Invariants
@@ -46,6 +48,7 @@ TypeOK ==
     /\ \A d \in Daemons: daemon_phase[d] \in
         {"init", "check_socket", "remove_stale", "check_pgrep",
          "bind_socket", "listening", "stopped", "aborted", "failed"}
+    /\ \A d \in Daemons: restart_count[d] \in 0..MAX_RESTARTS
     /\ socket_exists => socket_path_kind \in {"socket", "non_socket"}
     /\ ~socket_exists => socket_path_kind = "none"
 
@@ -97,6 +100,7 @@ Init ==
     /\ socket_responsive => socket_exists
     /\ socket_responsive => socket_owner \in running_daemons
     /\ daemon_phase = [d \in Daemons |-> "init"]
+    /\ restart_count = [d \in Daemons |-> 0]
     /\ pc = [d \in Daemons |-> "CheckSocket"]
 
 \* ================================================================
@@ -111,17 +115,20 @@ CheckSocket(d) ==
                  /\ pc' = [pc EXCEPT ![d] = "Done"]
                  /\ UNCHANGED << socket_exists, socket_responsive,
                                  socket_owner, running_daemons,
-                                 socket_path_kind, stale_remove_allowed >>
+                                 socket_path_kind, stale_remove_allowed,
+                                 restart_count >>
             ELSE /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "remove_stale"]
                  /\ pc' = [pc EXCEPT ![d] = "RemoveStale"]
                  /\ UNCHANGED << socket_exists, socket_responsive,
                                  socket_owner, running_daemons,
-                                 socket_path_kind, stale_remove_allowed >>
+                                 socket_path_kind, stale_remove_allowed,
+                                 restart_count >>
        ELSE /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "check_pgrep"]
             /\ pc' = [pc EXCEPT ![d] = "CheckPgrep"]
             /\ UNCHANGED << socket_exists, socket_responsive,
                             socket_owner, running_daemons,
-                            socket_path_kind, stale_remove_allowed >>
+                            socket_path_kind, stale_remove_allowed,
+                            restart_count >>
 
 RemoveStale(d) ==
     /\ pc[d] = "RemoveStale"
@@ -138,7 +145,8 @@ RemoveStale(d) ==
        ELSE /\ UNCHANGED << socket_exists, socket_owner, socket_path_kind >>
             /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "check_pgrep"]
             /\ pc' = [pc EXCEPT ![d] = "CheckPgrep"]
-    /\ UNCHANGED << socket_responsive, running_daemons, stale_remove_allowed >>
+    /\ UNCHANGED << socket_responsive, running_daemons, stale_remove_allowed,
+                    restart_count >>
 
 CheckPgrep(d) ==
     /\ pc[d] = "CheckPgrep"
@@ -148,7 +156,7 @@ CheckPgrep(d) ==
        ELSE /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "bind_socket"]
             /\ pc' = [pc EXCEPT ![d] = "BindSocket"]
     /\ UNCHANGED << socket_exists, socket_responsive, socket_owner, running_daemons,
-                    socket_path_kind, stale_remove_allowed >>
+                    socket_path_kind, stale_remove_allowed, restart_count >>
 
 BindSocket(d) ==
     /\ pc[d] = "BindSocket"
@@ -156,7 +164,8 @@ BindSocket(d) ==
        THEN /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "aborted"]
             /\ UNCHANGED << socket_exists, socket_responsive,
                             socket_owner, running_daemons,
-                            socket_path_kind, stale_remove_allowed >>
+                            socket_path_kind, stale_remove_allowed,
+                            restart_count >>
        ELSE /\ \/ /\ socket_exists' = TRUE
                 /\ socket_responsive' = TRUE
                 /\ socket_owner' = d
@@ -164,10 +173,12 @@ BindSocket(d) ==
                 /\ socket_path_kind' = "socket"
                 /\ UNCHANGED stale_remove_allowed
                 /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "listening"]
+                /\ UNCHANGED restart_count
              \/ /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "aborted"]
                 /\ UNCHANGED << socket_exists, socket_responsive,
                                 socket_owner, running_daemons,
-                                socket_path_kind, stale_remove_allowed >>
+                                socket_path_kind, stale_remove_allowed,
+                                restart_count >>
     /\ pc' = [pc EXCEPT ![d] = "Done"]
 
 StopRunning(d) ==
@@ -187,7 +198,17 @@ StopRunning(d) ==
           /\ socket_owner' = d
           /\ running_daemons' = running_daemons \ {d}
           /\ socket_path_kind' = "socket"
-    /\ UNCHANGED << stale_remove_allowed, pc >>
+    /\ UNCHANGED << stale_remove_allowed, restart_count, pc >>
+
+RestartAttempt(d) ==
+    /\ pc[d] = "Done"
+    /\ daemon_phase[d] \in {"stopped", "aborted", "failed"}
+    /\ restart_count[d] < MAX_RESTARTS
+    /\ daemon_phase' = [daemon_phase EXCEPT ![d] = "init"]
+    /\ restart_count' = [restart_count EXCEPT ![d] = @ + 1]
+    /\ pc' = [pc EXCEPT ![d] = "CheckSocket"]
+    /\ UNCHANGED << socket_exists, socket_responsive, socket_owner,
+                    running_daemons, socket_path_kind, stale_remove_allowed >>
 
 \* ================================================================
 \* Specification
@@ -202,7 +223,8 @@ Next ==
             \/ RemoveStale(d)
             \/ CheckPgrep(d)
             \/ BindSocket(d)
-            \/ StopRunning(d))
+            \/ StopRunning(d)
+            \/ RestartAttempt(d))
     \/ (Terminated /\ UNCHANGED vars)
 
 Fairness ==
@@ -212,6 +234,7 @@ Fairness ==
         \/ CheckPgrep(d)
         \/ BindSocket(d)
         \/ StopRunning(d)
+        \/ RestartAttempt(d)
     )
 
 Spec == Init /\ [][Next]_vars /\ Fairness

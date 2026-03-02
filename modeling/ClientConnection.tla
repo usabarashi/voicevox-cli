@@ -165,14 +165,12 @@ FinalConnect ==
 
 EnvironmentLoop ==
     /\ pc["env"] = "EnvironmentLoop"
-    /\ IF pc["client"] = "Done"
-       THEN /\ UNCHANGED << daemon_state, models_available, client_phase >>
-       ELSE /\ \/ (daemon_state = "not_running" /\ daemon_state' \in {"not_running", "starting"})
-               \/ (daemon_state = "starting" /\ daemon_state' \in {"starting", "ready", "crashed"})
-               \/ (daemon_state = "ready" /\ daemon_state' \in {"ready", "crashed"})
-               \/ (daemon_state = "crashed" /\ daemon_state' \in {"crashed", "not_running"})
-            /\ models_available' \in BOOLEAN
-            /\ client_phase' = client_phase
+    /\ \/ (daemon_state = "not_running" /\ daemon_state' \in {"not_running", "starting"})
+       \/ (daemon_state = "starting" /\ daemon_state' \in {"starting", "ready", "crashed"})
+       \/ (daemon_state = "ready" /\ daemon_state' \in {"ready", "crashed"})
+       \/ (daemon_state = "crashed" /\ daemon_state' \in {"crashed", "not_running"})
+    /\ models_available' \in BOOLEAN
+    /\ client_phase' = client_phase
     /\ UNCHANGED << attempt, delay >>
     /\ pc' = [pc EXCEPT !["env"] = "EnvironmentLoop"]
 

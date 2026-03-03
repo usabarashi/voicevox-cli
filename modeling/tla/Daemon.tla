@@ -15,7 +15,7 @@ VARIABLES daemonState, socketState, reqState, retryCount
 vars == << daemonState, socketState, reqState, retryCount >>
 
 TypeOK ==
-    /\ daemonState \in {"DaemonDown", "Starting", "Ready", "Recovering"}
+    /\ daemonState \in {"DaemonDown", "Starting", "AlreadyRunning", "Ready", "Recovering"}
     /\ socketState \in {"SocketAbsent", "SocketReady"}
     /\ reqState \in {"Idle", "Busy"}
     /\ retryCount \in 0..MAX_RETRY
@@ -29,6 +29,9 @@ BusyImpliesReady ==
 
 RetryBounded ==
     retryCount <= MAX_RETRY
+
+AlreadyRunningNotBusy ==
+    daemonState = "AlreadyRunning" => reqState = "Idle"
 
 Init ==
     /\ daemonState = "DaemonDown"
@@ -46,6 +49,24 @@ DaemonReady ==
     /\ daemonState' = "Ready"
     /\ socketState' = "SocketReady"
     /\ UNCHANGED << reqState, retryCount >>
+
+AlreadyRunningDetected ==
+    /\ daemonState = "Starting"
+    /\ daemonState' = "AlreadyRunning"
+    /\ UNCHANGED << socketState, reqState, retryCount >>
+
+AlreadyRunningResponsive ==
+    /\ daemonState = "AlreadyRunning"
+    /\ daemonState' = "Ready"
+    /\ socketState' = "SocketReady"
+    /\ UNCHANGED << reqState, retryCount >>
+
+AlreadyRunningUnresponsive ==
+    /\ daemonState = "AlreadyRunning"
+    /\ daemonState' = "Recovering"
+    /\ socketState' = "SocketAbsent"
+    /\ reqState' = "Idle"
+    /\ retryCount' = IF retryCount < MAX_RETRY THEN retryCount + 1 ELSE retryCount
 
 DaemonFail ==
     /\ daemonState \in {"Starting", "Recovering"}
@@ -90,6 +111,9 @@ FinishReq ==
 Next ==
     \/ StartDaemon
     \/ DaemonReady
+    \/ AlreadyRunningDetected
+    \/ AlreadyRunningResponsive
+    \/ AlreadyRunningUnresponsive
     \/ DaemonFail
     \/ CrashFromReady
     \/ Recover

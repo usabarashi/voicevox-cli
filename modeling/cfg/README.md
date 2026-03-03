@@ -15,6 +15,7 @@ Use these names as the primary entry points for model checking.
 ## Client and IPC
 
 - `MCPServer.connect.cfg`
+- `MCPServer.degraded.cfg`
 - `IPC.safety.cfg`
 - `IPC.progress.cfg`
 
@@ -24,6 +25,8 @@ Use these names as the primary entry points for model checking.
 - `Synthesis.normal-flow.cfg`
 - `Synthesis.invalid-target.cfg`
 - `Synthesis.progress.cfg`
+- `Synthesis.retry-boundary.cfg`
+- `Synthesis.cancel-sources.cfg`
 - `SynthesisParallel.safety.cfg`
 - `SynthesisParallel.progress.cfg`
 
@@ -52,6 +55,7 @@ tlc -config modeling/cfg/VoicevoxModel.standard.cfg modeling/tla/VoicevoxModel.t
 
 # Client / IPC
 tlc -config modeling/cfg/MCPServer.connect.cfg modeling/tla/MCPServer.tla
+tlc -config modeling/cfg/MCPServer.degraded.cfg modeling/tla/MCPServer.tla
 tlc -config modeling/cfg/IPC.safety.cfg modeling/tla/IPC.tla
 tlc -config modeling/cfg/IPC.progress.cfg modeling/tla/IPC.tla
 
@@ -60,6 +64,8 @@ tlc -config modeling/cfg/Synthesis.full.cfg modeling/tla/Synthesis.tla
 tlc -config modeling/cfg/Synthesis.normal-flow.cfg modeling/tla/Synthesis.tla
 tlc -config modeling/cfg/Synthesis.invalid-target.cfg modeling/tla/Synthesis.tla
 tlc -config modeling/cfg/Synthesis.progress.cfg modeling/tla/Synthesis.tla
+tlc -config modeling/cfg/Synthesis.retry-boundary.cfg modeling/tla/Synthesis.tla
+tlc -config modeling/cfg/Synthesis.cancel-sources.cfg modeling/tla/Synthesis.tla
 tlc -config modeling/cfg/SynthesisParallel.safety.cfg modeling/tla/SynthesisParallel.tla
 tlc -config modeling/cfg/SynthesisParallel.progress.cfg modeling/tla/SynthesisParallel.tla
 

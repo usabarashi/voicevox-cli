@@ -16,18 +16,18 @@ VARIABLES fsRuntimeState, fsRuntimeRetry,
           fsSocketState, fsSocketRetry,
           fsModelState, fsModelRetry,
           fsDaemonState,
-          clientDaemonState, clientState, clientAttempt,
+          clientDaemonState, clientState, clientAttempt, clientServiceMode,
           clientPlaybackAudioReady, clientPlaybackState, clientPlaybackCancelRequested, clientPlaybackErrorKind,
-          synthDaemonReady, synthState, synthRetryCount, synthErrorKind
+          synthDaemonReady, synthState, synthRetryCount, synthErrorKind, synthCancelSource
 
 vars == << fsRuntimeState, fsRuntimeRetry,
            fsDictState, fsDictRetry,
            fsSocketState, fsSocketRetry,
            fsModelState, fsModelRetry,
            fsDaemonState,
-           clientDaemonState, clientState, clientAttempt,
+           clientDaemonState, clientState, clientAttempt, clientServiceMode,
            clientPlaybackAudioReady, clientPlaybackState, clientPlaybackCancelRequested, clientPlaybackErrorKind,
-           synthDaemonReady, synthState, synthRetryCount, synthErrorKind >>
+           synthDaemonReady, synthState, synthRetryCount, synthErrorKind, synthCancelSource >>
 
 FS == INSTANCE StartupResources WITH
     MAX_RETRY <- MAX_RETRY,
@@ -46,6 +46,7 @@ C == INSTANCE MCPServer WITH
     daemonState <- clientDaemonState,
     clientState <- clientState,
     attempt <- clientAttempt,
+    serviceMode <- clientServiceMode,
     playbackAudioReady <- clientPlaybackAudioReady,
     playbackState <- clientPlaybackState,
     playbackCancelRequested <- clientPlaybackCancelRequested,
@@ -56,7 +57,8 @@ Y == INSTANCE Synthesis WITH
     daemonReady <- synthDaemonReady,
     synthState <- synthState,
     retryCount <- synthRetryCount,
-    errorKind <- synthErrorKind
+    errorKind <- synthErrorKind,
+    cancelSource <- synthCancelSource
 
 TypeOK ==
     /\ FS!TypeOK
@@ -79,6 +81,7 @@ Init ==
     /\ clientDaemonState = "DaemonDown"
     /\ clientState = "Idle"
     /\ clientAttempt = 0
+    /\ clientServiceMode = "Normal"
     /\ clientPlaybackAudioReady = FALSE
     /\ clientPlaybackState = "Idle"
     /\ clientPlaybackCancelRequested = FALSE
@@ -87,6 +90,7 @@ Init ==
     /\ synthState = "Idle"
     /\ synthRetryCount = 0
     /\ synthErrorKind = "None"
+    /\ synthCancelSource = "None"
 
 SyncViewsAndDependentStates ==
     /\ clientDaemonState' =
@@ -97,6 +101,10 @@ SyncViewsAndDependentStates ==
         THEN "Idle"
         ELSE clientState
     /\ clientAttempt' = clientAttempt
+    /\ clientServiceMode' =
+        IF fsDaemonState' # "Ready" /\ clientState = "Connected"
+        THEN "Degraded"
+        ELSE clientServiceMode
     /\ UNCHANGED << clientPlaybackAudioReady, clientPlaybackState,
                     clientPlaybackCancelRequested, clientPlaybackErrorKind >>
     /\ synthState' =
@@ -108,6 +116,10 @@ SyncViewsAndDependentStates ==
         IF fsDaemonState' # "Ready" /\ synthState \in {"Queued", "Synthesizing"}
         THEN "None"
         ELSE synthErrorKind
+    /\ synthCancelSource' =
+        IF fsDaemonState' # "Ready" /\ synthState \in {"Queued", "Synthesizing"}
+        THEN "None"
+        ELSE synthCancelSource
 
 StartupResourcesStep ==
     /\ FS!Next
@@ -117,7 +129,8 @@ ClientStep ==
     /\ \/ C!StartConnect
        \/ C!ConnectOk
        \/ C!ConnectRetry
-       \/ C!ConnectFail
+       \/ C!EnterDegraded
+       \/ C!LeaveDegraded
        \/ C!ReceiveAudio
        \/ C!PlaybackStart
        \/ C!PlaybackLaunchOk
@@ -132,7 +145,7 @@ ClientStep ==
                     fsSocketState, fsSocketRetry,
                     fsModelState, fsModelRetry,
                     fsDaemonState,
-                    synthDaemonReady, synthState, synthRetryCount, synthErrorKind >>
+                    synthDaemonReady, synthState, synthRetryCount, synthErrorKind, synthCancelSource >>
 
 SynthesisStep ==
     /\ \/ Y!Enqueue
@@ -140,14 +153,17 @@ SynthesisStep ==
        \/ Y!SynthOk
        \/ Y!SynthFail
        \/ Y!InvalidTargetFail
-       \/ Y!Cancel
+       \/ Y!CancelByExternalRequest
+       \/ Y!CancelByClientDisconnect
+       \/ Y!CancelByWriteFailure
+       \/ Y!CancelByShutdown
        \/ Y!Reset
     /\ UNCHANGED << fsRuntimeState, fsRuntimeRetry,
                     fsDictState, fsDictRetry,
                     fsSocketState, fsSocketRetry,
                     fsModelState, fsModelRetry,
                     fsDaemonState,
-                    clientDaemonState, clientState, clientAttempt,
+                    clientDaemonState, clientState, clientAttempt, clientServiceMode,
                     clientPlaybackAudioReady, clientPlaybackState,
                     clientPlaybackCancelRequested, clientPlaybackErrorKind >>
 

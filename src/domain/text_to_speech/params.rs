@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::ipc::{
+use crate::domain::synthesis::limits::{
     is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MAX_SYNTHESIS_TEXT_LENGTH,
     MIN_SYNTHESIS_RATE,
 };

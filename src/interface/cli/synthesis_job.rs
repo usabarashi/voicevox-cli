@@ -1,8 +1,9 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::domain::synthesis::{synthesize_bytes, validate_basic_request, TextSynthesisRequest};
+use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
 use crate::domain::workflow_state::SynthesisPhase;
+use crate::interface::cli::synthesis_client::synthesize_bytes;
 use crate::interface::cli::{ensure_models_available, missing_startup_resources, DaemonRpcClient};
 use crate::interface::AppOutput;
 

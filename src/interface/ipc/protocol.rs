@@ -3,18 +3,9 @@ use std::collections::HashMap;
 
 use crate::infrastructure::voicevox::{AvailableModel, Speaker};
 
-pub const DEFAULT_SYNTHESIS_RATE: f32 = 1.0;
-pub const MIN_SYNTHESIS_RATE: f32 = 0.5;
-pub const MAX_SYNTHESIS_RATE: f32 = 2.0;
-pub const MAX_SYNTHESIS_TEXT_LENGTH: usize = 10_000;
-pub const MAX_DAEMON_REQUEST_FRAME_BYTES: usize = 256 * 1024;
-pub const MAX_DAEMON_RESPONSE_FRAME_BYTES: usize = 128 * 1024 * 1024;
-#[must_use]
-pub const fn is_valid_synthesis_rate(rate: f32) -> bool {
-    rate >= MIN_SYNTHESIS_RATE && rate <= MAX_SYNTHESIS_RATE
-}
+use super::DEFAULT_SYNTHESIS_RATE;
 
-/// Request messages sent from client to daemon
+/// Request messages sent from client to daemon.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum DaemonRequest {
     Synthesize {
@@ -26,7 +17,7 @@ pub enum DaemonRequest {
     ListModels,
 }
 
-/// Synthesis options for voice synthesis requests
+/// Synthesis options for voice synthesis requests.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct SynthesizeOptions {
     pub rate: f32,
@@ -40,7 +31,7 @@ impl Default for SynthesizeOptions {
     }
 }
 
-/// Response messages from daemon to client
+/// Response messages from daemon to client.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonResponse {
     SynthesizeResult {
@@ -67,11 +58,11 @@ pub enum DaemonErrorCode {
     Internal,
 }
 
-/// Request type for owned data
+/// Request type for owned data.
 pub type OwnedRequest = DaemonRequest;
 
-/// Response type for owned data
+/// Response type for owned data.
 pub type OwnedResponse = DaemonResponse;
 
-/// Synthesis options for owned data
+/// Synthesis options for owned data.
 pub type OwnedSynthesizeOptions = SynthesizeOptions;

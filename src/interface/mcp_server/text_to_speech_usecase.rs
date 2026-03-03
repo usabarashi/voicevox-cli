@@ -3,19 +3,17 @@ use serde_json::Value;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
-use crate::domain::playback::service::{emit_and_play, PlaybackOutcome, PlaybackRequest};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
-use crate::domain::synthesis::{
-    prepare_backend_with_config, synthesize_streaming_segments, validate_basic_request,
-    PreparedBackend, TextSynthesisRequest,
-};
+use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
 use crate::domain::text_to_speech::params::{
     parse_synthesize_params, text_char_count, SynthesizeParams,
 };
 use crate::domain::workflow_state::McpTtsPhase;
 use crate::infrastructure::daemon::startup;
 use crate::interface::cli::{
-    format_daemon_rpc_error_for_mcp, infer_voice_target_state, VoiceTargetState,
+    emit_and_play, format_daemon_rpc_error_for_mcp, infer_voice_target_state,
+    prepare_backend_with_config, synthesize_streaming_segments, PlaybackOutcome, PlaybackRequest,
+    PreparedBackend, VoiceTargetState,
 };
 use crate::interface::cli::{
     synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput,
@@ -327,8 +325,8 @@ async fn play_generated_audio(
 mod tests {
     use super::*;
     use crate::interface::cli::daemon_rpc::daemon_response_error;
+    use crate::interface::ipc::DaemonErrorCode;
     use crate::interface::mcp_server::tool_types::ToolContent;
-    use crate::ipc::DaemonErrorCode;
     use serde_json::json;
     use tokio::sync::oneshot;
 

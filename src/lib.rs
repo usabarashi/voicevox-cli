@@ -6,7 +6,6 @@ pub mod config;
 pub mod domain;
 pub mod infrastructure;
 pub mod interface;
-pub mod ipc;
 
 pub use infrastructure::core::{CoreSynthesis, VoicevoxCore};
 pub use infrastructure::paths::{
@@ -16,7 +15,7 @@ pub use infrastructure::voicevox::{
     get_model_for_voice_id, resolve_voice_dynamic, scan_available_models, AvailableModel, Speaker,
     Style,
 };
-pub use ipc::{
+pub use interface::ipc::{
     DaemonErrorCode, DaemonRequest, DaemonResponse, OwnedRequest, OwnedResponse,
     OwnedSynthesizeOptions, SynthesizeOptions,
 };

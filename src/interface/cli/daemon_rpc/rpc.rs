@@ -2,9 +2,9 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::domain::playback::service::{emit_and_play, PlaybackRequest};
 use crate::infrastructure::voicevox::{format_speakers_output, Speaker};
-use crate::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
+use crate::interface::cli::playback::{emit_and_play, PlaybackRequest};
+use crate::interface::ipc::{DaemonRequest, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 
 use super::daemon_response_error;
 use super::transport::{request_daemon_once, DAEMON_CONNECTION_TIMEOUT, DAEMON_RESPONSE_TIMEOUT};

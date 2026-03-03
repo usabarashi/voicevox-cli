@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use crate::config::Config;
 use crate::interface::cli::DaemonRpcClient;
 
-use super::StreamingSynthesizer;
+use super::streaming_synthesizer::StreamingSynthesizer;
 
 pub enum PreparedBackend {
     Streaming(StreamingSynthesizer),

@@ -13,7 +13,7 @@ use voicevox_cli::interface::cli::{
     run_list_models_command, run_list_speakers_command, run_say_synthesis, run_status_command,
     SaySynthesisRequest,
 };
-use voicevox_cli::ipc::DEFAULT_SYNTHESIS_RATE;
+use voicevox_cli::interface::ipc::DEFAULT_SYNTHESIS_RATE;
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]

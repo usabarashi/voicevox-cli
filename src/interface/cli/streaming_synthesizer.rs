@@ -68,7 +68,7 @@ impl StreamingSynthesizer {
         rate: f32,
     ) -> Result<Vec<Vec<u8>>> {
         let segments = self.text_segmenter.split(text);
-        let options = crate::ipc::OwnedSynthesizeOptions { rate };
+        let options = crate::interface::ipc::OwnedSynthesizeOptions { rate };
         let mut wav_segments = Vec::new();
 
         for (i, segment) in segments

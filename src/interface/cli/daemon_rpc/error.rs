@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 
-use crate::ipc::DaemonErrorCode;
+use crate::interface::ipc::DaemonErrorCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceTargetState {

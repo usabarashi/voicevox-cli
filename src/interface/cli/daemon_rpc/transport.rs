@@ -8,7 +8,7 @@ use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use super::policy::DaemonConnectRetryPolicy;
-use crate::ipc::{
+use crate::interface::ipc::{
     OwnedRequest, OwnedResponse, MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES,
 };
 

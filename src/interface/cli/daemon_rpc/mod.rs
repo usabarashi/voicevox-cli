@@ -10,7 +10,7 @@ use tokio::net::UnixStream;
 
 use crate::infrastructure::paths::get_socket_path;
 use crate::infrastructure::voicevox::{AvailableModel, Speaker};
-use crate::ipc::{OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
+use crate::interface::ipc::{OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
 
 pub use crate::infrastructure::daemon::find_daemon_binary;
 pub use error::{

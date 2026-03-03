@@ -1,11 +1,11 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-use crate::domain::playback::service::{emit_and_play, PlaybackRequest};
 use crate::domain::workflow_state::SayPhase;
 use crate::interface::cli::format_daemon_rpc_error_for_cli;
 use crate::interface::cli::{
-    synthesize_bytes_via_daemon, validate_text_synthesis_request, DaemonSynthesisBytesRequest,
+    emit_and_play, synthesize_bytes_via_daemon, validate_text_synthesis_request,
+    DaemonSynthesisBytesRequest, PlaybackRequest,
 };
 use crate::interface::{AppOutput, StdAppOutput};
 

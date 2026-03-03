@@ -1,4 +1,4 @@
-use crate::ipc::{DaemonErrorCode, OwnedRequest, OwnedResponse};
+use crate::interface::ipc::{DaemonErrorCode, OwnedRequest, OwnedResponse};
 
 mod catalog;
 mod executor;

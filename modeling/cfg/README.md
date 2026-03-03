@@ -8,6 +8,7 @@ Use these names as the primary entry points for model checking.
 - `Daemon.startup.cfg`
 - `FirstStartup.bootstrap.cfg`
 - `ONNXRuntime.load.cfg`
+- `VoicevoxModel.standard.cfg`
 - `Dictionary.load.cfg`
 - `Socket.bind.cfg`
 
@@ -47,6 +48,7 @@ Run from repository root.
 tlc -config modeling/cfg/Daemon.startup.cfg modeling/tla/Daemon.tla
 tlc -config modeling/cfg/FirstStartup.bootstrap.cfg modeling/tla/StartupResources.tla
 tlc -config modeling/cfg/ONNXRuntime.load.cfg modeling/tla/ONNXRuntime.tla
+tlc -config modeling/cfg/VoicevoxModel.standard.cfg modeling/tla/VoicevoxModel.tla
 
 # Client / IPC
 tlc -config modeling/cfg/MCPServer.connect.cfg modeling/tla/MCPServer.tla

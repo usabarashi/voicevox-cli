@@ -5,7 +5,7 @@ use super::{
     cleanup::{cleanup_incomplete_downloads, cleanup_unnecessary_files, count_vvm_files_recursive},
     find_downloader_binary,
 };
-use crate::infrastructure::paths::{find_onnxruntime, get_default_voicevox_dir};
+use crate::infrastructure::paths::get_default_voicevox_dir;
 
 pub fn missing_resource_descriptions(missing_resources: &[&str]) -> Vec<&'static str> {
     let mut descriptions = Vec::new();
@@ -38,14 +38,6 @@ async fn run_downloader_for_resources(
         .map_err(Into::into)
 }
 
-fn maybe_set_ort_dylib_path(missing_resources: &[&str]) {
-    if missing_resources.contains(&"onnxruntime") {
-        if let Ok(ort_path) = find_onnxruntime() {
-            std::env::set_var(crate::config::ENV_ORT_DYLIB_PATH, ort_path);
-        }
-    }
-}
-
 pub async fn download_missing_resources(missing_resources: &[&str]) -> Result<()> {
     if missing_resources.is_empty() {
         return Ok(());
@@ -65,7 +57,6 @@ pub async fn download_missing_resources(missing_resources: &[&str]) -> Result<()
 
         match run_downloader_for_resources(&downloader_path, missing_resources, &target_dir).await {
             Ok(exit_status) if exit_status.success() => {
-                maybe_set_ort_dylib_path(missing_resources);
                 return Ok(());
             }
             Ok(exit_status) => {

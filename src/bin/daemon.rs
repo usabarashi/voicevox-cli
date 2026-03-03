@@ -3,7 +3,9 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use voicevox_cli::infrastructure::paths::get_socket_path;
-use voicevox_cli::interface::cli::{run_daemon_cli, ControlCommand, DaemonRunFlags, StartMode};
+use voicevox_cli::interface::cli::{
+    run_daemon_cli, DaemonCliFlags, DaemonControlCommand, DaemonStartMode,
+};
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]
@@ -41,24 +43,24 @@ impl CliArgs {
         self.socket_path.clone().unwrap_or_else(get_socket_path)
     }
 
-    fn to_daemon_flags(&self) -> DaemonRunFlags {
-        DaemonRunFlags {
-            start_mode: StartMode::from_flags(self.foreground, self.detach),
+    fn to_daemon_flags(&self) -> DaemonCliFlags {
+        DaemonCliFlags {
+            start_mode: DaemonStartMode::from_flags(self.foreground, self.detach),
             mode_flag_explicit: self.foreground || self.detach,
             start: self.start,
             control: self.control_command(),
         }
     }
 
-    fn control_command(&self) -> ControlCommand {
+    fn control_command(&self) -> DaemonControlCommand {
         if self.stop {
-            ControlCommand::Stop
+            DaemonControlCommand::Stop
         } else if self.status {
-            ControlCommand::Status
+            DaemonControlCommand::Status
         } else if self.restart {
-            ControlCommand::Restart
+            DaemonControlCommand::Restart
         } else {
-            ControlCommand::None
+            DaemonControlCommand::None
         }
     }
 }

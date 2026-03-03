@@ -6,7 +6,7 @@ use super::policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 use super::transport::{
     connect_socket_with_timeout, connect_with_retry, DAEMON_CONNECTION_TIMEOUT,
 };
-use crate::domain::workflow_state::StartupPhase;
+use crate::domain::startup_phase::StartupPhase;
 use crate::infrastructure::daemon::{
     ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
 };

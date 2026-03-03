@@ -1,9 +1,8 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
-use crate::domain::workflow_state::SynthesisPhase;
-use crate::interface::cli::synthesis_client::synthesize_bytes;
+use crate::domain::synthesis::{validate_basic_request, SynthesisPhase, TextSynthesisRequest};
+use crate::interface::cli::synthesis::daemon_synthesis::request_daemon_synthesis_bytes;
 use crate::interface::cli::{ensure_models_available, missing_startup_resources, DaemonRpcClient};
 use crate::interface::AppOutput;
 
@@ -106,7 +105,7 @@ async fn run_synthesis_phase(
                 style_id: request.style_id,
                 rate: request.rate,
             };
-            let wav_data = synthesize_bytes(&mut client, &synth_req).await?;
+            let wav_data = request_daemon_synthesis_bytes(&mut client, &synth_req).await?;
             Ok(SynthesisStep::Done(wav_data))
         }
     }

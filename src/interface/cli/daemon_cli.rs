@@ -4,92 +4,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::Duration;
 
+use crate::domain::daemon_control::{
+    daemon_not_running_lines, daemon_socket_line, daemon_start_banner_lines, daemon_usage_lines,
+    decide_daemon_invocation, DaemonCliFlags, DaemonInvocation,
+};
 use crate::infrastructure::daemon::{
-    check_and_prevent_duplicate, exit_codes as exit_daemon, DaemonError,
+    check_and_prevent_duplicate, exit_codes as exit_daemon, is_socket_responsive,
+    pid_memory_info_line, terminate_process, DaemonError,
 };
 use crate::interface::{AppOutput, StdAppOutput};
-
-fn allow_unsafe_path_commands() -> bool {
-    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
-}
-
-fn system_command_path(preferred: &'static str, fallback_name: &'static str) -> &'static str {
-    if std::path::Path::new(preferred).is_file() {
-        preferred
-    } else if allow_unsafe_path_commands() {
-        fallback_name
-    } else {
-        preferred
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum StartMode {
-    Foreground,
-    Detached,
-}
-
-impl StartMode {
-    #[must_use]
-    pub fn from_flags(foreground: bool, detach: bool) -> Self {
-        if detach && !foreground {
-            Self::Detached
-        } else {
-            Self::Foreground
-        }
-    }
-
-    #[must_use]
-    pub const fn is_foreground(self) -> bool {
-        matches!(self, Self::Foreground)
-    }
-
-    const fn should_detach(self) -> bool {
-        matches!(self, Self::Detached)
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum ControlCommand {
-    None,
-    Stop,
-    Status,
-    Restart,
-}
-
-#[derive(Clone, Copy)]
-pub struct DaemonRunFlags {
-    pub start_mode: StartMode,
-    pub mode_flag_explicit: bool,
-    pub start: bool,
-    pub control: ControlCommand,
-}
-
-#[derive(Clone, Copy)]
-enum Invocation {
-    ShowUsage,
-    Control(ControlAction),
-    Start,
-}
-
-#[derive(Clone, Copy)]
-enum ControlAction {
-    Stop,
-    Status,
-    Restart,
-}
-
-impl Invocation {
-    const fn from_flags(flags: DaemonRunFlags) -> Self {
-        match flags.control {
-            ControlCommand::Stop => Self::Control(ControlAction::Stop),
-            ControlCommand::Status => Self::Control(ControlAction::Status),
-            ControlCommand::Restart => Self::Control(ControlAction::Restart),
-            ControlCommand::None if !flags.start && !flags.mode_flag_explicit => Self::ShowUsage,
-            ControlCommand::None => Self::Start,
-        }
-    }
-}
 
 enum ExecutionDecision {
     Continue,
@@ -113,7 +36,7 @@ struct SystemDaemonControlOs;
 
 impl DaemonControlOs for SystemDaemonControlOs {
     fn is_responsive(&self, socket_path: &Path) -> bool {
-        std::os::unix::net::UnixStream::connect(socket_path).is_ok()
+        is_socket_responsive(socket_path)
     }
 
     fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>> {
@@ -121,82 +44,51 @@ impl DaemonControlOs for SystemDaemonControlOs {
     }
 
     fn pid_memory_info_line(&self, pid_num: u32) -> Option<String> {
-        let ps_output = std::process::Command::new(system_command_path("/bin/ps", "ps"))
-            .args(["-p", &pid_num.to_string(), "-o", "rss,pmem,time"])
-            .output()
-            .ok()?;
-
-        if !ps_output.status.success() {
-            return None;
-        }
-
-        String::from_utf8_lossy(&ps_output.stdout)
-            .lines()
-            .nth(1)
-            .map(str::trim)
-            .map(ToOwned::to_owned)
+        pid_memory_info_line(pid_num)
     }
 
     fn kill_term(&self, pid: u32) -> bool {
-        std::process::Command::new(system_command_path("/bin/kill", "kill"))
-            .arg("-TERM")
-            .arg(pid.to_string())
-            .status()
-            .is_ok_and(|status| status.success())
+        terminate_process(pid)
     }
 }
 
 fn print_usage_banner(output: &dyn AppOutput) {
-    output.info(&format!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION")));
-    output.info("\nDaemon Operations:");
-    output.info("  --start     Start the daemon (default)");
-    output.info("  --stop      Stop the running daemon");
-    output.info("  --status    Check daemon status");
-    output.info("  --restart   Restart the daemon");
-    output.info("\nExecution Modes:");
-    output.info("  --foreground Run in foreground (for development)");
-    output.info("  --detach     Run as background process");
-    output.info("\nUse --help for all options");
+    for line in daemon_usage_lines(env!("CARGO_PKG_VERSION")) {
+        output.info(&line);
+    }
 }
 
 async fn maybe_handle_control_commands(
     socket_path: &Path,
-    flags: DaemonRunFlags,
+    flags: DaemonCliFlags,
     output: &dyn AppOutput,
 ) -> Result<bool> {
-    match Invocation::from_flags(flags) {
-        Invocation::Control(action) => {
-            run_control_action(action, socket_path, output).await?;
-            Ok(!matches!(action, ControlAction::Restart))
-        }
-        Invocation::ShowUsage => {
-            print_usage_banner(output);
+    match decide_daemon_invocation(flags) {
+        DaemonInvocation::Stop => {
+            handle_stop_daemon(socket_path, output).await?;
             Ok(true)
         }
-        Invocation::Start => Ok(false),
-    }
-}
-
-async fn run_control_action(
-    action: ControlAction,
-    socket_path: &Path,
-    output: &dyn AppOutput,
-) -> Result<()> {
-    match action {
-        ControlAction::Stop => handle_stop_daemon(socket_path, output).await,
-        ControlAction::Status => handle_status_daemon(socket_path, output).await,
-        ControlAction::Restart => {
+        DaemonInvocation::Status => {
+            handle_status_daemon(socket_path, output).await?;
+            Ok(true)
+        }
+        DaemonInvocation::Restart => {
             output.info("Restarting daemon...");
             let _ = handle_stop_daemon(socket_path, output).await;
             tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-            Ok(())
+            Ok(false)
         }
+        DaemonInvocation::ShowUsage => {
+            print_usage_banner(output);
+            Ok(true)
+        }
+        DaemonInvocation::Start => Ok(false),
     }
 }
 
 async fn maybe_detach(
     socket_path: &Path,
-    flags: DaemonRunFlags,
+    flags: DaemonCliFlags,
     output: &dyn AppOutput,
 ) -> ExecutionDecision {
     if !flags.start_mode.should_detach() {
@@ -279,22 +171,19 @@ fn report_startup_error(error: &DaemonError, output: &dyn AppOutput) -> i32 {
 }
 
 fn print_daemon_start_banner(socket_path: &Path, output: &dyn AppOutput) {
-    output.info(&format!("VOICEVOX Daemon v{}", env!("CARGO_PKG_VERSION")));
-    output.info("Starting user daemon...");
-    output.info(&format!(
-        "Socket: {} (user-specific)",
-        socket_path.display()
-    ));
-    output.info("Models: Load and unload per request (no caching)");
+    for line in daemon_start_banner_lines(env!("CARGO_PKG_VERSION"), socket_path) {
+        output.info(&line);
+    }
 }
 
 fn print_socket_path_line(socket_path: &Path, output: &dyn AppOutput) {
-    output.info(&format!("Socket: {}", socket_path.display()));
+    output.info(&daemon_socket_line(socket_path));
 }
 
 fn print_socket_not_running(socket_path: &Path, output: &dyn AppOutput) {
-    output.info("Daemon is not running");
-    output.info(&format!("   Socket: {}", socket_path.display()));
+    for line in daemon_not_running_lines(socket_path) {
+        output.info(&line);
+    }
 }
 
 fn print_pid_memory_info(pid_num: u32, output: &dyn AppOutput, os: &dyn DaemonControlOs) {
@@ -405,14 +294,14 @@ async fn handle_status_daemon_with_os(
 /// # Errors
 ///
 /// Returns an error if command dispatch or daemon runtime fails.
-pub async fn run_daemon_cli(socket_path: PathBuf, flags: DaemonRunFlags) -> Result<()> {
+pub async fn run_daemon_cli(socket_path: PathBuf, flags: DaemonCliFlags) -> Result<()> {
     let output = StdAppOutput;
     run_daemon_cli_with_output(socket_path, flags, &output).await
 }
 
 pub async fn run_daemon_cli_with_output(
     socket_path: PathBuf,
-    flags: DaemonRunFlags,
+    flags: DaemonCliFlags,
     output: &dyn AppOutput,
 ) -> Result<()> {
     if maybe_handle_control_commands(&socket_path, flags, output).await? {

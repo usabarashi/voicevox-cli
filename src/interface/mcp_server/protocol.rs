@@ -1,14 +1,9 @@
+use crate::interface::mcp_server::requests::ActiveRequests;
+use crate::interface::mcp_server::tool_catalog::{get_tool_definitions, ToolDefinition};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use crate::interface::mcp_server::requests::ActiveRequests;
-use crate::interface::mcp_server::tools::{get_tool_definitions, ToolDefinition};
 
 const MCP_VERSION: &str = "2025-06-18";
-const INSTRUCTIONS_ENV_VAR: &str = "VOICEVOX_MCP_INSTRUCTIONS";
-const INSTRUCTIONS_FILE: &str = "VOICEVOX.md";
 
 // JSON-RPC 2.0 Protocol Types
 #[derive(Debug, Serialize, Deserialize)]
@@ -175,46 +170,6 @@ pub struct CancelledParams {
 /// 3. Config fallback: `~/.config/voicevox/VOICEVOX.md` (when `XDG_CONFIG_HOME` is not set)
 /// 4. Executable directory: `VOICEVOX.md` bundled with the binary (distribution default)
 /// 5. Current directory: `VOICEVOX.md` in working directory (development use)
-fn load_instructions() -> Option<String> {
-    fn try_load(path: &Path) -> Option<String> {
-        match fs::read_to_string(path) {
-            Ok(content) => Some(content),
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                eprintln!(
-                    "Warning: failed to read MCP instructions from {}: {error}",
-                    path.display()
-                );
-                None
-            }
-            _ => None,
-        }
-    }
-
-    let xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();
-    let xdg_fallback = xdg_config_home.is_none().then(|| {
-        std::env::var("HOME")
-            .ok()
-            .map(|home| PathBuf::from(home).join(".config").join("voicevox"))
-    });
-
-    [
-        std::env::var(INSTRUCTIONS_ENV_VAR).ok().map(PathBuf::from),
-        xdg_config_home
-            .as_ref()
-            .map(|path| PathBuf::from(path).join("voicevox").join(INSTRUCTIONS_FILE)),
-        xdg_fallback
-            .flatten()
-            .map(|dir| dir.join(INSTRUCTIONS_FILE)),
-        std::env::current_exe()
-            .ok()
-            .and_then(|exe_path| exe_path.parent().map(|dir| dir.join(INSTRUCTIONS_FILE))),
-        Some(PathBuf::from(INSTRUCTIONS_FILE)),
-    ]
-    .into_iter()
-    .flatten()
-    .find_map(|path| try_load(&path))
-}
-
 /// Initialize request processor - MCP session initialization.
 ///
 /// Establishes the MCP session and returns server capabilities and information.
@@ -243,7 +198,7 @@ pub fn process_initialize(id: Value, _params: Option<Value>) -> JsonRpcResponse 
         capabilities: ServerCapabilities {
             tools: serde_json::Map::new(),
         },
-        instructions: load_instructions(),
+        instructions: crate::infrastructure::mcp_instructions::load_mcp_instructions(),
     };
 
     serialize_success_response(id, result)

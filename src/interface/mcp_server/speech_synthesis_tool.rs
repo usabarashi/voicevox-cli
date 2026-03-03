@@ -5,54 +5,32 @@ use tokio::sync::oneshot;
 
 use crate::domain::synthesis::wav::concatenate_wav_segments;
 use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
-use crate::domain::text_to_speech::params::{
-    parse_synthesize_params, text_char_count, SynthesizeParams,
+use crate::domain::text_to_speech::{
+    parse_synthesize_params, text_char_count, McpTtsPhase, SynthesizeParams,
 };
-use crate::domain::workflow_state::McpTtsPhase;
 use crate::infrastructure::daemon::startup;
 use crate::interface::cli::{
     emit_and_play, format_daemon_rpc_error_for_mcp, infer_voice_target_state,
-    prepare_backend_with_config, synthesize_streaming_segments, PlaybackOutcome, PlaybackRequest,
-    PreparedBackend, VoiceTargetState,
+    request_streaming_synthesis_segments, select_synthesis_mode_with_config, PlaybackOutcome,
+    PlaybackRequest, SynthesisMode, VoiceTargetState,
 };
 use crate::interface::cli::{
     synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput,
 };
+use crate::interface::mcp_server::speech_synthesis_messages::{
+    cancellation_result, synthesis_success_message, try_take_cancellation,
+};
 use crate::interface::mcp_server::tool_types::{audio_result, text_result};
-
-fn synthesis_success_message(text_len: usize, style_id: u32) -> String {
-    format!("Synthesized {text_len} characters using style ID {style_id}")
-}
-
-fn cancellation_message(reason: &str) -> String {
-    if reason.is_empty() {
-        "Synthesis cancelled".to_string()
-    } else {
-        format!("Synthesis cancelled: {reason}")
-    }
-}
-
-fn cancellation_result(reason: String) -> crate::interface::mcp_server::tool_types::ToolCallResult {
-    text_result(cancellation_message(&reason), true)
-}
-
-fn try_take_cancellation(cancel_rx: &mut oneshot::Receiver<String>) -> Option<String> {
-    match cancel_rx.try_recv() {
-        Ok(reason) => Some(reason),
-        Err(oneshot::error::TryRecvError::Closed) => Some(String::new()),
-        Err(oneshot::error::TryRecvError::Empty) => None,
-    }
-}
 
 const MCP_DAEMON_MAX_RETRIES: u32 = 2;
 
-enum DaemonSynthesisStep {
+enum DaemonRetryStep {
     Next(McpTtsPhase),
     Finish,
     Return(crate::interface::mcp_server::tool_types::ToolCallResult),
 }
 
-struct DaemonSynthesisContext<'a> {
+struct DaemonRetryContext<'a> {
     text: &'a str,
     style_id: u32,
     rate: f32,
@@ -147,9 +125,9 @@ async fn handle_streaming_synthesis(
 #[allow(clippy::future_not_send)]
 async fn do_streaming_synthesis(text: &str, style_id: u32, rate: f32) -> Result<Vec<u8>> {
     let config = crate::config::Config::default();
-    let mut synthesizer = match prepare_backend_with_config(true, &config).await {
-        Ok(PreparedBackend::Streaming(synthesizer)) => synthesizer,
-        Ok(PreparedBackend::Daemon(_)) => unreachable!(),
+    let mut synthesizer = match select_synthesis_mode_with_config(true, &config).await {
+        Ok(SynthesisMode::Streaming(synthesizer)) => synthesizer,
+        Ok(SynthesisMode::Daemon(_)) => unreachable!(),
         Err(error) => return Err(error.context("Failed to create streaming synthesizer")),
     };
 
@@ -158,7 +136,7 @@ async fn do_streaming_synthesis(text: &str, style_id: u32, rate: f32) -> Result<
         style_id,
         rate,
     };
-    let wav_segments = synthesize_streaming_segments(&mut synthesizer, &request)
+    let wav_segments = request_streaming_synthesis_segments(&mut synthesizer, &request)
         .await
         .context("Streaming synthesis failed")?;
 
@@ -189,7 +167,7 @@ async fn handle_daemon_synthesis(
 
     let mut attempt: u32 = 0;
     let mut phase = McpTtsPhase::Attempt;
-    let mut ctx = DaemonSynthesisContext {
+    let mut ctx = DaemonRetryContext {
         text: &text,
         style_id,
         rate,
@@ -203,10 +181,10 @@ async fn handle_daemon_synthesis(
     };
 
     loop {
-        match run_daemon_synthesis_phase(phase, &mut ctx).await? {
-            DaemonSynthesisStep::Next(next) => phase = next,
-            DaemonSynthesisStep::Finish => break,
-            DaemonSynthesisStep::Return(result) => return Ok(result),
+        match run_daemon_retry_phase(phase, &mut ctx).await? {
+            DaemonRetryStep::Next(next) => phase = next,
+            DaemonRetryStep::Finish => break,
+            DaemonRetryStep::Return(result) => return Ok(result),
         }
     }
 
@@ -227,15 +205,15 @@ async fn handle_daemon_synthesis(
 }
 
 #[allow(clippy::future_not_send)]
-async fn run_daemon_synthesis_phase(
+async fn run_daemon_retry_phase(
     phase: McpTtsPhase,
-    ctx: &mut DaemonSynthesisContext<'_>,
-) -> Result<DaemonSynthesisStep> {
+    ctx: &mut DaemonRetryContext<'_>,
+) -> Result<DaemonRetryStep> {
     match phase {
         McpTtsPhase::Attempt => {
             if let Some(cancel_rx) = ctx.cancel_rx.as_mut() {
                 if let Some(reason) = try_take_cancellation(cancel_rx) {
-                    return Ok(DaemonSynthesisStep::Return(cancellation_result(reason)));
+                    return Ok(DaemonRetryStep::Return(cancellation_result(reason)));
                 }
             }
 
@@ -251,7 +229,7 @@ async fn run_daemon_synthesis_phase(
             let synth_result = if let Some(cancel_rx) = ctx.cancel_rx.as_mut() {
                 tokio::select! {
                     reason = cancel_rx => {
-                        return Ok(DaemonSynthesisStep::Return(
+                        return Ok(DaemonRetryStep::Return(
                             cancellation_result(reason.unwrap_or_default())
                         ));
                     }
@@ -264,15 +242,15 @@ async fn run_daemon_synthesis_phase(
             match synth_result {
                 Ok(result) => {
                     *ctx.wav_data = Some(result);
-                    Ok(DaemonSynthesisStep::Next(McpTtsPhase::Finish))
+                    Ok(DaemonRetryStep::Next(McpTtsPhase::Finish))
                 }
                 Err(error) => {
                     let retryable = is_retryable_daemon_synthesis_error(&error);
                     *ctx.last_error = Some(error);
                     if !retryable || *ctx.attempt >= MCP_DAEMON_MAX_RETRIES {
-                        Ok(DaemonSynthesisStep::Next(McpTtsPhase::Finish))
+                        Ok(DaemonRetryStep::Next(McpTtsPhase::Finish))
                     } else {
-                        Ok(DaemonSynthesisStep::Next(McpTtsPhase::Backoff))
+                        Ok(DaemonRetryStep::Next(McpTtsPhase::Backoff))
                     }
                 }
             }
@@ -281,7 +259,7 @@ async fn run_daemon_synthesis_phase(
             if let Some(cancel_rx) = ctx.cancel_rx.as_mut() {
                 tokio::select! {
                     reason = cancel_rx => {
-                        return Ok(DaemonSynthesisStep::Return(
+                        return Ok(DaemonRetryStep::Return(
                             cancellation_result(reason.unwrap_or_default())
                         ));
                     }
@@ -292,9 +270,9 @@ async fn run_daemon_synthesis_phase(
             }
             *ctx.attempt += 1;
             *ctx.retry_delay = (*ctx.retry_delay * 2).min(startup::max_retry_delay());
-            Ok(DaemonSynthesisStep::Next(McpTtsPhase::Attempt))
+            Ok(DaemonRetryStep::Next(McpTtsPhase::Attempt))
         }
-        McpTtsPhase::Finish => Ok(DaemonSynthesisStep::Finish),
+        McpTtsPhase::Finish => Ok(DaemonRetryStep::Finish),
     }
 }
 

@@ -2,12 +2,12 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use tokio::sync::oneshot;
 
-pub use crate::interface::mcp_server::list_voice_styles::handle_list_voice_styles;
-pub use crate::interface::mcp_server::text_to_speech_usecase::{
+pub use crate::interface::mcp_server::speech_synthesis_tool::{
     handle_text_to_speech, handle_text_to_speech_cancellable,
 };
 pub use crate::interface::mcp_server::tool_catalog::{get_tool_definitions, ToolDefinition};
 pub use crate::interface::mcp_server::tool_types::{ToolCallResult, ToolContent};
+pub use crate::interface::mcp_server::voice_style_tool::handle_voice_style_list_tool;
 
 /// Executes an MCP tool request with cancellation support.
 ///
@@ -41,7 +41,7 @@ pub async fn execute_tool_request(
 ) -> Result<ToolCallResult> {
     match tool_name {
         "text_to_speech" => handle_text_to_speech_cancellable(arguments, cancel_rx).await,
-        "list_voice_styles" => handle_list_voice_styles(arguments).await,
+        "list_voice_styles" => handle_voice_style_list_tool(arguments).await,
         _ => Err(anyhow!("Unknown tool: {tool_name}")),
     }
 }

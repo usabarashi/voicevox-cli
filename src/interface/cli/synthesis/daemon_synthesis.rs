@@ -2,12 +2,12 @@ use anyhow::Result;
 use rodio::Sink;
 
 use crate::domain::synthesis::TextSynthesisRequest;
+use crate::interface::cli::daemon_rpc::DaemonRpcClient;
 use crate::interface::ipc::OwnedSynthesizeOptions;
 
-use super::daemon_rpc::DaemonRpcClient;
-use super::streaming_synthesizer::StreamingSynthesizer;
+use super::streaming_synthesis::StreamingSynthesizer;
 
-pub async fn synthesize_bytes(
+pub async fn request_daemon_synthesis_bytes(
     client: &mut DaemonRpcClient,
     request: &TextSynthesisRequest<'_>,
 ) -> Result<Vec<u8>> {
@@ -17,7 +17,7 @@ pub async fn synthesize_bytes(
         .await
 }
 
-pub async fn synthesize_streaming_to_sink(
+pub async fn stream_synthesis_to_sink(
     synthesizer: &mut StreamingSynthesizer,
     request: &TextSynthesisRequest<'_>,
     sink: &Sink,
@@ -27,11 +27,11 @@ pub async fn synthesize_streaming_to_sink(
         .await
 }
 
-pub async fn synthesize_streaming_segments(
+pub async fn request_streaming_synthesis_segments(
     synthesizer: &mut StreamingSynthesizer,
     request: &TextSynthesisRequest<'_>,
 ) -> Result<Vec<Vec<u8>>> {
     synthesizer
-        .synthesize_streaming_segments(request.text, request.style_id, request.rate)
+        .request_streaming_synthesis_segments(request.text, request.style_id, request.rate)
         .await
 }

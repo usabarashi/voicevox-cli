@@ -1,6 +1,6 @@
-use crate::domain::text_to_speech::params as tts_params;
-use crate::domain::text_to_speech::params::SynthesizeParams;
-use crate::interface::mcp_server::tools::handle_text_to_speech;
+use crate::domain::text_to_speech as tts_params;
+use crate::domain::text_to_speech::SynthesizeParams;
+use crate::interface::mcp_server::tool_execution::handle_text_to_speech;
 use serde_json::{json, Value};
 
 #[allow(clippy::future_not_send)]

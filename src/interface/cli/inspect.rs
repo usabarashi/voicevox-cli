@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::domain::inspect_view::{
+use crate::domain::inspect_output::{
     list_models_lines, missing_status_lines, status_models_lines, InstalledModelView, ModelView,
     NO_MODELS_MESSAGE,
 };

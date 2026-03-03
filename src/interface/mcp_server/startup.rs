@@ -1,4 +1,4 @@
-use crate::domain::workflow_state::McpStartupPhase;
+use crate::domain::startup_phase::McpStartupPhase;
 use crate::infrastructure::daemon::{ensure_daemon_running, DaemonError, DaemonResult};
 use crate::infrastructure::paths::get_socket_path;
 use crate::interface::cli::DaemonAutoStartPolicy;

@@ -26,6 +26,13 @@ pub struct SynthesizeParams {
     pub streaming: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpTtsPhase {
+    Attempt,
+    Backoff,
+    Finish,
+}
+
 const fn default_rate() -> f32 {
     DEFAULT_SYNTHESIS_RATE
 }

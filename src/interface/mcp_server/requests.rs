@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 
 use crate::interface::mcp_server::protocol::{JsonRpcResponse, INTERNAL_ERROR};
-use crate::interface::mcp_server::tools::{self, ToolCallResult};
+use crate::interface::mcp_server::tool_execution::{self, ToolCallResult};
 
 const MAX_CONCURRENT_TOOL_EXECUTIONS: usize = 4;
 
@@ -191,7 +191,8 @@ impl ActiveRequests {
             Box::pin(async move {
                 let _permit = permit;
                 let result =
-                    tools::execute_tool_request(&tool_name, arguments, Some(abort_rx)).await;
+                    tool_execution::execute_tool_request(&tool_name, arguments, Some(abort_rx))
+                        .await;
 
                 // Clean up the request from active list
                 active_requests.complete(&request_id).await;

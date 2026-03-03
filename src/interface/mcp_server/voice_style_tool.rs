@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::domain::voice_style_query::{
+use crate::domain::voice_style::{
     filter_speakers, normalized_filters, render_voice_styles_result, ListVoiceStylesParams,
 };
 use crate::interface::cli::connect_daemon_rpc_auto_start;
@@ -19,7 +19,7 @@ async fn connect_daemon_rpc_for_tool() -> Result<crate::interface::cli::DaemonRp
 /// # Errors
 ///
 /// Returns an error if parameters are invalid or the daemon cannot be contacted.
-pub async fn handle_list_voice_styles(
+pub async fn handle_voice_style_list_tool(
     arguments: Value,
 ) -> Result<crate::interface::mcp_server::tool_types::ToolCallResult> {
     let params: ListVoiceStylesParams =

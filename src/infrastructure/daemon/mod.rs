@@ -1,4 +1,5 @@
 pub mod bootstrap;
+pub mod control;
 pub mod process;
 pub mod server;
 pub mod socket_probe;
@@ -12,6 +13,7 @@ use thiserror::Error;
 pub use bootstrap::{
     ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
 };
+pub use control::{is_socket_responsive, pid_memory_info_line, terminate_process};
 pub use process::{check_and_prevent_duplicate, find_daemon_processes};
 pub use server::{handle_client, run_daemon};
 pub use start_process::{find_daemon_binary, start_daemon_detached, StartDaemonOutcome};

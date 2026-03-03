@@ -2,8 +2,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 use super::{
-    cleanup::count_vvm_files_recursive, default_download_target_dir, install::launch_models_downloader,
-    find_downloader_binary,
+    cleanup::count_vvm_files_recursive, default_download_target_dir, find_downloader_binary,
+    install::launch_models_downloader,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

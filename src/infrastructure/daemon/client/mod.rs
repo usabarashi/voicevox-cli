@@ -8,16 +8,14 @@ use std::collections::HashMap;
 use std::path::Path;
 use tokio::net::UnixStream;
 
-use crate::infrastructure::paths::get_socket_path;
-use crate::infrastructure::voicevox::{AvailableModel, Speaker, Style};
 use crate::infrastructure::ipc::{
     IpcModel, IpcSpeaker, IpcStyle, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions,
 };
+use crate::infrastructure::paths::get_socket_path;
+use crate::infrastructure::voicevox::{AvailableModel, Speaker, Style};
 
 pub use crate::infrastructure::daemon::find_daemon_binary;
-pub use error::{
-    daemon_response_error, find_daemon_client_error, DaemonClientError,
-};
+pub use error::{daemon_response_error, find_daemon_client_error, DaemonClientError};
 pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 
 fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {
@@ -152,7 +150,10 @@ impl DaemonClient {
             OwnedResponse::SpeakersListWithModels {
                 speakers,
                 style_to_model,
-            } => Ok((speakers.into_iter().map(map_ipc_speaker).collect(), style_to_model)),
+            } => Ok((
+                speakers.into_iter().map(map_ipc_speaker).collect(),
+                style_to_model,
+            )),
             OwnedResponse::Error { code, message } => {
                 Err(daemon_response_error("List speakers error", code, &message))
             }
@@ -168,7 +169,9 @@ impl DaemonClient {
             .send_request_and_receive_response(OwnedRequest::ListModels)
             .await?
         {
-            OwnedResponse::ModelsList { models } => Ok(models.into_iter().map(map_ipc_model).collect()),
+            OwnedResponse::ModelsList { models } => {
+                Ok(models.into_iter().map(map_ipc_model).collect())
+            }
             OwnedResponse::Error { code, message } => {
                 Err(daemon_response_error("List models error", code, &message))
             }

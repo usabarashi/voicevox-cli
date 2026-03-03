@@ -24,7 +24,9 @@ pub fn resolve_voice_input(voice_input: &str) -> Result<(u32, String)> {
 
 fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
     let available_models = scan_available_models().map_err(|e| {
-        anyhow!("Failed to scan available models: {e}. Use --speaker-id for direct ID specification.")
+        anyhow!(
+            "Failed to scan available models: {e}. Use --speaker-id for direct ID specification."
+        )
     })?;
 
     if available_models.is_empty() {

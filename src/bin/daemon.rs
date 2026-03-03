@@ -2,9 +2,11 @@ use clap::Parser;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use voicevox_cli::interface::cli::daemon_invocation::{DaemonCliFlags, DaemonControlCommand, DaemonStartMode};
 use voicevox_cli::infrastructure::paths::get_socket_path;
 use voicevox_cli::interface::cli::daemon_cli::run_daemon_cli;
+use voicevox_cli::interface::cli::daemon_invocation::{
+    DaemonCliFlags, DaemonControlCommand, DaemonStartMode,
+};
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]

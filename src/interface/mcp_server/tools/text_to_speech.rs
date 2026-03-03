@@ -12,14 +12,14 @@ use crate::domain::text_to_speech::{
     default_rate, default_streaming, text_char_count, validate_style_id, SynthesizeParams,
 };
 use crate::infrastructure::daemon::startup;
+use crate::interface::mcp_server::daemon_error::{
+    format_daemon_client_error_for_mcp, is_retryable_daemon_synthesis_error,
+};
 use crate::interface::playback::{emit_and_play, PlaybackOutcome, PlaybackRequest};
 use crate::interface::synthesis::flow::{
     synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput,
 };
 use crate::interface::synthesis::mode::{select_synthesis_mode_with_config, SynthesisMode};
-use crate::interface::mcp_server::daemon_error::{
-    format_daemon_client_error_for_mcp, is_retryable_daemon_synthesis_error,
-};
 
 const MCP_DAEMON_MAX_RETRIES: u32 = 2;
 
@@ -224,7 +224,10 @@ async fn handle_daemon_synthesis(
 
     let Some(wav_data) = wav_data else {
         let error = last_error.expect("last error should exist when synthesis failed");
-        return Ok(text_result(format_daemon_client_error_for_mcp(&error), true));
+        return Ok(text_result(
+            format_daemon_client_error_for_mcp(&error),
+            true,
+        ));
     };
 
     let text_len = text_char_count(&text);

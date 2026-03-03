@@ -288,6 +288,7 @@
             # Build tools
             pkg-config
             cmake
+            gcc
 
             # Development utilities
             voicevoxResetWrapper

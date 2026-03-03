@@ -1,5 +1,5 @@
-pub mod cli;
 pub mod audio;
+pub mod cli;
 pub mod mcp_server;
 pub mod output;
 pub mod playback;

@@ -33,3 +33,37 @@ pub fn validate_basic_request(request: &TextSynthesisRequest<'_>) -> Result<()> 
 
     Ok(())
 }
+
+#[cfg(kani)]
+mod kani_proofs {
+    use super::*;
+    use crate::domain::synthesis::limits::{MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE};
+
+    #[kani::proof]
+    fn rate_validation_matches_request_result_for_valid_text() {
+        let request = TextSynthesisRequest {
+            text: "hello",
+            style_id: kani::any(),
+            rate: kani::any(),
+        };
+
+        let result = validate_basic_request(&request);
+
+        if request.rate >= MIN_SYNTHESIS_RATE && request.rate <= MAX_SYNTHESIS_RATE {
+            assert!(result.is_ok());
+        } else {
+            assert!(result.is_err());
+        }
+    }
+
+    #[kani::proof]
+    fn blank_text_is_rejected_regardless_of_rate() {
+        let request = TextSynthesisRequest {
+            text: " \n\t ",
+            style_id: kani::any(),
+            rate: kani::any(),
+        };
+
+        assert!(validate_basic_request(&request).is_err());
+    }
+}

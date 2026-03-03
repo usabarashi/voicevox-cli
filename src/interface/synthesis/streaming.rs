@@ -30,10 +30,7 @@ impl StreamingSynthesizer {
 
     /// Creates a streaming synthesizer with explicit configuration injection.
     #[allow(clippy::missing_errors_doc)]
-    pub fn new_with_client_and_config(
-        daemon_rpc: DaemonClient,
-        config: &Config,
-    ) -> Result<Self> {
+    pub fn new_with_client_and_config(daemon_rpc: DaemonClient, config: &Config) -> Result<Self> {
         let delimiters = config
             .text_splitter
             .delimiters

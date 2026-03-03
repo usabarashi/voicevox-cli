@@ -1,7 +1,7 @@
 pub mod bootstrap;
+pub mod client;
 pub mod control;
 pub mod process;
-pub mod client;
 pub mod server;
 pub mod socket_probe;
 pub mod start_process;
@@ -16,7 +16,7 @@ pub use bootstrap::{
     EnsureDaemonRunningOutcome,
 };
 pub use control::{is_socket_responsive, pid_memory_info_line, terminate_process};
-pub use process::{check_and_prevent_duplicate, find_daemon_processes};
+pub use process::{check_and_prevent_duplicate, find_daemon_processes, remove_stale_socket_if_present};
 pub use server::run_daemon;
 pub use start_process::{find_daemon_binary, start_daemon_detached, StartDaemonOutcome};
 pub use state::DaemonState;

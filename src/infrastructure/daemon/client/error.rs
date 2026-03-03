@@ -1,5 +1,5 @@
-use anyhow::anyhow;
 use crate::infrastructure::ipc::DaemonErrorCode;
+use anyhow::anyhow;
 
 #[derive(Debug, thiserror::Error)]
 #[error("{context}: {message}")]

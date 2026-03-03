@@ -1,6 +1,6 @@
+pub mod daemon_cli;
 pub mod daemon_error;
 pub mod daemon_invocation;
-pub mod daemon_cli;
 pub mod download;
 pub mod input;
 pub mod inspect;

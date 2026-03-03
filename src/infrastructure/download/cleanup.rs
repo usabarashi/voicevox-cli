@@ -71,10 +71,7 @@ fn log_remove_file(path: &Path, label: &str, success_message: &str) {
             ));
         },
         |()| {
-            crate::infrastructure::logging::info(&format!(
-                "{success_message}: {}",
-                path.display()
-            ));
+            crate::infrastructure::logging::info(&format!("{success_message}: {}", path.display()));
         },
     );
 }

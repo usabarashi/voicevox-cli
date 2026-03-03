@@ -1,11 +1,11 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
+use crate::interface::cli::daemon_error::format_daemon_client_error_for_cli;
 use crate::interface::playback::{emit_and_play, PlaybackRequest};
 use crate::interface::synthesis::flow::{
     synthesize_bytes_via_daemon, validate_text_synthesis_request, DaemonSynthesisBytesRequest,
 };
-use crate::interface::cli::daemon_error::format_daemon_client_error_for_cli;
 use crate::interface::{AppOutput, StdAppOutput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

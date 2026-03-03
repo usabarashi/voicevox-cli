@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::Duration;
 
-use crate::interface::cli::daemon_invocation::{decide_daemon_invocation, DaemonCliFlags, DaemonInvocation};
 use crate::infrastructure::daemon::{
     check_and_prevent_duplicate, exit_codes as exit_daemon, is_socket_responsive,
     pid_memory_info_line, terminate_process, DaemonError,
+};
+use crate::interface::cli::daemon_invocation::{
+    decide_daemon_invocation, DaemonCliFlags, DaemonInvocation,
 };
 use crate::interface::{AppOutput, StdAppOutput};
 
@@ -24,9 +26,11 @@ impl ExecutionDecision {
 
 trait DaemonControlOs {
     fn is_responsive(&self, socket_path: &Path) -> bool;
+    fn socket_path_exists(&self, socket_path: &Path) -> bool;
     fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>>;
     fn pid_memory_info_line(&self, pid_num: u32) -> Option<String>;
     fn kill_term(&self, pid: u32) -> bool;
+    fn remove_stale_socket_if_present(&self, socket_path: &Path) -> crate::infrastructure::daemon::DaemonResult<bool>;
 }
 
 struct SystemDaemonControlOs;
@@ -34,6 +38,10 @@ struct SystemDaemonControlOs;
 impl DaemonControlOs for SystemDaemonControlOs {
     fn is_responsive(&self, socket_path: &Path) -> bool {
         is_socket_responsive(socket_path)
+    }
+
+    fn socket_path_exists(&self, socket_path: &Path) -> bool {
+        socket_path.exists()
     }
 
     fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>> {
@@ -46,6 +54,13 @@ impl DaemonControlOs for SystemDaemonControlOs {
 
     fn kill_term(&self, pid: u32) -> bool {
         terminate_process(pid)
+    }
+
+    fn remove_stale_socket_if_present(
+        &self,
+        socket_path: &Path,
+    ) -> crate::infrastructure::daemon::DaemonResult<bool> {
+        crate::infrastructure::daemon::remove_stale_socket_if_present(socket_path)
     }
 }
 
@@ -260,6 +275,8 @@ async fn handle_stop_daemon_with_os(
     if pids.is_empty() {
         if responsive {
             output.info("No daemon process found");
+        } else {
+            try_cleanup_stale_socket(socket_path, output, os);
         }
         return Ok(());
     }
@@ -268,7 +285,30 @@ async fn handle_stop_daemon_with_os(
         stop_daemon_process_with_os(pid_num, socket_path, output, os, post_kill_delay).await;
     }
 
+    if !os.is_responsive(socket_path) {
+        try_cleanup_stale_socket(socket_path, output, os);
+    }
+
     Ok(())
+}
+
+fn try_cleanup_stale_socket(socket_path: &Path, output: &dyn AppOutput, os: &dyn DaemonControlOs) {
+    match os.remove_stale_socket_if_present(socket_path) {
+        Ok(true) => output.info(&format!("Removed stale socket: {}", socket_path.display())),
+        Ok(false) => output.info(&format!(
+            "No stale socket file to remove: {}",
+            socket_path.display()
+        )),
+        Err(DaemonError::SocketPermissionDenied { path }) => {
+            output.info(&format!(
+                "Permission denied while removing stale socket: {}",
+                path.display()
+            ));
+        }
+        Err(error) => {
+            output.info(&format!("Failed to remove stale socket: {error}"));
+        }
+    }
 }
 
 async fn stop_daemon_process_with_os(
@@ -319,6 +359,10 @@ async fn handle_status_daemon_with_os(
     } else {
         output.info("Status:  Not running");
         print_socket_path_line(socket_path, output);
+        if os.socket_path_exists(socket_path) {
+            output.info("Stale socket candidate: socket path exists but is not responsive");
+            output.info("Try 'voicevox-daemon --stop' to clean up stale socket state.");
+        }
     }
 
     Ok(())
@@ -366,10 +410,13 @@ mod tests {
 
     struct FakeDaemonControlOs {
         responsive: Mutex<VecDeque<bool>>,
+        socket_exists: bool,
         pids: Vec<u32>,
         pids_error: Option<String>,
         memory_line: Option<String>,
         kill_ok: bool,
+        stale_socket_cleanup: Option<bool>,
+        stale_socket_cleanup_error: Option<String>,
     }
 
     impl DaemonControlOs for FakeDaemonControlOs {
@@ -379,6 +426,10 @@ mod tests {
                 .expect("responsive lock")
                 .pop_front()
                 .unwrap_or(false)
+        }
+
+        fn socket_path_exists(&self, _socket_path: &Path) -> bool {
+            self.socket_exists
         }
 
         fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>> {
@@ -395,6 +446,18 @@ mod tests {
         fn kill_term(&self, _pid: u32) -> bool {
             self.kill_ok
         }
+
+        fn remove_stale_socket_if_present(
+            &self,
+            _socket_path: &Path,
+        ) -> crate::infrastructure::daemon::DaemonResult<bool> {
+            match &self.stale_socket_cleanup_error {
+                Some(message) => Err(DaemonError::StartupFailed {
+                    message: message.clone(),
+                }),
+                None => Ok(self.stale_socket_cleanup.unwrap_or(false)),
+            }
+        }
     }
 
     #[tokio::test]
@@ -402,10 +465,13 @@ mod tests {
         let output = BufferAppOutput::default();
         let os = FakeDaemonControlOs {
             responsive: Mutex::new(VecDeque::from([true])),
+            socket_exists: true,
             pids: vec![1234],
             pids_error: None,
             memory_line: Some("20480 0.1 00:00:01".to_string()),
             kill_ok: false,
+            stale_socket_cleanup: Some(false),
+            stale_socket_cleanup_error: None,
         };
 
         handle_status_daemon_with_os(Path::new("/tmp/test.sock"), &output, &os)
@@ -423,10 +489,13 @@ mod tests {
         let output = BufferAppOutput::default();
         let os = FakeDaemonControlOs {
             responsive: Mutex::new(VecDeque::from([true])),
+            socket_exists: true,
             pids: vec![42],
             pids_error: None,
             memory_line: None,
             kill_ok: false,
+            stale_socket_cleanup: Some(false),
+            stale_socket_cleanup_error: None,
         };
 
         handle_stop_daemon_with_os(
@@ -449,10 +518,13 @@ mod tests {
         let output = BufferAppOutput::default();
         let os = FakeDaemonControlOs {
             responsive: Mutex::new(VecDeque::from([true, false])),
+            socket_exists: true,
             pids: vec![7],
             pids_error: None,
             memory_line: None,
             kill_ok: true,
+            stale_socket_cleanup: Some(false),
+            stale_socket_cleanup_error: None,
         };
 
         handle_stop_daemon_with_os(
@@ -474,10 +546,13 @@ mod tests {
         let output = BufferAppOutput::default();
         let os = FakeDaemonControlOs {
             responsive: Mutex::new(VecDeque::from([false, false])),
+            socket_exists: true,
             pids: vec![25672],
             pids_error: None,
             memory_line: None,
             kill_ok: true,
+            stale_socket_cleanup: Some(false),
+            stale_socket_cleanup_error: None,
         };
 
         handle_stop_daemon_with_os(
@@ -495,5 +570,85 @@ mod tests {
             text.contains("Found daemon process(es) without responsive socket. Stopping anyway...")
         );
         assert!(text.contains("Daemon stopped (PID: 25672)"));
+    }
+
+    #[tokio::test]
+    async fn stop_removes_stale_socket_when_not_responsive_and_no_process_found() {
+        let output = BufferAppOutput::default();
+        let os = FakeDaemonControlOs {
+            responsive: Mutex::new(VecDeque::from([false])),
+            socket_exists: true,
+            pids: vec![],
+            pids_error: None,
+            memory_line: None,
+            kill_ok: true,
+            stale_socket_cleanup: Some(true),
+            stale_socket_cleanup_error: None,
+        };
+
+        handle_stop_daemon_with_os(
+            Path::new("/tmp/test.sock"),
+            &output,
+            &os,
+            Duration::from_millis(0),
+        )
+        .await
+        .expect("stop ok");
+
+        let text = output.infos().join("\n");
+        assert!(text.contains("Daemon is not running"));
+        assert!(text.contains("Removed stale socket: /tmp/test.sock"));
+    }
+
+    #[tokio::test]
+    async fn stop_reports_no_stale_socket_when_not_responsive_and_no_process_found() {
+        let output = BufferAppOutput::default();
+        let os = FakeDaemonControlOs {
+            responsive: Mutex::new(VecDeque::from([false])),
+            socket_exists: false,
+            pids: vec![],
+            pids_error: None,
+            memory_line: None,
+            kill_ok: true,
+            stale_socket_cleanup: Some(false),
+            stale_socket_cleanup_error: None,
+        };
+
+        handle_stop_daemon_with_os(
+            Path::new("/tmp/test.sock"),
+            &output,
+            &os,
+            Duration::from_millis(0),
+        )
+        .await
+        .expect("stop ok");
+
+        let text = output.infos().join("\n");
+        assert!(text.contains("Daemon is not running"));
+        assert!(text.contains("No stale socket file to remove: /tmp/test.sock"));
+    }
+
+    #[tokio::test]
+    async fn status_reports_stale_socket_candidate_when_path_exists_but_not_responsive() {
+        let output = BufferAppOutput::default();
+        let os = FakeDaemonControlOs {
+            responsive: Mutex::new(VecDeque::from([false])),
+            socket_exists: true,
+            pids: vec![],
+            pids_error: None,
+            memory_line: None,
+            kill_ok: false,
+            stale_socket_cleanup: Some(false),
+            stale_socket_cleanup_error: None,
+        };
+
+        handle_status_daemon_with_os(Path::new("/tmp/test.sock"), &output, &os)
+            .await
+            .expect("status ok");
+
+        let text = output.infos().join("\n");
+        assert!(text.contains("Status:  Not running"));
+        assert!(text.contains("Stale socket candidate: socket path exists but is not responsive"));
+        assert!(text.contains("Try 'voicevox-daemon --stop' to clean up stale socket state."));
     }
 }

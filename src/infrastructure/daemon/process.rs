@@ -84,6 +84,26 @@ pub async fn check_and_prevent_duplicate(socket_path: &Path) -> DaemonResult<()>
     Ok(())
 }
 
+/// Removes a stale daemon socket file if it exists.
+///
+/// Returns `Ok(true)` when a socket file was removed, `Ok(false)` when the path does not exist.
+///
+/// # Errors
+///
+/// Returns an error when the path exists but cannot be safely removed.
+pub fn remove_stale_socket_if_present(socket_path: &Path) -> DaemonResult<bool> {
+    match fs::symlink_metadata(socket_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(DaemonError::StartupFailed {
+            message: format!("Failed to inspect socket path: {error}"),
+        }),
+        Ok(_) => {
+            remove_stale_socket(socket_path)?;
+            Ok(true)
+        }
+    }
+}
+
 async fn handle_existing_socket(socket_path: &Path) -> DaemonResult<()> {
     match tokio::net::UnixStream::connect(socket_path).await {
         Ok(_) => {

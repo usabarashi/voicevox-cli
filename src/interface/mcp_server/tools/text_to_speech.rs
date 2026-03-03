@@ -17,7 +17,8 @@ use crate::interface::mcp_server::daemon_error::{
 };
 use crate::interface::playback::{emit_and_play, PlaybackOutcome, PlaybackRequest};
 use crate::interface::synthesis::flow::{
-    synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput,
+    synthesize_bytes_via_daemon_cancellable, DaemonSynthesisBytesRequest, NoopAppOutput,
+    SynthesisFlowOutcome,
 };
 use crate::interface::synthesis::mode::{select_synthesis_mode_with_config, SynthesisMode};
 
@@ -263,23 +264,19 @@ async fn run_daemon_retry_phase(
                 quiet_setup_messages: true,
             };
 
-            let synth_result = if let Some(cancel_rx) = ctx.cancel_rx.as_mut() {
-                tokio::select! {
-                    reason = cancel_rx => {
-                        return Ok(DaemonRetryStep::Return(
-                            cancellation_result(reason.unwrap_or_default())
-                        ));
-                    }
-                    result = synthesize_bytes_via_daemon(&synth_request, ctx.output) => result,
-                }
-            } else {
-                synthesize_bytes_via_daemon(&synth_request, ctx.output).await
-            };
-
-            match synth_result {
-                Ok(result) => {
+            match synthesize_bytes_via_daemon_cancellable(
+                &synth_request,
+                ctx.output,
+                ctx.cancel_rx.as_mut(),
+            )
+            .await
+            {
+                Ok(SynthesisFlowOutcome::Completed(result)) => {
                     *ctx.wav_data = Some(result);
                     Ok(DaemonRetryStep::Next(McpTtsPhase::Finish))
+                }
+                Ok(SynthesisFlowOutcome::Canceled(reason)) => {
+                    Ok(DaemonRetryStep::Return(cancellation_result(reason)))
                 }
                 Err(error) => {
                     let retryable = is_retryable_daemon_synthesis_error(&error);

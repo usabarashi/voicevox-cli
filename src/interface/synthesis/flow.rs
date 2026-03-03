@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::path::Path;
+use tokio::sync::oneshot;
 
 use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
 use crate::infrastructure::daemon::client::DaemonClient;
@@ -13,6 +14,62 @@ enum SynthesisPhase {
     EnsureResources,
     Connect,
     Synthesize,
+}
+
+// This lifecycle mirrors modeling/tla/Synthesis.tla at the same abstraction level:
+// Idle -> Queued -> Synthesizing -> Done / Failed / Canceled.
+// Rust currently has no explicit cancellation path in this flow, but we keep the
+// state for model alignment and future cancellation integration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SynthesisLifecycleState {
+    Idle,
+    Queued,
+    Synthesizing,
+    Done,
+    Failed,
+    Canceled,
+}
+
+impl SynthesisLifecycleState {
+    #[must_use]
+    const fn queue(self) -> Self {
+        match self {
+            Self::Idle => Self::Queued,
+            _ => self,
+        }
+    }
+
+    #[must_use]
+    const fn start(self) -> Self {
+        match self {
+            Self::Queued => Self::Synthesizing,
+            _ => self,
+        }
+    }
+
+    #[must_use]
+    const fn succeed(self) -> Self {
+        match self {
+            Self::Synthesizing => Self::Done,
+            _ => self,
+        }
+    }
+
+    #[must_use]
+    const fn fail(self) -> Self {
+        match self {
+            Self::Idle | Self::Queued | Self::Synthesizing => Self::Failed,
+            _ => self,
+        }
+    }
+
+    #[must_use]
+    const fn cancel(self) -> Self {
+        match self {
+            Self::Queued | Self::Synthesizing => Self::Canceled,
+            _ => self,
+        }
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -70,14 +127,84 @@ pub async fn synthesize_bytes_via_daemon(
     request: &DaemonSynthesisBytesRequest<'_>,
     output: &dyn AppOutput,
 ) -> Result<Vec<u8>> {
+    match synthesize_bytes_via_daemon_cancellable(request, output, None).await? {
+        SynthesisFlowOutcome::Completed(wav_data) => Ok(wav_data),
+        SynthesisFlowOutcome::Canceled(_reason) => {
+            Err(anyhow!("Unexpected cancellation without cancellation receiver"))
+        }
+    }
+}
+
+pub enum SynthesisFlowOutcome {
+    Completed(Vec<u8>),
+    Canceled(String),
+}
+
+pub async fn synthesize_bytes_via_daemon_cancellable(
+    request: &DaemonSynthesisBytesRequest<'_>,
+    output: &dyn AppOutput,
+    mut cancel_rx: Option<&mut oneshot::Receiver<String>>,
+) -> Result<SynthesisFlowOutcome> {
     let mut phase = SynthesisPhase::Validate;
     let mut synthesizer: Option<DaemonSynthesizer> = None;
+    let mut lifecycle = SynthesisLifecycleState::Idle.queue();
 
     loop {
-        match run_synthesis_phase(phase, request, output, &mut synthesizer).await? {
-            SynthesisStep::Next(next) => phase = next,
-            SynthesisStep::Done(wav_data) => return Ok(wav_data),
+        if matches!(phase, SynthesisPhase::Synthesize) {
+            lifecycle = lifecycle.start();
         }
+
+        if let Some(receiver) = cancel_rx.as_mut() {
+            if let Some(reason) = try_take_cancellation(receiver) {
+                lifecycle = lifecycle.cancel();
+                if matches!(lifecycle, SynthesisLifecycleState::Canceled) {
+                    return Ok(SynthesisFlowOutcome::Canceled(reason));
+                }
+            }
+        }
+
+        let step_result = match cancel_rx.as_mut() {
+            Some(receiver) => {
+                tokio::select! {
+                    reason = receiver => {
+                        let reason = reason.unwrap_or_default();
+                        lifecycle = lifecycle.cancel();
+                        if matches!(lifecycle, SynthesisLifecycleState::Canceled) {
+                            return Ok(SynthesisFlowOutcome::Canceled(reason));
+                        }
+                        Ok(SynthesisStep::Next(phase))
+                    }
+                    result = run_synthesis_phase(phase, request, output, &mut synthesizer) => result,
+                }
+            }
+            None => run_synthesis_phase(phase, request, output, &mut synthesizer).await,
+        };
+
+        let step = match step_result {
+            Ok(step) => step,
+            Err(error) => {
+                lifecycle = lifecycle.fail();
+                debug_assert!(matches!(lifecycle, SynthesisLifecycleState::Failed));
+                return Err(error);
+            }
+        };
+
+        match step {
+            SynthesisStep::Next(next) => phase = next,
+            SynthesisStep::Done(wav_data) => {
+                lifecycle = lifecycle.succeed();
+                debug_assert!(matches!(lifecycle, SynthesisLifecycleState::Done));
+                return Ok(SynthesisFlowOutcome::Completed(wav_data));
+            }
+        }
+    }
+}
+
+fn try_take_cancellation(cancel_rx: &mut oneshot::Receiver<String>) -> Option<String> {
+    match cancel_rx.try_recv() {
+        Ok(reason) => Some(reason),
+        Err(oneshot::error::TryRecvError::Closed) => Some(String::new()),
+        Err(oneshot::error::TryRecvError::Empty) => None,
     }
 }
 

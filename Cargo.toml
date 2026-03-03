@@ -34,12 +34,12 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 bincode = { version = "2.0", features = ["serde"] }
 dirs = "6.0"
-tempfile = "=3.23.0"
+tempfile = "3.26"
 
 # MCP Server dependencies
 
 base64 = "0.22"
-rodio = { version = "0.21", default-features = false, features = ["playback", "wav"] }
+rodio = { version = "0.22", default-features = false, features = ["playback", "wav"] }
 
 tokio = { version = "1.47", default-features = false, features = [
     "net", "process", "time", "signal", "sync",

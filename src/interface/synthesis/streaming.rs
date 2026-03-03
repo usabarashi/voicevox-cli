@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rodio::{Decoder, Sink};
+use rodio::{Decoder, Player};
 use std::io::Cursor;
 
 use crate::config::Config;
@@ -95,7 +95,7 @@ impl StreamingSynthesizer {
     /// # Errors
     ///
     /// Returns an error if any audio segment cannot be decoded.
-    pub fn append_segments_to_sink(&self, wav_segments: &[Vec<u8>], sink: &Sink) -> Result<()> {
+    pub fn append_segments_to_sink(&self, wav_segments: &[Vec<u8>], sink: &Player) -> Result<()> {
         for (i, wav_data) in wav_segments.iter().enumerate() {
             let cursor = Cursor::new(wav_data.clone());
             let source = Decoder::new(cursor)
@@ -118,7 +118,7 @@ impl StreamingSynthesizer {
         text: &str,
         style_id: u32,
         rate: f32,
-        sink: &Sink,
+        sink: &Player,
     ) -> Result<()> {
         let wav_segments = self
             .request_streaming_synthesis_segments(text, style_id, rate)

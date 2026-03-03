@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use rodio::Sink;
+use rodio::Player;
 use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
@@ -46,9 +46,9 @@ async fn play_low_latency_with_cancel(
     wav_data: Vec<u8>,
     cancel_rx: &mut oneshot::Receiver<String>,
 ) -> Result<PlaybackOutcome> {
-    let stream = rodio::OutputStreamBuilder::open_default_stream()
+    let stream = rodio::DeviceSinkBuilder::open_default_sink()
         .context("Failed to create audio output stream")?;
-    let sink = Arc::new(Sink::connect_new(stream.mixer()));
+    let sink = Arc::new(Player::connect_new(stream.mixer()));
     let _stream_guard = stream;
 
     let cursor = std::io::Cursor::new(wav_data);

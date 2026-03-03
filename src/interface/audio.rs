@@ -31,10 +31,10 @@ pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
 }
 
 fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
-    use rodio::{Decoder, Sink};
+    use rodio::{Decoder, Player};
     use std::io::Cursor;
 
-    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+    let Ok(stream) = rodio::DeviceSinkBuilder::open_default_sink() else {
         return play_audio_via_system(wav_data);
     };
 
@@ -42,7 +42,7 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
         return play_audio_via_system(wav_data);
     };
 
-    let sink = Sink::connect_new(stream.mixer());
+    let sink = Player::connect_new(stream.mixer());
     sink.append(source);
     sink.play();
     sink.sleep_until_end();

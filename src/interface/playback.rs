@@ -70,11 +70,18 @@ async fn play_low_latency_with_cancel(
             res.context("Audio playback task failed")??;
             Ok(PlaybackOutcome::Completed)
         }
-        reason = cancel_rx => {
-            let reason = reason.unwrap_or_default();
-            sink.stop();
-            let _ = playback_task.await;
-            Ok(PlaybackOutcome::Cancelled(reason))
+        result = cancel_rx => {
+            match result {
+                Ok(reason) => {
+                    sink.stop();
+                    let _ = playback_task.await;
+                    Ok(PlaybackOutcome::Cancelled(reason))
+                }
+                Err(_) => {
+                    playback_task.await.context("Audio playback task failed")??;
+                    Ok(PlaybackOutcome::Completed)
+                }
+            }
         }
     }
 }
@@ -125,11 +132,28 @@ async fn run_player_with_cancel(
                 ))
             }
         }
-        reason = cancel_rx => {
-            let reason = reason.unwrap_or_default();
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            Ok(Some(PlaybackOutcome::Cancelled(reason)))
+        result = cancel_rx => {
+            match result {
+                Ok(reason) => {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    Ok(Some(PlaybackOutcome::Cancelled(reason)))
+                }
+                Err(_) => {
+                    let status = child.wait().await
+                        .with_context(|| format!("Failed to wait for {command}"))?;
+                    if status.success() {
+                        Ok(Some(PlaybackOutcome::Completed))
+                    } else {
+                        Err(anyhow!(
+                            "{command} exited with status {}",
+                            status
+                                .code()
+                                .map_or_else(|| "terminated by signal".to_string(), |code| code.to_string())
+                        ))
+                    }
+                }
+            }
         }
     }
 }

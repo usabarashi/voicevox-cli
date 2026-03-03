@@ -81,4 +81,3 @@ pub async fn update_models_only() -> Result<UpdateOutcome> {
 pub async fn update_dictionary_only() -> Result<UpdateOutcome> {
     run_update(UpdateKind::Dictionary).await
 }
-

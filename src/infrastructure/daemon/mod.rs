@@ -1,6 +1,7 @@
 pub mod bootstrap;
 pub mod control;
 pub mod process;
+pub mod rpc;
 pub mod server;
 pub mod socket_probe;
 pub mod start_process;

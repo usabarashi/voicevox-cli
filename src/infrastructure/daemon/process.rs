@@ -7,18 +7,8 @@ use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::process;
 
-fn allow_unsafe_path_commands() -> bool {
-    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
-}
-
 fn pgrep_command_path() -> &'static str {
-    if Path::new("/usr/bin/pgrep").is_file() {
-        "/usr/bin/pgrep"
-    } else if allow_unsafe_path_commands() {
-        "pgrep"
-    } else {
-        "/usr/bin/pgrep"
-    }
+    crate::config::command_path_or_fallback(crate::config::SYSTEM_PGREP_PATH, "pgrep")
 }
 
 fn current_uid_string() -> String {
@@ -41,7 +31,7 @@ fn parse_other_pids(stdout: &[u8]) -> Vec<u32> {
         let pid = unsafe { libc::getppid() };
         u32::try_from(pid).ok()
     };
-    let detach_parent_pid = std::env::var("VOICEVOX_DETACH_PARENT_PID")
+    let detach_parent_pid = std::env::var(crate::config::ENV_VOICEVOX_DETACH_PARENT_PID)
         .ok()
         .and_then(|pid| pid.parse::<u32>().ok());
 

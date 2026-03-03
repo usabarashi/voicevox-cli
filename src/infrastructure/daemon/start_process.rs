@@ -24,7 +24,7 @@ pub fn find_daemon_binary() -> Result<PathBuf, DaemonError> {
         }
     }
 
-    if std::env::var_os("VOICEVOX_ALLOW_UNSAFE_DAEMON_LOOKUP").is_some() {
+    if std::env::var_os(crate::config::ENV_VOICEVOX_ALLOW_UNSAFE_DAEMON_LOOKUP).is_some() {
         return [
             PathBuf::from("./target/debug/voicevox-daemon"),
             PathBuf::from("./target/release/voicevox-daemon"),
@@ -39,7 +39,7 @@ pub fn find_daemon_binary() -> Result<PathBuf, DaemonError> {
 }
 
 fn find_in_path(binary_name: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|path_var| {
+    std::env::var_os(crate::config::ENV_PATH).and_then(|path_var| {
         std::env::split_paths(&path_var)
             .map(|dir| dir.join(binary_name))
             .find(|candidate| candidate.is_file())

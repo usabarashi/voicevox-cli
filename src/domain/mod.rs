@@ -1,7 +1,7 @@
-pub mod daemon_control;
-pub mod inspect_output;
-pub mod say_phase;
-pub mod startup_phase;
+pub mod daemon;
+pub mod inspect;
+pub mod mcp;
+pub mod startup;
 pub mod synthesis;
 pub mod text_to_speech;
-pub mod voice_style;
+pub mod voice;

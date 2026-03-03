@@ -59,7 +59,7 @@ async fn run_downloader_for_resources(
 fn maybe_set_ort_dylib_path(missing_resources: &[&str]) {
     if missing_resources.contains(&"onnxruntime") {
         if let Ok(ort_path) = find_onnxruntime() {
-            std::env::set_var("ORT_DYLIB_PATH", ort_path);
+            std::env::set_var(crate::config::ENV_ORT_DYLIB_PATH, ort_path);
         }
     }
 }

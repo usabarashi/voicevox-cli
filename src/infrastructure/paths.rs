@@ -1,22 +1,22 @@
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
-const APP_NAME: &str = "voicevox";
 const MODELS_SUBDIR: &str = "models";
 const VVM_SUBDIR: &str = "vvms";
 const OPENJTALK_DICT_SUBDIR: &str = "openjtalk_dict";
 const ONNXRUNTIME_SUBDIR: &str = "onnxruntime/lib";
 const DICT_SUBDIR: &str = "dict";
-const SOCKET_FILENAME: &str = "voicevox-daemon.sock";
-const MODELS_DIR_ENV_VAR: &str = "VOICEVOX_MODELS_DIR";
 
 fn xdg_app_data_dirs() -> [Option<PathBuf>; 3] {
     [
-        std::env::var("XDG_DATA_HOME")
+        std::env::var(crate::config::ENV_XDG_DATA_HOME)
             .ok()
-            .map(|p| PathBuf::from(p).join(APP_NAME)),
-        dirs::data_local_dir().map(|d| d.join(APP_NAME)),
-        dirs::home_dir().map(|h| h.join(".local/share").join(APP_NAME)),
+            .map(|p| PathBuf::from(p).join(crate::config::APP_NAME)),
+        dirs::data_local_dir().map(|d| d.join(crate::config::APP_NAME)),
+        dirs::home_dir().map(|h| {
+            h.join(crate::config::USER_LOCAL_SHARE_DIR)
+                .join(crate::config::APP_NAME)
+        }),
     ]
 }
 
@@ -83,39 +83,50 @@ fn is_valid_onnxruntime_filename(filename: &str) -> bool {
 /// Priority: $`XDG_DATA_HOME/voicevox` > ~/.local/share/voicevox
 #[must_use]
 pub fn get_default_voicevox_dir() -> PathBuf {
-    std::env::var("XDG_DATA_HOME")
+    std::env::var(crate::config::ENV_XDG_DATA_HOME)
         .ok()
-        .map(|p| PathBuf::from(p).join(APP_NAME))
-        .or_else(|| dirs::data_local_dir().map(|d| d.join(APP_NAME)))
-        .or_else(|| dirs::home_dir().map(|h| h.join(".local/share").join(APP_NAME)))
-        .unwrap_or_else(|| PathBuf::from(".").join(APP_NAME))
+        .map(|p| PathBuf::from(p).join(crate::config::APP_NAME))
+        .or_else(|| dirs::data_local_dir().map(|d| d.join(crate::config::APP_NAME)))
+        .or_else(|| {
+            dirs::home_dir().map(|h| {
+                h.join(crate::config::USER_LOCAL_SHARE_DIR)
+                    .join(crate::config::APP_NAME)
+            })
+        })
+        .unwrap_or_else(|| PathBuf::from(".").join(crate::config::APP_NAME))
 }
 
 #[must_use]
 pub fn get_socket_path() -> PathBuf {
-    std::env::var_os("VOICEVOX_SOCKET_PATH")
+    std::env::var_os(crate::config::ENV_VOICEVOX_SOCKET_PATH)
         .map(PathBuf::from)
         .or_else(|| {
-            ["XDG_RUNTIME_DIR", "XDG_STATE_HOME"]
-                .into_iter()
-                .find_map(std::env::var_os)
-                .map(PathBuf::from)
-                .filter(|path| path.is_dir())
-                .map(|base| base.join(APP_NAME).join(SOCKET_FILENAME))
+            [
+                crate::config::ENV_XDG_RUNTIME_DIR,
+                crate::config::ENV_XDG_STATE_HOME,
+            ]
+            .into_iter()
+            .find_map(std::env::var_os)
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+            .map(|base| {
+                base.join(crate::config::APP_NAME)
+                    .join(crate::config::SOCKET_FILENAME)
+            })
         })
         .or_else(|| {
-            std::env::var_os("HOME").map(|h| {
+            std::env::var_os(crate::config::ENV_HOME).map(|h| {
                 PathBuf::from(h)
-                    .join(".local/state")
-                    .join(APP_NAME)
-                    .join(SOCKET_FILENAME)
+                    .join(crate::config::USER_LOCAL_STATE_DIR)
+                    .join(crate::config::APP_NAME)
+                    .join(crate::config::SOCKET_FILENAME)
             })
         })
         .unwrap_or_else(|| {
             dirs::state_dir()
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join(APP_NAME)
-                .join(SOCKET_FILENAME)
+                .unwrap_or_else(|| PathBuf::from(crate::config::DEFAULT_TMP_DIR))
+                .join(crate::config::APP_NAME)
+                .join(crate::config::SOCKET_FILENAME)
         })
 }
 
@@ -126,7 +137,7 @@ pub fn get_socket_path() -> PathBuf {
 /// Returns an error if no plausible models directory can be found.
 pub fn find_models_dir() -> Result<PathBuf> {
     let xdg_dirs = xdg_app_data_dirs();
-    existing_dir_from_env(MODELS_DIR_ENV_VAR)
+    existing_dir_from_env(crate::config::ENV_VOICEVOX_MODELS_DIR)
         .or_else(|| {
             xdg_dirs
                 .iter()
@@ -171,7 +182,7 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
 ///
 /// Returns an error if no installed dictionary can be located.
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
-    existing_dir_from_env("VOICEVOX_OPENJTALK_DICT")
+    existing_dir_from_env(crate::config::ENV_VOICEVOX_OPENJTALK_DICT)
         .or_else(|| {
             std::env::current_exe()
                 .ok()
@@ -247,7 +258,7 @@ fn first_onnx_library_in(lib_dir: &Path) -> Option<PathBuf> {
 /// Validates ORT_DYLIB_PATH env var: checks file existence, filename validity,
 /// and resolves symlinks.
 fn validated_ort_dylib_path() -> Option<PathBuf> {
-    std::env::var("ORT_DYLIB_PATH")
+    std::env::var(crate::config::ENV_ORT_DYLIB_PATH)
         .ok()
         .map(PathBuf::from)
         .filter(|p| p.is_file())
@@ -275,7 +286,7 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                 .find_map(|lib_dir| first_onnx_library_in(&lib_dir))
         })
         .or_else(|| {
-            ["/usr/local/share/voicevox/lib", "/opt/voicevox/lib"]
+            crate::config::SYSTEM_VOICEVOX_LIB_DIRS
                 .into_iter()
                 .map(Path::new)
                 .find_map(first_onnx_library_in)

@@ -1,11 +1,10 @@
-use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
+use voicevox_cli::domain::daemon::{DaemonCliFlags, DaemonControlCommand, DaemonStartMode};
 use voicevox_cli::infrastructure::paths::get_socket_path;
-use voicevox_cli::interface::cli::{
-    run_daemon_cli, DaemonCliFlags, DaemonControlCommand, DaemonStartMode,
-};
+use voicevox_cli::interface::cli::daemon_cli::run_daemon_cli;
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]
@@ -66,7 +65,13 @@ impl CliArgs {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExitCode {
     let args = CliArgs::parse();
-    run_daemon_cli(args.socket_path(), args.to_daemon_flags()).await
+    match run_daemon_cli(args.socket_path(), args.to_daemon_flags()).await {
+        Ok(code) => ExitCode::from(code as u8),
+        Err(error) => {
+            eprintln!("Error: {error}");
+            ExitCode::from(1)
+        }
+    }
 }

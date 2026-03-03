@@ -3,23 +3,15 @@ use std::process::Command;
 use std::{env, io::Write};
 use tempfile::{Builder, NamedTempFile};
 
-fn allow_unsafe_path_commands() -> bool {
-    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
-}
-
-fn preferred_audio_players() -> Vec<&'static str> {
+pub(crate) fn preferred_audio_players() -> Vec<&'static str> {
     let mut players = Vec::new();
-    for path in [
-        "/usr/bin/afplay",
-        "/opt/homebrew/bin/play",
-        "/usr/local/bin/play",
-    ] {
+    for path in crate::config::SYSTEM_AUDIO_PLAYER_PATHS {
         if std::path::Path::new(path).is_file() {
             players.push(path);
         }
     }
-    if allow_unsafe_path_commands() {
-        players.extend(["afplay", "play"]);
+    if crate::config::allow_unsafe_path_commands() {
+        players.extend(crate::config::FALLBACK_AUDIO_PLAYERS);
     }
     players
 }
@@ -31,7 +23,7 @@ fn preferred_audio_players() -> Vec<&'static str> {
 /// Returns an error if audio decoding/playback fails and no compatible system player
 /// (such as `afplay` or `play`) succeeds.
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
-    if env::var("VOICEVOX_LOW_LATENCY").is_ok() {
+    if env::var(crate::config::ENV_VOICEVOX_LOW_LATENCY).is_ok() {
         play_audio_via_rodio(wav_data)
     } else {
         play_audio_via_system(wav_data)

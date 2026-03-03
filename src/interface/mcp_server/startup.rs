@@ -1,7 +1,7 @@
-use crate::domain::startup_phase::McpStartupPhase;
+use crate::domain::mcp::McpStartupPhase;
+use crate::infrastructure::daemon::rpc::DaemonAutoStartPolicy;
 use crate::infrastructure::daemon::{ensure_daemon_running, DaemonError, DaemonResult};
 use crate::infrastructure::paths::get_socket_path;
-use crate::interface::cli::DaemonAutoStartPolicy;
 use crate::interface::{AppOutput, StdAppOutput};
 use anyhow::Result;
 use std::io;

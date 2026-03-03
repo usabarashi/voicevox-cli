@@ -2,8 +2,9 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::domain::synthesis::{validate_basic_request, SynthesisPhase, TextSynthesisRequest};
-use crate::interface::cli::synthesis::daemon_synthesis::request_daemon_synthesis_bytes;
-use crate::interface::cli::{ensure_models_available, missing_startup_resources, DaemonRpcClient};
+use crate::infrastructure::daemon::rpc::DaemonRpcClient;
+use crate::interface::cli::download::{ensure_models_available, missing_startup_resources};
+use crate::interface::cli::synthesis::daemon::DaemonSynthesizer;
 use crate::interface::AppOutput;
 
 #[derive(Default, Clone, Copy)]
@@ -62,10 +63,10 @@ pub async fn synthesize_bytes_via_daemon(
     output: &dyn AppOutput,
 ) -> Result<Vec<u8>> {
     let mut phase = SynthesisPhase::Validate;
-    let mut client: Option<DaemonRpcClient> = None;
+    let mut synthesizer: Option<DaemonSynthesizer> = None;
 
     loop {
-        match run_synthesis_phase(phase, request, output, &mut client).await? {
+        match run_synthesis_phase(phase, request, output, &mut synthesizer).await? {
             SynthesisStep::Next(next) => phase = next,
             SynthesisStep::Done(wav_data) => return Ok(wav_data),
         }
@@ -81,7 +82,7 @@ async fn run_synthesis_phase(
     phase: SynthesisPhase,
     request: &DaemonSynthesisBytesRequest<'_>,
     output: &dyn AppOutput,
-    client: &mut Option<DaemonRpcClient>,
+    synthesizer: &mut Option<DaemonSynthesizer>,
 ) -> Result<SynthesisStep> {
     match phase {
         SynthesisPhase::Validate => {
@@ -93,19 +94,20 @@ async fn run_synthesis_phase(
             Ok(SynthesisStep::Next(SynthesisPhase::Connect))
         }
         SynthesisPhase::Connect => {
-            *client = Some(connect_daemon_rpc_auto_start(request.socket_path).await?);
+            let client = connect_daemon_rpc_auto_start(request.socket_path).await?;
+            *synthesizer = Some(DaemonSynthesizer::new_with_client(client));
             Ok(SynthesisStep::Next(SynthesisPhase::Synthesize))
         }
         SynthesisPhase::Synthesize => {
-            let mut client = client
+            let mut synthesizer = synthesizer
                 .take()
-                .expect("client must exist in synthesize phase");
+                .expect("synthesizer must exist in synthesize phase");
             let synth_req = TextSynthesisRequest {
                 text: request.text,
                 style_id: request.style_id,
                 rate: request.rate,
             };
-            let wav_data = request_daemon_synthesis_bytes(&mut client, &synth_req).await?;
+            let wav_data = synthesizer.synthesize_bytes(&synth_req).await?;
             Ok(SynthesisStep::Done(wav_data))
         }
     }

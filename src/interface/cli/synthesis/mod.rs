@@ -1,14 +1,12 @@
-pub mod daemon_synthesis;
-pub mod streaming_synthesis;
-pub mod synthesis_flow;
-pub mod synthesis_mode;
+pub mod daemon;
+pub mod flow;
+pub mod mode;
+pub mod streaming;
 
-pub use daemon_synthesis::{
-    request_daemon_synthesis_bytes, request_streaming_synthesis_segments, stream_synthesis_to_sink,
-};
-pub use streaming_synthesis::StreamingSynthesizer;
-pub use synthesis_flow::{
+pub use daemon::DaemonSynthesizer;
+pub use flow::{
     connect_daemon_rpc_auto_start, synthesize_bytes_via_daemon, validate_text_synthesis_request,
     DaemonSynthesisBytesRequest, NoopAppOutput,
 };
-pub use synthesis_mode::{select_synthesis_mode, select_synthesis_mode_with_config, SynthesisMode};
+pub use mode::{select_synthesis_mode, select_synthesis_mode_with_config, SynthesisMode};
+pub use streaming::StreamingSynthesizer;

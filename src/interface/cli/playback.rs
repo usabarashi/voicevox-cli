@@ -3,7 +3,9 @@ use rodio::Sink;
 use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
-use crate::interface::cli::audio::{create_temp_wav_file, play_audio_from_memory};
+use crate::interface::cli::audio::{
+    create_temp_wav_file, play_audio_from_memory, preferred_audio_players,
+};
 
 pub enum PlaybackOutcome {
     Completed,
@@ -17,27 +19,6 @@ pub struct PlaybackRequest<'a> {
     pub cancel_rx: Option<oneshot::Receiver<String>>,
 }
 
-fn allow_unsafe_path_commands() -> bool {
-    std::env::var_os("VOICEVOX_ALLOW_UNSAFE_PATH_COMMANDS").is_some()
-}
-
-fn preferred_audio_players() -> Vec<&'static str> {
-    let mut players = Vec::new();
-    for path in [
-        "/usr/bin/afplay",
-        "/opt/homebrew/bin/play",
-        "/usr/local/bin/play",
-    ] {
-        if std::path::Path::new(path).is_file() {
-            players.push(path);
-        }
-    }
-    if allow_unsafe_path_commands() {
-        players.extend(["afplay", "play"]);
-    }
-    players
-}
-
 #[allow(clippy::future_not_send)]
 pub async fn emit_and_play(request: PlaybackRequest<'_>) -> Result<PlaybackOutcome> {
     if let Some(output_file) = request.output_file {
@@ -49,7 +30,7 @@ pub async fn emit_and_play(request: PlaybackRequest<'_>) -> Result<PlaybackOutco
     }
 
     if let Some(mut cancel_rx) = request.cancel_rx {
-        if env::var("VOICEVOX_LOW_LATENCY").is_ok() {
+        if env::var(crate::config::ENV_VOICEVOX_LOW_LATENCY).is_ok() {
             play_low_latency_with_cancel(request.wav_data.to_vec(), &mut cancel_rx).await
         } else {
             play_system_player_with_cancel(request.wav_data, &mut cancel_rx).await

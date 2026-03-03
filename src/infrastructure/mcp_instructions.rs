@@ -1,12 +1,8 @@
 use std::path::PathBuf;
 
-const INSTRUCTIONS_ENV: &str = "VOICEVOX_MCP_INSTRUCTIONS";
-const INSTRUCTIONS_FILE: &str = "VOICEVOX.md";
-const APP_NAME: &str = "voicevox";
-
 #[must_use]
 pub fn load_mcp_instructions() -> Option<String> {
-    if let Ok(inline) = std::env::var(INSTRUCTIONS_ENV) {
+    if let Ok(inline) = std::env::var(crate::config::ENV_VOICEVOX_MCP_INSTRUCTIONS) {
         let trimmed = inline.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_string());
@@ -23,22 +19,26 @@ pub fn load_mcp_instructions() -> Option<String> {
 fn instruction_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
-    if let Some(config_home) = std::env::var_os("XDG_CONFIG_HOME") {
+    if let Some(config_home) = std::env::var_os(crate::config::ENV_XDG_CONFIG_HOME) {
         candidates.push(
             PathBuf::from(config_home)
-                .join(APP_NAME)
-                .join(INSTRUCTIONS_FILE),
+                .join(crate::config::APP_NAME)
+                .join(crate::config::MCP_INSTRUCTIONS_FILE),
         );
     } else if let Some(home) = dirs::home_dir() {
-        candidates.push(home.join(".config").join(APP_NAME).join(INSTRUCTIONS_FILE));
+        candidates.push(
+            home.join(crate::config::USER_CONFIG_DIR)
+                .join(crate::config::APP_NAME)
+                .join(crate::config::MCP_INSTRUCTIONS_FILE),
+        );
     }
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            candidates.push(parent.join(INSTRUCTIONS_FILE));
+            candidates.push(parent.join(crate::config::MCP_INSTRUCTIONS_FILE));
         }
     }
 
-    candidates.push(PathBuf::from(INSTRUCTIONS_FILE));
+    candidates.push(PathBuf::from(crate::config::MCP_INSTRUCTIONS_FILE));
     candidates
 }

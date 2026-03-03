@@ -1,10 +1,10 @@
-mod error;
+pub mod error;
 mod launcher;
-mod policy;
-mod rpc;
+pub mod policy;
 mod transport;
 
 use anyhow::{anyhow, Result};
+use std::collections::HashMap;
 use std::path::Path;
 use tokio::net::UnixStream;
 
@@ -15,11 +15,9 @@ use crate::interface::ipc::{OwnedRequest, OwnedResponse, OwnedSynthesizeOptions}
 pub use crate::infrastructure::daemon::find_daemon_binary;
 pub use error::{
     daemon_response_error, daemon_rpc_exit_code, find_daemon_rpc_error,
-    format_daemon_rpc_error_for_cli, format_daemon_rpc_error_for_mcp, infer_voice_target_state,
-    DaemonRpcError, VoiceTargetState,
+    format_daemon_rpc_error_for_cli, infer_voice_target_state, DaemonRpcError, VoiceTargetState,
 };
 pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
-pub use rpc::{daemon_mode, list_speakers_daemon};
 
 fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {
     anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")
@@ -34,20 +32,10 @@ impl DaemonRpcClient {
         Ok(Self { stream })
     }
 
-    /// Connects to the daemon using the default socket path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the daemon socket cannot be reached.
     pub async fn new() -> Result<Self> {
         Self::new_at(&get_socket_path()).await
     }
 
-    /// Connects to the daemon using an explicit socket path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the daemon socket cannot be reached.
     pub async fn new_at(socket_path: &Path) -> Result<Self> {
         let stream = transport::connect_socket_with_timeout(
             socket_path,
@@ -57,20 +45,10 @@ impl DaemonRpcClient {
         Self::from_stream(stream).await
     }
 
-    /// Connects to the daemon with retry/backoff behavior.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if all retry attempts fail.
     pub async fn connect_with_retry() -> Result<Self> {
         Self::connect_with_retry_at(&get_socket_path()).await
     }
 
-    /// Connects to the daemon with retry/backoff behavior using an explicit socket path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if all retry attempts fail.
     pub async fn connect_with_retry_at(socket_path: &Path) -> Result<Self> {
         let policy = DaemonConnectRetryPolicy::default();
         let stream = transport::connect_with_retry(
@@ -82,20 +60,10 @@ impl DaemonRpcClient {
         Self::from_stream(stream).await
     }
 
-    /// Creates a new `DaemonRpcClient` with automatic daemon startup if not running.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no models are available, daemon startup fails, or connection fails.
     pub async fn new_with_auto_start() -> Result<Self> {
         Self::new_with_auto_start_at(&get_socket_path()).await
     }
 
-    /// Creates a new `DaemonRpcClient` with automatic daemon startup using an explicit socket path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no models are available, daemon startup fails, or connection fails.
     pub async fn new_with_auto_start_at(socket_path: &Path) -> Result<Self> {
         let stream = launcher::connect_or_start(socket_path).await?;
         Self::from_stream(stream).await
@@ -108,12 +76,6 @@ impl DaemonRpcClient {
         transport::send_request_and_receive_response(&mut self.stream, &request).await
     }
 
-    /// Sends a synthesis request and returns the generated WAV bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if request transmission fails, the response is invalid, or the
-    /// daemon reports a synthesis error.
     pub async fn synthesize(
         &mut self,
         text: &str,
@@ -138,12 +100,6 @@ impl DaemonRpcClient {
         }
     }
 
-    /// Fetches speakers from the daemon.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if request/response I/O fails, decoding fails, or the daemon
-    /// returns an error response.
     pub async fn list_speakers(&mut self) -> Result<Vec<Speaker>> {
         match self
             .send_request_and_receive_response(OwnedRequest::ListSpeakers)
@@ -160,12 +116,25 @@ impl DaemonRpcClient {
         }
     }
 
-    /// Fetches available models from the daemon.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if request/response I/O fails, decoding fails, or the daemon
-    /// returns an error response.
+    pub async fn list_speakers_with_models(&mut self) -> Result<(Vec<Speaker>, HashMap<u32, u32>)> {
+        match self
+            .send_request_and_receive_response(OwnedRequest::ListSpeakers)
+            .await?
+        {
+            OwnedResponse::SpeakersListWithModels {
+                speakers,
+                style_to_model,
+            } => Ok((speakers, style_to_model)),
+            OwnedResponse::Error { code, message } => {
+                Err(daemon_response_error("List speakers error", code, &message))
+            }
+            _ => Err(unexpected_daemon_response(
+                "listing speakers with model mapping",
+                "SpeakersListWithModels or Error",
+            )),
+        }
+    }
+
     pub async fn list_models(&mut self) -> Result<Vec<AvailableModel>> {
         match self
             .send_request_and_receive_response(OwnedRequest::ListModels)

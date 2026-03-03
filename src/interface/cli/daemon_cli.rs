@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::Duration;
 
-use crate::domain::daemon_control::{
+use crate::domain::daemon::{
     daemon_not_running_lines, daemon_socket_line, daemon_start_banner_lines, daemon_usage_lines,
     decide_daemon_invocation, DaemonCliFlags, DaemonInvocation,
 };
@@ -104,7 +104,10 @@ async fn maybe_detach(
 
     let child = ProcessCommand::new(&args[0])
         .args(&args[1..])
-        .env("VOICEVOX_DETACH_PARENT_PID", std::process::id().to_string())
+        .env(
+            crate::config::ENV_VOICEVOX_DETACH_PARENT_PID,
+            std::process::id().to_string(),
+        )
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -294,7 +297,7 @@ async fn handle_status_daemon_with_os(
 /// # Errors
 ///
 /// Returns an error if command dispatch or daemon runtime fails.
-pub async fn run_daemon_cli(socket_path: PathBuf, flags: DaemonCliFlags) -> Result<()> {
+pub async fn run_daemon_cli(socket_path: PathBuf, flags: DaemonCliFlags) -> Result<i32> {
     let output = StdAppOutput;
     run_daemon_cli_with_output(socket_path, flags, &output).await
 }
@@ -303,21 +306,23 @@ pub async fn run_daemon_cli_with_output(
     socket_path: PathBuf,
     flags: DaemonCliFlags,
     output: &dyn AppOutput,
-) -> Result<()> {
+) -> Result<i32> {
     if maybe_handle_control_commands(&socket_path, flags, output).await? {
-        return Ok(());
+        return Ok(0);
     }
 
     if let ExecutionDecision::Exit(code) = maybe_detach(&socket_path, flags, output).await {
-        std::process::exit(code);
+        return Ok(code);
     }
 
     if let Err(error) = ensure_startup_preconditions(&socket_path).await {
-        std::process::exit(report_startup_error(&error, output));
+        return Ok(report_startup_error(&error, output));
     }
 
     print_daemon_start_banner(&socket_path, output);
-    crate::infrastructure::daemon::run_daemon(socket_path, flags.start_mode.is_foreground()).await
+    crate::infrastructure::daemon::run_daemon(socket_path, flags.start_mode.is_foreground())
+        .await?;
+    Ok(0)
 }
 
 #[cfg(test)]

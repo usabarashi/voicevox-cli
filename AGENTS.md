@@ -59,4 +59,5 @@ VOICEVOX CLI design and implementation guidelines.
 
 - `nix flake check` uses the Git-tracked flake source snapshot.
 - New files may be excluded until tracked (for example `git add -N <path>`).
+- TLC is available via the `tlc` command in this environment.
 - MCP instruction loading behavior is defined by the implementation and `VOICEVOX.md`; keep `AGENTS.md` focused on design/implementation guidance.

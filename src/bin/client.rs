@@ -3,16 +3,16 @@ use clap::{ArgGroup, Parser};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use voicevox_cli::infrastructure::daemon::rpc::{
+    daemon_rpc_exit_code, find_daemon_rpc_error, format_daemon_rpc_error_for_cli,
+};
 use voicevox_cli::infrastructure::paths::get_socket_path;
 use voicevox_cli::infrastructure::voicevox::{print_voice_help, resolve_voice_dynamic};
-use voicevox_cli::interface::cli::{
-    daemon_rpc_exit_code, find_daemon_rpc_error, format_daemon_rpc_error_for_cli,
-    get_input_text_from_sources,
+use voicevox_cli::interface::cli::input::get_input_text_from_sources;
+use voicevox_cli::interface::cli::inspect::{
+    run_list_models_command, run_list_speakers_command, run_status_command,
 };
-use voicevox_cli::interface::cli::{
-    run_list_models_command, run_list_speakers_command, run_say_synthesis, run_status_command,
-    SaySynthesisRequest,
-};
+use voicevox_cli::interface::cli::say::{run_say_synthesis, SaySynthesisRequest};
 use voicevox_cli::interface::ipc::DEFAULT_SYNTHESIS_RATE;
 
 // Clap option flags are intentionally represented as booleans.

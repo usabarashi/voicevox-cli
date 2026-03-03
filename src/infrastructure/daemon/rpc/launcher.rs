@@ -6,7 +6,7 @@ use super::policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 use super::transport::{
     connect_socket_with_timeout, connect_with_retry, DAEMON_CONNECTION_TIMEOUT,
 };
-use crate::domain::startup_phase::StartupPhase;
+use crate::domain::startup::StartupPhase;
 use crate::infrastructure::daemon::{
     ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
 };
@@ -16,7 +16,7 @@ async fn connect_once(socket_path: &Path) -> Result<UnixStream> {
 }
 
 fn validate_startup_preconditions() -> Result<()> {
-    let missing = crate::interface::cli::missing_startup_resources();
+    let missing = crate::infrastructure::download::missing_startup_resources();
     if !missing.is_empty() {
         let resources = missing.join(", ");
         return Err(anyhow!(

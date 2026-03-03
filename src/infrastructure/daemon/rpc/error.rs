@@ -61,27 +61,6 @@ pub fn infer_voice_target_state(error: &anyhow::Error) -> VoiceTargetState {
     }
 }
 
-pub fn format_daemon_rpc_error_for_mcp(error: &anyhow::Error) -> String {
-    let Some(daemon_error) = find_daemon_rpc_error(error) else {
-        return format!("Failed to reach VOICEVOX daemon or synthesize audio: {error}");
-    };
-
-    match daemon_error.code() {
-        DaemonErrorCode::InvalidTargetId => {
-            format!("Invalid style/model ID: {}", daemon_error.message())
-        }
-        DaemonErrorCode::ModelLoadFailed => {
-            format!("VOICEVOX model load failed: {}", daemon_error.message())
-        }
-        DaemonErrorCode::SynthesisFailed => {
-            format!("VOICEVOX synthesis failed: {}", daemon_error.message())
-        }
-        DaemonErrorCode::Internal => {
-            format!("VOICEVOX daemon internal error: {}", daemon_error.message())
-        }
-    }
-}
-
 pub fn format_daemon_rpc_error_for_cli(error: &anyhow::Error) -> String {
     let Some(daemon_error) = find_daemon_rpc_error(error) else {
         return format!("Synthesis request failed: {error}");
@@ -130,20 +109,6 @@ mod tests {
         let daemon_err = find_daemon_rpc_error(&wrapped).expect("daemon rpc error in chain");
         assert_eq!(daemon_err.code(), DaemonErrorCode::InvalidTargetId);
         assert_eq!(daemon_err.message(), "bad id");
-    }
-
-    #[test]
-    fn formats_structured_errors_for_mcp() {
-        let err = daemon_response_error(
-            "Synthesis error",
-            DaemonErrorCode::ModelLoadFailed,
-            "model 7 missing",
-        );
-        let wrapped = err.context("wrapper");
-
-        let text = format_daemon_rpc_error_for_mcp(&wrapped);
-        assert!(text.contains("model load failed"));
-        assert!(text.contains("model 7 missing"));
     }
 
     #[test]

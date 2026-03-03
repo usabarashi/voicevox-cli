@@ -4,7 +4,7 @@ use std::io::Cursor;
 
 use crate::config::Config;
 use crate::domain::synthesis::{TextSegmenter, TextSplitter};
-use crate::interface::cli::daemon_rpc::DaemonRpcClient;
+use crate::infrastructure::daemon::rpc::DaemonRpcClient;
 
 pub struct StreamingSynthesizer {
     daemon_rpc: DaemonRpcClient,

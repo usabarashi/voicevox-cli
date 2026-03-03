@@ -1,13 +1,14 @@
 use anyhow::{Context, Result};
 
 use crate::config::Config;
-use crate::interface::cli::daemon_rpc::DaemonRpcClient;
+use crate::infrastructure::daemon::rpc::DaemonRpcClient;
 
-use super::streaming_synthesis::StreamingSynthesizer;
+use super::daemon::DaemonSynthesizer;
+use super::streaming::StreamingSynthesizer;
 
 pub enum SynthesisMode {
     Streaming(StreamingSynthesizer),
-    Daemon(DaemonRpcClient),
+    Daemon(DaemonSynthesizer),
 }
 
 async fn connect_daemon_rpc_with_retry_context() -> Result<DaemonRpcClient> {
@@ -40,6 +41,8 @@ pub async fn select_synthesis_mode_with_config(
             StreamingSynthesizer::new_with_client_and_config(client, config)?,
         ))
     } else {
-        Ok(SynthesisMode::Daemon(client))
+        Ok(SynthesisMode::Daemon(DaemonSynthesizer::new_with_client(
+            client,
+        )))
     }
 }

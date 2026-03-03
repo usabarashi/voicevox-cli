@@ -1,15 +1,15 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::domain::inspect_output::{
+use crate::domain::inspect::{
     list_models_lines, missing_status_lines, status_models_lines, InstalledModelView, ModelView,
     NO_MODELS_MESSAGE,
 };
+use crate::infrastructure::daemon::rpc::DaemonRpcClient;
 use crate::infrastructure::voicevox::{
     format_speakers_output, scan_available_models, AvailableModel, Speaker,
 };
-use crate::interface::cli::connect_daemon_rpc_auto_start;
-use crate::interface::cli::list_speakers_daemon;
+use crate::interface::cli::synthesis::flow::connect_daemon_rpc_auto_start;
 use crate::interface::{AppOutput, StdAppOutput};
 
 fn print_no_models_message(output: &dyn AppOutput) {
@@ -145,7 +145,13 @@ pub async fn run_list_speakers_command_with_output(
     socket_path: &Path,
     output: &dyn AppOutput,
 ) -> Result<()> {
-    if list_speakers_daemon(socket_path).await.is_ok() {
+    if let Ok(mut client) = DaemonRpcClient::new_at(socket_path).await {
+        let (speakers, style_to_model) = client.list_speakers_with_models().await?;
+        output.info(&format_speakers_output(
+            "All available speakers and styles from daemon:",
+            &speakers,
+            Some(&style_to_model),
+        ));
         return Ok(());
     }
 

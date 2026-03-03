@@ -1,13 +1,14 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::domain::voice_style::{
+use super::types::{text_result, ToolCallResult};
+use crate::domain::voice::{
     filter_speakers, normalized_filters, render_voice_styles_result, ListVoiceStylesParams,
 };
-use crate::interface::cli::connect_daemon_rpc_auto_start;
-use crate::interface::mcp_server::tool_types::text_result;
+use crate::infrastructure::daemon::rpc::DaemonRpcClient;
+use crate::interface::cli::synthesis::flow::connect_daemon_rpc_auto_start;
 
-async fn connect_daemon_rpc_for_tool() -> Result<crate::interface::cli::DaemonRpcClient> {
+async fn connect_daemon_rpc_for_tool() -> Result<DaemonRpcClient> {
     let socket_path = crate::infrastructure::paths::get_socket_path();
     connect_daemon_rpc_auto_start(&socket_path)
         .await
@@ -19,9 +20,7 @@ async fn connect_daemon_rpc_for_tool() -> Result<crate::interface::cli::DaemonRp
 /// # Errors
 ///
 /// Returns an error if parameters are invalid or the daemon cannot be contacted.
-pub async fn handle_voice_style_list_tool(
-    arguments: Value,
-) -> Result<crate::interface::mcp_server::tool_types::ToolCallResult> {
+pub async fn handle_voice_style_list_tool(arguments: Value) -> Result<ToolCallResult> {
     let params: ListVoiceStylesParams =
         serde_json::from_value(arguments).context("Invalid parameters for list_voice_styles")?;
 

@@ -33,6 +33,13 @@ pub enum McpTtsPhase {
     Finish,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SayPhase {
+    Validate,
+    Synthesize,
+    Emit,
+}
+
 const fn default_rate() -> f32 {
     DEFAULT_SYNTHESIS_RATE
 }

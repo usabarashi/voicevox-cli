@@ -1,33 +1,30 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::time::Duration;
+use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
+use super::types::{audio_result, text_result, ToolCallResult};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
 use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
 use crate::domain::text_to_speech::{
     parse_synthesize_params, text_char_count, McpTtsPhase, SynthesizeParams,
 };
+use crate::infrastructure::daemon::rpc::{infer_voice_target_state, VoiceTargetState};
 use crate::infrastructure::daemon::startup;
-use crate::interface::cli::{
-    emit_and_play, format_daemon_rpc_error_for_mcp, infer_voice_target_state,
-    request_streaming_synthesis_segments, select_synthesis_mode_with_config, PlaybackOutcome,
-    PlaybackRequest, SynthesisMode, VoiceTargetState,
-};
-use crate::interface::cli::{
+use crate::interface::cli::playback::{emit_and_play, PlaybackOutcome, PlaybackRequest};
+use crate::interface::cli::synthesis::flow::{
     synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput,
 };
-use crate::interface::mcp_server::speech_synthesis_messages::{
-    cancellation_result, synthesis_success_message, try_take_cancellation,
-};
-use crate::interface::mcp_server::tool_types::{audio_result, text_result};
+use crate::interface::cli::synthesis::mode::{select_synthesis_mode_with_config, SynthesisMode};
+use crate::interface::mcp_server::daemon_error::format_daemon_rpc_error_for_mcp;
 
 const MCP_DAEMON_MAX_RETRIES: u32 = 2;
 
 enum DaemonRetryStep {
     Next(McpTtsPhase),
     Finish,
-    Return(crate::interface::mcp_server::tool_types::ToolCallResult),
+    Return(ToolCallResult),
 }
 
 struct DaemonRetryContext<'a> {
@@ -49,9 +46,7 @@ struct DaemonRetryContext<'a> {
 ///
 /// Returns an error if parameter validation or synthesis fails.
 #[allow(clippy::future_not_send)]
-pub async fn handle_text_to_speech(
-    arguments: Value,
-) -> Result<crate::interface::mcp_server::tool_types::ToolCallResult> {
+pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
     handle_text_to_speech_cancellable(arguments, None).await
 }
 
@@ -66,7 +61,7 @@ pub async fn handle_text_to_speech(
 pub async fn handle_text_to_speech_cancellable(
     arguments: Value,
     cancel_rx: Option<oneshot::Receiver<String>>,
-) -> Result<crate::interface::mcp_server::tool_types::ToolCallResult> {
+) -> Result<ToolCallResult> {
     let params = parse_synthesize_params(arguments)?;
     validate_basic_request(&TextSynthesisRequest {
         text: &params.text,
@@ -81,11 +76,22 @@ pub async fn handle_text_to_speech_cancellable(
     }
 }
 
+/// Runs a potentially non-Send text-to-speech async task on a blocking worker thread.
+pub fn spawn_non_send_text_to_speech_task<F>(future_factory: F)
+where
+    F: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + Send + 'static,
+{
+    let runtime_handle = Handle::current();
+    tokio::task::spawn_blocking(move || {
+        runtime_handle.block_on(future_factory());
+    });
+}
+
 #[allow(clippy::future_not_send)]
 async fn handle_streaming_synthesis(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
-) -> Result<crate::interface::mcp_server::tool_types::ToolCallResult> {
+) -> Result<ToolCallResult> {
     let SynthesizeParams {
         text,
         style_id,
@@ -136,7 +142,8 @@ async fn do_streaming_synthesis(text: &str, style_id: u32, rate: f32) -> Result<
         style_id,
         rate,
     };
-    let wav_segments = request_streaming_synthesis_segments(&mut synthesizer, &request)
+    let wav_segments = synthesizer
+        .request_streaming_synthesis_segments(request.text, request.style_id, request.rate)
         .await
         .context("Streaming synthesis failed")?;
 
@@ -150,7 +157,7 @@ async fn do_streaming_synthesis(text: &str, style_id: u32, rate: f32) -> Result<
 async fn handle_daemon_synthesis(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
-) -> Result<crate::interface::mcp_server::tool_types::ToolCallResult> {
+) -> Result<ToolCallResult> {
     let SynthesizeParams {
         text,
         style_id,
@@ -280,11 +287,35 @@ fn is_retryable_daemon_synthesis_error(error: &anyhow::Error) -> bool {
     !matches!(infer_voice_target_state(error), VoiceTargetState::Missing)
 }
 
+fn synthesis_success_message(text_len: usize, style_id: u32) -> String {
+    format!("Synthesized {text_len} characters using style ID {style_id}")
+}
+
+fn cancellation_message(reason: &str) -> String {
+    if reason.is_empty() {
+        "Synthesis cancelled".to_string()
+    } else {
+        format!("Synthesis cancelled: {reason}")
+    }
+}
+
+fn cancellation_result(reason: String) -> ToolCallResult {
+    text_result(cancellation_message(&reason), true)
+}
+
+fn try_take_cancellation(cancel_rx: &mut oneshot::Receiver<String>) -> Option<String> {
+    match cancel_rx.try_recv() {
+        Ok(reason) => Some(reason),
+        Err(oneshot::error::TryRecvError::Closed) => Some(String::new()),
+        Err(oneshot::error::TryRecvError::Empty) => None,
+    }
+}
+
 #[allow(clippy::future_not_send)]
 async fn play_generated_audio(
     wav_data: &[u8],
     cancel_rx: Option<oneshot::Receiver<String>>,
-) -> Result<Option<crate::interface::mcp_server::tool_types::ToolCallResult>> {
+) -> Result<Option<ToolCallResult>> {
     match emit_and_play(PlaybackRequest {
         wav_data,
         output_file: None,
@@ -302,9 +333,9 @@ async fn play_generated_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interface::cli::daemon_rpc::daemon_response_error;
+    use crate::infrastructure::daemon::rpc::daemon_response_error;
     use crate::interface::ipc::DaemonErrorCode;
-    use crate::interface::mcp_server::tool_types::ToolContent;
+    use crate::interface::mcp_server::tools::types::ToolContent;
     use serde_json::json;
     use tokio::sync::oneshot;
 

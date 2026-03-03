@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::Path;
@@ -129,39 +129,6 @@ pub(crate) async fn connect_with_retry(
 
     // Final connect check without backoff sleep, matching the modeled FinalConnect step.
     connect_socket_with_timeout(socket_path, timeout_duration).await
-}
-
-pub(crate) async fn connect_daemon_with_timeout(
-    socket_path: &Path,
-    timeout_duration: Duration,
-) -> Result<UnixStream> {
-    connect_socket_with_timeout(socket_path, timeout_duration)
-        .await
-        .with_context(|| format!("Daemon connection failed at {}", socket_path.display()))
-}
-
-pub(crate) async fn request_daemon_once(
-    socket_path: &Path,
-    request: &OwnedRequest,
-    connect_timeout_duration: Duration,
-    response_timeout_duration: Duration,
-) -> Result<OwnedResponse> {
-    let stream = connect_daemon_with_timeout(socket_path, connect_timeout_duration).await?;
-    let mut framed = Framed::new(stream, daemon_response_codec());
-
-    let request_data = encode_request_frame(request)?;
-    framed
-        .send(request_data.into())
-        .await
-        .map_err(|e| anyhow!("Failed to send request: {e}"))?;
-
-    let response_frame = timeout(response_timeout_duration, framed.next())
-        .await
-        .map_err(|_| anyhow!("Daemon response timeout"))?
-        .ok_or_else(|| anyhow!("Connection closed by daemon"))?
-        .map_err(|e| anyhow!("Failed to receive response: {e}"))?;
-
-    decode_response_frame(&response_frame)
 }
 
 pub(crate) async fn send_request_and_receive_response(

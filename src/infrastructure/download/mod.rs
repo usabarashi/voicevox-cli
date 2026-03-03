@@ -38,7 +38,7 @@ pub fn has_startup_resources() -> bool {
 }
 
 pub(crate) fn default_download_target_dir() -> PathBuf {
-    std::env::var_os("HOME").map_or_else(
+    std::env::var_os(crate::config::ENV_HOME).map_or_else(
         || PathBuf::from("./voicevox"),
         |_| get_default_voicevox_dir(),
     )

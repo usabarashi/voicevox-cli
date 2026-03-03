@@ -86,6 +86,23 @@ pub struct ToolsCallParams {
     pub arguments: Value,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseRequestError {
+    pub code: i32,
+    pub message: &'static str,
+}
+
+impl ParseRequestError {
+    const fn new(code: i32, message: &'static str) -> Self {
+        Self { code, message }
+    }
+
+    #[must_use]
+    pub fn into_response(self, id: Value) -> JsonRpcResponse {
+        JsonRpcResponse::error(id, self.code, self.message)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum CancelRequestId {
@@ -150,65 +167,52 @@ pub fn serialize_success_response<T: Serialize>(id: Value, result: T) -> JsonRpc
     }
 }
 
-#[must_use]
-pub fn parse_request_message(raw: Value) -> Result<RequestMessage, JsonRpcResponse> {
+pub fn parse_request_message(raw: Value) -> Result<RequestMessage, ParseRequestError> {
     let id = raw.get("id").cloned().unwrap_or(Value::Null);
-    let method = match raw.get("method").and_then(Value::as_str) {
-        Some(method) => method,
-        None => {
-            return Err(JsonRpcResponse::error(
-                id,
-                INVALID_REQUEST,
-                "Invalid request: missing method",
-            ))
-        }
-    };
+    let method = raw
+        .get("method")
+        .and_then(Value::as_str)
+        .ok_or(ParseRequestError::new(
+            INVALID_REQUEST,
+            "Invalid request: missing method",
+        ))?;
 
     let params = raw.get("params").cloned();
     let method = match method {
         "initialize" => RequestMethod::Initialize,
         "tools/list" => RequestMethod::ToolsList,
-        "tools/call" => RequestMethod::ToolsCall(parse_tools_call_params(id.clone(), params)?),
+        "tools/call" => RequestMethod::ToolsCall(parse_tools_call_params(params)?),
         other => RequestMethod::Unknown(other.to_string()),
     };
 
     Ok(RequestMessage { id, method })
 }
 
-fn parse_tools_call_params(
-    id: Value,
-    params: Option<Value>,
-) -> Result<ToolsCallParams, JsonRpcResponse> {
-    let Some(params) = params else {
-        return Err(JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params"));
-    };
+fn parse_tools_call_params(params: Option<Value>) -> Result<ToolsCallParams, ParseRequestError> {
+    let params = params.ok_or(ParseRequestError::new(INVALID_PARAMS, "Missing params"))?;
 
     let Value::Object(mut params_obj) = params else {
-        return Err(JsonRpcResponse::error(id, INVALID_PARAMS, "Invalid params"));
+        return Err(ParseRequestError::new(INVALID_PARAMS, "Invalid params"));
     };
 
-    let Some(name) = params_obj
+    let name = params_obj
         .remove("name")
         .and_then(|v| v.as_str().map(str::to_owned))
-    else {
-        return Err(JsonRpcResponse::error(
-            id,
+        .ok_or(ParseRequestError::new(
             INVALID_PARAMS,
             "Missing or invalid tool name",
-        ));
-    };
+        ))?;
 
-    let arguments = match params_obj.remove("arguments") {
-        None => Value::Object(serde_json::Map::new()),
-        Some(Value::Object(arguments)) => Value::Object(arguments),
-        Some(_) => {
-            return Err(JsonRpcResponse::error(
-                id,
+    let arguments = params_obj.remove("arguments").map_or_else(
+        || Ok(Value::Object(serde_json::Map::new())),
+        |value| match value {
+            Value::Object(arguments) => Ok(Value::Object(arguments)),
+            _ => Err(ParseRequestError::new(
                 INVALID_PARAMS,
                 "Invalid arguments: expected object",
-            ))
-        }
-    };
+            )),
+        },
+    )?;
 
     Ok(ToolsCallParams { name, arguments })
 }
@@ -220,12 +224,9 @@ pub fn parse_notification_message(raw: Value) -> NotificationMessage {
 
     let method = match method {
         "notifications/initialized" => NotificationMethod::Initialized,
-        "notifications/cancelled" => {
-            match params.and_then(|value| serde_json::from_value::<CancelledParams>(value).ok()) {
-                Some(cancelled) => NotificationMethod::Cancelled(cancelled),
-                None => NotificationMethod::Unknown,
-            }
-        }
+        "notifications/cancelled" => params
+            .and_then(|value| serde_json::from_value::<CancelledParams>(value).ok())
+            .map_or(NotificationMethod::Unknown, NotificationMethod::Cancelled),
         _ => NotificationMethod::Unknown,
     };
 
@@ -256,8 +257,7 @@ mod tests {
         });
 
         let error = parse_request_message(raw).expect_err("expected invalid params");
-        let err = error.error.expect("error payload required");
-        assert_eq!(err.code, INVALID_PARAMS);
-        assert!(err.message.contains("expected object"));
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("expected object"));
     }
 }

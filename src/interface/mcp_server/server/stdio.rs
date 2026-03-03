@@ -69,9 +69,13 @@ async fn process_line(
         None => return Ok(LoopControl::Break),
     };
 
-    if line.len() > MAX_JSONRPC_LINE_BYTES {
-        let error_response =
-            JsonRpcResponse::error(Value::Null, INVALID_REQUEST, "Request too large");
+    if let Some(error_response) = (line.len() > MAX_JSONRPC_LINE_BYTES)
+        .then_some(JsonRpcResponse::error(
+            Value::Null,
+            INVALID_REQUEST,
+            "Request too large",
+        ))
+    {
         send_response(&error_response, stdout).await?;
         return Ok(LoopControl::Continue);
     }
@@ -90,12 +94,13 @@ async fn process_line(
 }
 
 async fn parse_json_request(line: &str, stdout: &mut tokio::io::Stdout) -> Result<Option<Value>> {
-    if let Ok(request) = serde_json::from_str(line) {
-        Ok(Some(request))
-    } else {
-        let error_response = JsonRpcResponse::error(Value::Null, PARSE_ERROR, "Parse error");
-        send_response(&error_response, stdout).await?;
-        Ok(None)
+    match serde_json::from_str(line) {
+        Ok(request) => Ok(Some(request)),
+        Err(_) => {
+            let error_response = JsonRpcResponse::error(Value::Null, PARSE_ERROR, "Parse error");
+            send_response(&error_response, stdout).await?;
+            Ok(None)
+        }
     }
 }
 
@@ -104,9 +109,11 @@ async fn handle_request(
     active_requests: &ActiveRequests,
     stdout: &mut tokio::io::Stdout,
 ) -> Result<()> {
+    let response_id = raw_message.get("id").cloned().unwrap_or(Value::Null);
     let request = match parse_request_message(raw_message) {
         Ok(request) => request,
-        Err(error_response) => {
+        Err(parse_error) => {
+            let error_response = parse_error.into_response(response_id);
             send_response(&error_response, stdout).await?;
             return Ok(());
         }

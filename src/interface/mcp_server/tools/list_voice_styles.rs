@@ -63,12 +63,12 @@ pub async fn handle_voice_style_list_tool(arguments: Value) -> Result<ToolCallRe
         .await?
         .into_iter()
         .map(|speaker| SpeakerStyles {
-            speaker_name: speaker.name,
+            speaker_name: speaker.name.to_string(),
             styles: speaker
                 .styles
                 .into_iter()
                 .map(|style| VoiceStyle {
-                    name: style.name,
+                    name: style.name.to_string(),
                     id: style.id,
                 })
                 .collect(),

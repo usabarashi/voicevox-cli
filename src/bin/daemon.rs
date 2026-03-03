@@ -54,15 +54,11 @@ impl CliArgs {
     }
 
     fn control_command(&self) -> DaemonControlCommand {
-        if self.stop {
-            DaemonControlCommand::Stop
-        } else if self.status {
-            DaemonControlCommand::Status
-        } else if self.restart {
-            DaemonControlCommand::Restart
-        } else {
-            DaemonControlCommand::None
-        }
+        self.stop
+            .then_some(DaemonControlCommand::Stop)
+            .or_else(|| self.status.then_some(DaemonControlCommand::Status))
+            .or_else(|| self.restart.then_some(DaemonControlCommand::Restart))
+            .unwrap_or(DaemonControlCommand::None)
     }
 }
 

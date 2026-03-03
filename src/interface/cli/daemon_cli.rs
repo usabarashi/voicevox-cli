@@ -30,7 +30,10 @@ trait DaemonControlOs {
     fn find_daemon_processes(&self) -> anyhow::Result<Vec<u32>>;
     fn pid_memory_info_line(&self, pid_num: u32) -> Option<String>;
     fn kill_term(&self, pid: u32) -> bool;
-    fn remove_stale_socket_if_present(&self, socket_path: &Path) -> crate::infrastructure::daemon::DaemonResult<bool>;
+    fn remove_stale_socket_if_present(
+        &self,
+        socket_path: &Path,
+    ) -> crate::infrastructure::daemon::DaemonResult<bool>;
 }
 
 struct SystemDaemonControlOs;
@@ -171,9 +174,12 @@ async fn maybe_detach(
                     ExecutionDecision::exit(0)
                 }
                 Ok(Some(status)) => {
-                    if status.code() == Some(exit_daemon::ALREADY_RUNNING) {
-                        output.info("VOICEVOX daemon is already running");
-                        return ExecutionDecision::exit(exit_daemon::ALREADY_RUNNING);
+                    match status.code() {
+                        Some(code) if code == exit_daemon::ALREADY_RUNNING => {
+                            output.info("VOICEVOX daemon is already running");
+                            return ExecutionDecision::exit(exit_daemon::ALREADY_RUNNING);
+                        }
+                        _ => {}
                     }
                     output.error(&format!("Daemon failed to start: exit code {status}"));
                     ExecutionDecision::exit(1)
@@ -265,21 +271,28 @@ async fn handle_stop_daemon_with_os(
         }
     };
 
-    if !responsive {
-        print_socket_not_running(socket_path, output);
-        if !pids.is_empty() {
+    match (responsive, pids.is_empty()) {
+        (false, false) => {
+            print_socket_not_running(socket_path, output);
             output.info("Found daemon process(es) without responsive socket. Stopping anyway...");
         }
-    }
-
-    if pids.is_empty() {
-        if responsive {
-            output.info("No daemon process found");
-        } else {
-            try_cleanup_stale_socket(socket_path, output, os);
+        (false, true) => {
+            print_socket_not_running(socket_path, output);
         }
-        return Ok(());
-    }
+        _ => {}
+    };
+
+    match (responsive, pids.is_empty()) {
+        (true, true) => {
+            output.info("No daemon process found");
+            return Ok(());
+        }
+        (false, true) => {
+            try_cleanup_stale_socket(socket_path, output, os);
+            return Ok(());
+        }
+        _ => {}
+    };
 
     for pid_num in pids {
         stop_daemon_process_with_os(pid_num, socket_path, output, os, post_kill_delay).await;
@@ -318,18 +331,20 @@ async fn stop_daemon_process_with_os(
     os: &dyn DaemonControlOs,
     post_kill_delay: Duration,
 ) {
-    if os.kill_term(pid) {
-        output.info(&format!("Daemon stopped (PID: {pid})"));
-        tokio::time::sleep(post_kill_delay).await;
+    match os.kill_term(pid) {
+        true => {
+            output.info(&format!("Daemon stopped (PID: {pid})"));
+            tokio::time::sleep(post_kill_delay).await;
 
-        if os.is_responsive(socket_path) {
-            output.info("Daemon may still be running");
-        } else {
-            output.info("Socket cleanup confirmed");
+            match os.is_responsive(socket_path) {
+                true => output.info("Daemon may still be running"),
+                false => output.info("Socket cleanup confirmed"),
+            }
         }
-    } else {
-        output.info(&format!("Failed to stop daemon (PID: {pid})"));
-        output.info(&format!("   Try: kill -9 {pid}"));
+        false => {
+            output.info(&format!("Failed to stop daemon (PID: {pid})"));
+            output.info(&format!("   Try: kill -9 {pid}"));
+        }
     }
 }
 
@@ -346,22 +361,25 @@ async fn handle_status_daemon_with_os(
     output.info("VOICEVOX Daemon Status");
     output.info("========================");
 
-    if os.is_responsive(socket_path) {
-        output.info("Status:  Running and responsive");
-        print_socket_path_line(socket_path, output);
+    match os.is_responsive(socket_path) {
+        true => {
+            output.info("Status:  Running and responsive");
+            print_socket_path_line(socket_path, output);
 
-        if let Ok(pids) = os.find_daemon_processes() {
-            for pid_num in pids {
-                output.info(&format!("Process ID: {pid_num}"));
-                print_pid_memory_info(pid_num, output, os);
+            if let Ok(pids) = os.find_daemon_processes() {
+                for pid_num in pids {
+                    output.info(&format!("Process ID: {pid_num}"));
+                    print_pid_memory_info(pid_num, output, os);
+                }
             }
         }
-    } else {
-        output.info("Status:  Not running");
-        print_socket_path_line(socket_path, output);
-        if os.socket_path_exists(socket_path) {
-            output.info("Stale socket candidate: socket path exists but is not responsive");
-            output.info("Try 'voicevox-daemon --stop' to clean up stale socket state.");
+        false => {
+            output.info("Status:  Not running");
+            print_socket_path_line(socket_path, output);
+            if os.socket_path_exists(socket_path) {
+                output.info("Stale socket candidate: socket path exists but is not responsive");
+                output.info("Try 'voicevox-daemon --stop' to clean up stale socket state.");
+            }
         }
     }
 
@@ -387,13 +405,15 @@ pub async fn run_daemon_cli_with_output(
         return Ok(0);
     }
 
-    if let ExecutionDecision::Exit(code) = maybe_detach(&socket_path, flags, output).await {
-        return Ok(code);
-    }
+    match maybe_detach(&socket_path, flags, output).await {
+        ExecutionDecision::Exit(code) => return Ok(code),
+        ExecutionDecision::Continue => {}
+    };
 
-    if let Err(error) = ensure_startup_preconditions(&socket_path).await {
-        return Ok(report_startup_error(&error, output));
-    }
+    match ensure_startup_preconditions(&socket_path).await {
+        Ok(()) => {}
+        Err(error) => return Ok(report_startup_error(&error, output)),
+    };
 
     print_daemon_start_banner(&socket_path, output);
     crate::infrastructure::daemon::run_daemon(socket_path, flags.start_mode.is_foreground())

@@ -83,7 +83,9 @@ impl StreamingSynthesizer {
                 .daemon_rpc
                 .synthesize(segment, style_id, options)
                 .await
-                .with_context(|| format!("Failed to synthesize segment {i} ({} bytes)", segment.len()))?;
+                .with_context(|| {
+                    format!("Failed to synthesize segment {i} ({} bytes)", segment.len())
+                })?;
             wav_segments.push(wav_data);
         }
 
@@ -126,11 +128,7 @@ impl StreamingSynthesizer {
         let segments = self.text_segmenter.split(text);
         let options = crate::infrastructure::ipc::OwnedSynthesizeOptions { rate };
 
-        for (i, segment) in segments
-            .iter()
-            .filter(|s| !s.trim().is_empty())
-            .enumerate()
-        {
+        for (i, segment) in segments.iter().filter(|s| !s.trim().is_empty()).enumerate() {
             let wav_data = self
                 .daemon_rpc
                 .synthesize(segment, style_id, options)

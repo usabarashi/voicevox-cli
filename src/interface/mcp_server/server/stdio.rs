@@ -144,7 +144,15 @@ async fn handle_request(
             let request_id = match &request.id {
                 Value::String(s) => s.to_owned(),
                 Value::Number(n) => n.to_string(),
-                _ => String::from("unknown"),
+                _ => {
+                    let response = JsonRpcResponse::error(
+                        request.id,
+                        INVALID_REQUEST,
+                        "Request id must be a string or number",
+                    );
+                    send_response(&response, stdout).await?;
+                    return Ok(());
+                }
             };
             active_requests
                 .spawn_tool_handler(request_id, request.id, call.name, call.arguments)

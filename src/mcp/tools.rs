@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use rodio::Sink;
+use rodio::Player;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{env, path::Path, sync::Arc};
@@ -214,9 +214,9 @@ async fn handle_streaming_synthesis_cancellable(
     params: SynthesizeParams,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<ToolCallResult> {
-    let stream = rodio::OutputStreamBuilder::open_default_stream()
+    let stream = rodio::DeviceSinkBuilder::open_default_sink()
         .context("Failed to create audio output stream")?;
-    let sink = Arc::new(Sink::connect_new(stream.mixer()));
+    let sink = Arc::new(Player::connect_new(&stream.mixer()));
 
     let mut synthesizer = StreamingSynthesizer::new()
         .await
@@ -361,9 +361,9 @@ async fn play_low_latency_with_cancel(
     wav_data: Vec<u8>,
     cancel_rx: &mut oneshot::Receiver<String>,
 ) -> Result<PlaybackOutcome> {
-    let stream = rodio::OutputStreamBuilder::open_default_stream()
+    let stream = rodio::DeviceSinkBuilder::open_default_sink()
         .context("Failed to create audio output stream")?;
-    let sink = Arc::new(Sink::connect_new(stream.mixer()));
+    let sink = Arc::new(Player::connect_new(&stream.mixer()));
     let _stream_guard = stream;
 
     let cursor = std::io::Cursor::new(wav_data);

@@ -30,7 +30,6 @@ pub fn check_updates_with_output(output: &dyn AppOutput) -> Result<()> {
     output.info("Update options:");
     output.info("  --update-models     Update all voice models");
     output.info("  --update-dict       Update dictionary only");
-    output.info("  --update-model N    Update specific model N");
     Ok(())
 }
 

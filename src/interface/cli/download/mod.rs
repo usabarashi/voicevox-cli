@@ -8,4 +8,4 @@ pub use setup::{
     missing_startup_resources,
 };
 pub use status::{check_updates, show_version_info};
-pub use update::{update_dictionary_only, update_models_only, update_specific_model};
+pub use update::{update_dictionary_only, update_models_only};

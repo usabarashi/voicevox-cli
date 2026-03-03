@@ -16,7 +16,7 @@ pub use install::{
 };
 pub use status::{collect_update_status, collect_version_info, UpdateStatus, VersionInfo};
 pub use update::{
-    update_dictionary_only, update_models_only, update_specific_model, UpdateKind, UpdateOutcome,
+    update_dictionary_only, update_models_only, UpdateKind, UpdateOutcome,
 };
 
 pub(crate) fn collect_missing_resources() -> Vec<&'static str> {

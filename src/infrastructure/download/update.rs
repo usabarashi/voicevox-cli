@@ -10,7 +10,6 @@ use super::{
 pub enum UpdateKind {
     Models,
     Dictionary,
-    SpecificModel(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,7 +23,7 @@ pub struct UpdateOutcome {
 impl UpdateKind {
     const fn resource(self) -> &'static str {
         match self {
-            Self::Models | Self::SpecificModel(_) => "models",
+            Self::Models => "models",
             Self::Dictionary => "dict",
         }
     }
@@ -63,7 +62,7 @@ async fn run_update(kind: UpdateKind) -> Result<UpdateOutcome> {
         UpdateKind::Dictionary => {
             bail!("Dictionary update failed and no fallback is available")
         }
-        UpdateKind::Models | UpdateKind::SpecificModel(_) => {
+        UpdateKind::Models => {
             let model_count = launch_models_downloader(&target_dir).await?;
             Ok(UpdateOutcome {
                 kind,
@@ -83,6 +82,3 @@ pub async fn update_dictionary_only() -> Result<UpdateOutcome> {
     run_update(UpdateKind::Dictionary).await
 }
 
-pub async fn update_specific_model(model_id: u32) -> Result<UpdateOutcome> {
-    run_update(UpdateKind::SpecificModel(model_id)).await
-}

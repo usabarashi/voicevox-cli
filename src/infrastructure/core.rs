@@ -1,17 +1,17 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::Path;
 use voicevox_core::{
-    blocking::{OpenJtalk, Synthesizer},
     AccelerationMode, StyleId,
+    blocking::{OpenJtalk, Synthesizer},
 };
 
 use crate::infrastructure::ipc::{
-    is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
+    DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE, is_valid_synthesis_rate,
 };
 use crate::infrastructure::onnxruntime;
 use crate::infrastructure::openjtalk;
 use crate::infrastructure::voicevox::{
-    open_voice_model_file, open_voice_model_file_by_id, Speaker,
+    Speaker, open_voice_model_file, open_voice_model_file_by_id,
 };
 
 pub trait CoreSynthesis {
@@ -29,7 +29,7 @@ pub trait CoreSynthesis {
     ///
     /// Returns an implementation-specific error if synthesis fails.
     fn synthesize<'a>(&'a self, text: &str, style_id: u32)
-        -> Result<Self::Output<'a>, Self::Error>;
+    -> Result<Self::Output<'a>, Self::Error>;
     /// Returns speaker metadata currently visible to the core instance.
     ///
     /// # Errors

@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::types::{text_result, ToolCallResult};
+use super::types::{ToolCallResult, text_result};
 use crate::domain::voice::{
-    filter_speakers, normalized_filters, ListVoiceStylesFilter, SpeakerStyles, VoiceStyle,
+    ListVoiceStylesFilter, SpeakerStyles, VoiceStyle, filter_speakers, normalized_filters,
 };
 use crate::infrastructure::daemon::client::DaemonClient;
 use crate::interface::synthesis::flow::connect_daemon_client_auto_start;

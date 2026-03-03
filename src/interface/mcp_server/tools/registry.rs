@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde_json::Value;
 use tokio::sync::oneshot;
 
-use super::list::{get_tool_definitions, ToolDefinition};
+use super::list::{ToolDefinition, get_tool_definitions};
 use super::types::ToolCallResult;
 
 #[must_use]

@@ -2,9 +2,9 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::interface::cli::daemon_error::format_daemon_client_error_for_cli;
-use crate::interface::playback::{emit_and_play, PlaybackRequest};
+use crate::interface::playback::{PlaybackRequest, emit_and_play};
 use crate::interface::synthesis::flow::{
-    synthesize_bytes_via_daemon, validate_text_synthesis_request, DaemonSynthesisBytesRequest,
+    DaemonSynthesisBytesRequest, synthesize_bytes_via_daemon, validate_text_synthesis_request,
 };
 use crate::interface::{AppOutput, StdAppOutput};
 
@@ -125,9 +125,11 @@ mod tests {
             .await
             .expect_err("expected validation error");
 
-        assert!(error
-            .to_string()
-            .contains("No text provided. Use command line argument"));
+        assert!(
+            error
+                .to_string()
+                .contains("No text provided. Use command line argument")
+        );
         assert!(output.infos().is_empty());
         assert!(output.errors().is_empty());
     }

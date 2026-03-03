@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use voicevox_cli::infrastructure::daemon::client::find_daemon_client_error;
 use voicevox_cli::infrastructure::ipc::DEFAULT_SYNTHESIS_RATE;
 use voicevox_cli::infrastructure::paths::get_socket_path;
+use voicevox_cli::interface::StdAppOutput;
 use voicevox_cli::interface::cli::daemon_error::{
     daemon_client_exit_code, format_daemon_client_error_for_cli,
 };
@@ -13,10 +14,9 @@ use voicevox_cli::interface::cli::input::get_input_text_from_sources;
 use voicevox_cli::interface::cli::inspect::{
     run_list_models_command, run_list_speakers_command, run_status_command,
 };
-use voicevox_cli::interface::cli::say::{run_say_synthesis, SaySynthesisRequest};
+use voicevox_cli::interface::cli::say::{SaySynthesisRequest, run_say_synthesis};
 use voicevox_cli::interface::cli::voice_help::print_voice_help;
 use voicevox_cli::interface::cli::voice_selector::resolve_voice_input;
-use voicevox_cli::interface::StdAppOutput;
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]

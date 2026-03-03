@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use tokio::process::Command;
 
-use super::{exit_codes as exit_daemon, DaemonError, DaemonResult};
+use super::{DaemonError, DaemonResult, exit_codes as exit_daemon};
 
 pub enum StartDaemonOutcome {
     Started,

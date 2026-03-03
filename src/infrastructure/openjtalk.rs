@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use voicevox_core::blocking::OpenJtalk;
 
 use crate::infrastructure::paths::find_openjtalk_dict;

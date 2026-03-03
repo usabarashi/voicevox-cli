@@ -3,7 +3,7 @@ mod launcher;
 pub mod policy;
 mod transport;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::net::UnixStream;
@@ -15,7 +15,7 @@ use crate::infrastructure::paths::get_socket_path;
 use crate::infrastructure::voicevox::{AvailableModel, Speaker, Style};
 
 pub use crate::infrastructure::daemon::find_daemon_binary;
-pub use error::{daemon_response_error, find_daemon_client_error, DaemonClientError};
+pub use error::{DaemonClientError, daemon_response_error, find_daemon_client_error};
 pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 
 fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error {

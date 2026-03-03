@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 
 const RIFF_HEADER_LEN: usize = 12; // "RIFF" + size + "WAVE"
 

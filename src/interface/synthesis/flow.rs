@@ -1,12 +1,12 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::Path;
 use tokio::sync::oneshot;
 
-use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
+use crate::domain::synthesis::{TextSynthesisRequest, validate_basic_request};
 use crate::infrastructure::daemon::client::DaemonClient;
+use crate::interface::AppOutput;
 use crate::interface::cli::download::{ensure_models_available, missing_startup_resources};
 use crate::interface::synthesis::daemon::DaemonSynthesizer;
-use crate::interface::AppOutput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SynthesisPhase {

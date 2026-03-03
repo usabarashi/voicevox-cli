@@ -1,7 +1,7 @@
 use crate::infrastructure::daemon::client::DaemonAutoStartPolicy;
 use crate::infrastructure::daemon::{
-    ensure_daemon_running, recover_stuck_daemon_and_retry as recover_stuck_daemon_and_retry_impl,
-    DaemonError, DaemonResult,
+    DaemonError, DaemonResult, ensure_daemon_running,
+    recover_stuck_daemon_and_retry as recover_stuck_daemon_and_retry_impl,
 };
 use crate::infrastructure::paths::get_socket_path;
 use crate::interface::{AppOutput, StdAppOutput};

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::domain::synthesis::limits::DEFAULT_SYNTHESIS_RATE;
 

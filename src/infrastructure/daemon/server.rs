@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use futures_util::{SinkExt, StreamExt};
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::infrastructure::daemon::state::DaemonState;
-use crate::infrastructure::ipc::{DaemonRequest, OwnedResponse, MAX_DAEMON_REQUEST_FRAME_BYTES};
+use crate::infrastructure::ipc::{DaemonRequest, MAX_DAEMON_REQUEST_FRAME_BYTES, OwnedResponse};
 
 const SOCKET_DIR_MODE: u32 = 0o700;
 const SOCKET_FILE_MODE: u32 = 0o600;

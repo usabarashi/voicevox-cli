@@ -6,7 +6,7 @@ mod update;
 use crate::infrastructure::paths::{
     find_models_dir, find_onnxruntime, find_openjtalk_dict, get_default_voicevox_dir,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 
 pub use cleanup::{cleanup_unnecessary_files, count_vvm_files_recursive};
@@ -14,8 +14,8 @@ pub use install::{
     default_models_download_target_dir, download_missing_resources, launch_models_downloader,
     missing_resource_descriptions,
 };
-pub use status::{collect_update_status, collect_version_info, UpdateStatus, VersionInfo};
-pub use update::{update_dictionary_only, update_models_only, UpdateKind, UpdateOutcome};
+pub use status::{UpdateStatus, VersionInfo, collect_update_status, collect_version_info};
+pub use update::{UpdateKind, UpdateOutcome, update_dictionary_only, update_models_only};
 
 pub(crate) fn collect_missing_resources() -> Vec<&'static str> {
     [

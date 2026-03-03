@@ -5,11 +5,11 @@ use std::process::{Command as ProcessCommand, Stdio};
 use std::time::Duration;
 
 use crate::infrastructure::daemon::{
-    check_and_prevent_duplicate, exit_codes as exit_daemon, is_socket_responsive,
-    pid_memory_info_line, terminate_process, DaemonError,
+    DaemonError, check_and_prevent_duplicate, exit_codes as exit_daemon, is_socket_responsive,
+    pid_memory_info_line, terminate_process,
 };
 use crate::interface::cli::daemon_invocation::{
-    decide_daemon_invocation, DaemonCliFlags, DaemonInvocation,
+    DaemonCliFlags, DaemonInvocation, decide_daemon_invocation,
 };
 use crate::interface::{AppOutput, StdAppOutput};
 

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -437,7 +437,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{populate_model_speakers, AvailableModel, Speaker, SpeakerList, Style, StyleList};
+    use super::{AvailableModel, Speaker, SpeakerList, Style, StyleList, populate_model_speakers};
     use std::collections::HashMap;
     use std::path::PathBuf;
 

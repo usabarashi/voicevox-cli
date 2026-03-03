@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use super::limits::{
-    is_valid_synthesis_rate, MAX_SYNTHESIS_RATE, MAX_SYNTHESIS_TEXT_LENGTH, MIN_SYNTHESIS_RATE,
+    MAX_SYNTHESIS_RATE, MAX_SYNTHESIS_TEXT_LENGTH, MIN_SYNTHESIS_RATE, is_valid_synthesis_rate,
 };
 
 pub struct TextSynthesisRequest<'a> {

@@ -5,22 +5,22 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
-use super::types::{audio_result, text_result, ToolCallResult};
+use super::types::{ToolCallResult, audio_result, text_result};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
-use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
+use crate::domain::synthesis::{TextSynthesisRequest, validate_basic_request};
 use crate::domain::text_to_speech::{
-    default_rate, default_streaming, text_char_count, validate_style_id, SynthesizeParams,
+    SynthesizeParams, default_rate, default_streaming, text_char_count, validate_style_id,
 };
 use crate::infrastructure::daemon::startup;
 use crate::interface::mcp_server::daemon_error::{
     format_daemon_client_error_for_mcp, is_retryable_daemon_synthesis_error,
 };
-use crate::interface::playback::{emit_and_play, PlaybackOutcome, PlaybackRequest};
+use crate::interface::playback::{PlaybackOutcome, PlaybackRequest, emit_and_play};
 use crate::interface::synthesis::flow::{
-    synthesize_bytes_via_daemon_cancellable, DaemonSynthesisBytesRequest, NoopAppOutput,
-    SynthesisFlowOutcome,
+    DaemonSynthesisBytesRequest, NoopAppOutput, SynthesisFlowOutcome,
+    synthesize_bytes_via_daemon_cancellable,
 };
-use crate::interface::synthesis::mode::{select_synthesis_mode_with_config, SynthesisMode};
+use crate::interface::synthesis::mode::{SynthesisMode, select_synthesis_mode_with_config};
 
 const MCP_DAEMON_MAX_RETRIES: u32 = 2;
 

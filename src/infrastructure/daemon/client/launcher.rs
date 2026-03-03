@@ -1,13 +1,13 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::Path;
 use tokio::net::UnixStream;
 
 use super::policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 use super::transport::{
-    connect_socket_with_timeout, connect_with_retry, DAEMON_CONNECTION_TIMEOUT,
+    DAEMON_CONNECTION_TIMEOUT, connect_socket_with_timeout, connect_with_retry,
 };
 use crate::infrastructure::daemon::{
-    ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
+    EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome, ensure_daemon_running,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

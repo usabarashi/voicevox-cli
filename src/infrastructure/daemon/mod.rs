@@ -12,15 +12,15 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 pub use bootstrap::{
-    ensure_daemon_running, recover_stuck_daemon_and_retry, EnsureDaemonRunningOptions,
-    EnsureDaemonRunningOutcome,
+    EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome, ensure_daemon_running,
+    recover_stuck_daemon_and_retry,
 };
 pub use control::{is_socket_responsive, pid_memory_info_line, terminate_process};
 pub use process::{
     check_and_prevent_duplicate, find_daemon_processes, remove_stale_socket_if_present,
 };
 pub use server::run_daemon;
-pub use start_process::{find_daemon_binary, start_daemon_detached, StartDaemonOutcome};
+pub use start_process::{StartDaemonOutcome, find_daemon_binary, start_daemon_detached};
 pub use state::DaemonState;
 
 #[derive(Error, Debug)]
@@ -40,7 +40,9 @@ pub enum DaemonError {
     #[error("Failed to connect to daemon: {0}")]
     ConnectionFailed(#[from] io::Error),
 
-    #[error("No VOICEVOX models found. Please run 'voicevox-setup' or place .vvm files in the models directory.")]
+    #[error(
+        "No VOICEVOX models found. Please run 'voicevox-setup' or place .vvm files in the models directory."
+    )]
     NoModelsAvailable,
 
     #[error("Failed to find daemon binary")]

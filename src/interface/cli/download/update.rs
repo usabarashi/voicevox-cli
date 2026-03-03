@@ -1,8 +1,8 @@
 use anyhow::Result;
 
 use crate::infrastructure::download::{
-    update_dictionary_only as run_update_dictionary_only,
-    update_models_only as run_update_models_only, UpdateKind,
+    UpdateKind, update_dictionary_only as run_update_dictionary_only,
+    update_models_only as run_update_models_only,
 };
 use crate::interface::{AppOutput, StdAppOutput};
 

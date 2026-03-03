@@ -3,7 +3,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::{
-    socket_probe, start_daemon_detached, startup, DaemonError, DaemonResult, StartDaemonOutcome,
+    DaemonError, DaemonResult, StartDaemonOutcome, socket_probe, start_daemon_detached, startup,
 };
 
 #[derive(Debug, Clone, Copy)]

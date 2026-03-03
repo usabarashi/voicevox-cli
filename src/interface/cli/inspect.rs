@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::infrastructure::daemon::client::DaemonClient;
-use crate::infrastructure::voicevox::{scan_available_models, AvailableModel, Speaker};
+use crate::infrastructure::voicevox::{AvailableModel, Speaker, scan_available_models};
 use crate::interface::synthesis::flow::connect_daemon_client_auto_start;
 use crate::interface::{AppOutput, StdAppOutput};
 
@@ -200,10 +200,13 @@ fn print_missing_status_item(name: &str, output: &dyn AppOutput) {
 }
 
 fn print_status_dictionary(output: &dyn AppOutput) {
-    if let Ok(dict_path) = crate::infrastructure::paths::find_openjtalk_dict() {
-        output.info(&format!("Dictionary: {}", dict_path.display()));
-    } else {
-        print_missing_status_item("Dictionary", output);
+    match crate::infrastructure::paths::find_openjtalk_dict() {
+        Ok(dict_path) => {
+            output.info(&format!("Dictionary: {}", dict_path.display()));
+        }
+        _ => {
+            print_missing_status_item("Dictionary", output);
+        }
     }
 }
 
@@ -217,10 +220,13 @@ pub fn run_status_command_with_output(output: &dyn AppOutput) {
     output.info("=====================================");
     output.info(&format!("Application: v{}", env!("CARGO_PKG_VERSION")));
 
-    if let Ok(onnx_path) = crate::infrastructure::paths::find_onnxruntime() {
-        output.info(&format!("ONNX Runtime: {}", onnx_path.display()));
-    } else {
-        print_missing_status_item("ONNX Runtime", output);
+    match crate::infrastructure::paths::find_onnxruntime() {
+        Ok(onnx_path) => {
+            output.info(&format!("ONNX Runtime: {}", onnx_path.display()));
+        }
+        _ => {
+            print_missing_status_item("ONNX Runtime", output);
+        }
     }
 
     match scan_available_models() {

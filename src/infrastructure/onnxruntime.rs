@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use voicevox_core::blocking::Onnxruntime;
 
 use crate::infrastructure::paths::find_onnxruntime;

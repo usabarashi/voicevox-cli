@@ -7,7 +7,7 @@ mod executor;
 mod policy;
 mod result;
 
-use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
+use crate::domain::synthesis::{TextSynthesisRequest, validate_basic_request};
 use anyhow::Result;
 use catalog::ModelCatalog;
 use executor::DaemonSynthesisExecutor;

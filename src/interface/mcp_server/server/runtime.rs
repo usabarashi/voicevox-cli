@@ -81,14 +81,13 @@ impl ActiveRequests {
             }
         };
 
-        let (abort_tx, abort_rx) = oneshot::channel::<String>();
-        self.abort_channels
-            .lock()
-            .await
-            .insert(request_id.clone(), abort_tx);
-
         let active_requests = self.clone();
         if tool_name == "text_to_speech" {
+            let (abort_tx, abort_rx) = oneshot::channel::<String>();
+            self.abort_channels
+                .lock()
+                .await
+                .insert(request_id.clone(), abort_tx);
             spawn_non_send_text_to_speech_task(move || {
                 Box::pin(async move {
                     let _permit = permit;

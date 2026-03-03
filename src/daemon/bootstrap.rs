@@ -38,14 +38,40 @@ pub enum EnsureDaemonRunningOutcome {
 async fn remove_stale_socket_if_requested(
     socket_path: &Path,
     remove_stale_socket: bool,
+    connect_timeout: std::time::Duration,
 ) -> DaemonResult<()> {
     if !remove_stale_socket {
+        return Ok(());
+    }
+
+    // Mirror DaemonStartup.tla: never remove a responsive socket.
+    if socket_probe::try_connect_with_timeout(socket_path, connect_timeout).await {
         return Ok(());
     }
 
     match tokio::fs::symlink_metadata(socket_path).await {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Ok(metadata) if metadata.file_type().is_socket() => {
+            // TOCTOU guard: re-check responsiveness immediately before cleanup.
+            if socket_probe::try_connect_with_timeout(socket_path, connect_timeout).await {
+                return Ok(());
+            }
+
+            match crate::daemon::find_daemon_processes() {
+                Ok(pids) => {
+                    if let Some(&pid) = pids.first() {
+                        return Err(DaemonError::AlreadyRunning { pid });
+                    }
+                }
+                Err(error) => {
+                    return Err(DaemonError::StartupFailed {
+                        message: format!(
+                            "Failed to inspect daemon processes before stale cleanup: {error}"
+                        ),
+                    });
+                }
+            }
+
             tokio::fs::remove_file(socket_path).await.map_err(|error| {
                 DaemonError::StartupFailed {
                     message: format!(
@@ -129,7 +155,12 @@ where
         return Ok(EnsureDaemonRunningOutcome::AlreadyResponsive);
     }
 
-    remove_stale_socket_if_requested(socket_path, options.remove_stale_socket).await?;
+    remove_stale_socket_if_requested(
+        socket_path,
+        options.remove_stale_socket,
+        options.connect_timeout,
+    )
+    .await?;
 
     match start_daemon_detached(Some(socket_path)).await? {
         StartDaemonOutcome::Started => wait_ready_with_options(socket_path, options, on_retry)

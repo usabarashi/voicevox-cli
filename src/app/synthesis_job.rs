@@ -2,7 +2,8 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::app::AppOutput;
-use crate::client::{ensure_models_available, DaemonClient};
+use crate::app::system_state::SynthesisPhase;
+use crate::client::{ensure_models_available, missing_startup_resources, DaemonClient};
 use crate::synthesis::{synthesize_bytes, validate_basic_request, TextSynthesisRequest};
 
 #[derive(Default, Clone, Copy)]
@@ -42,9 +43,13 @@ async fn ensure_models_on_demand(
         return Ok(());
     }
 
-    if crate::paths::find_models_dir().is_err() {
+    let missing = missing_startup_resources();
+    if !missing.is_empty() {
         if !request.quiet_setup_messages {
-            output.info("Voice models not found. Setting up VOICEVOX...");
+            output.info(&format!(
+                "VOICEVOX resources not found ({}). Setting up VOICEVOX...",
+                missing.join(", ")
+            ));
         }
         ensure_models_available().await?;
     }
@@ -56,14 +61,52 @@ pub async fn synthesize_bytes_via_daemon(
     request: &DaemonSynthesisBytesRequest<'_>,
     output: &dyn AppOutput,
 ) -> Result<Vec<u8>> {
-    validate_text_synthesis_request(request.text, request.style_id, request.rate)?;
-    ensure_models_on_demand(request, output).await?;
+    let mut phase = SynthesisPhase::Validate;
+    let mut client: Option<DaemonClient> = None;
 
-    let mut client = connect_daemon_client_auto_start(request.socket_path).await?;
-    let synth_req = TextSynthesisRequest {
-        text: request.text,
-        style_id: request.style_id,
-        rate: request.rate,
-    };
-    synthesize_bytes(&mut client, &synth_req).await
+    loop {
+        match run_synthesis_phase(phase, request, output, &mut client).await? {
+            SynthesisStep::Next(next) => phase = next,
+            SynthesisStep::Done(wav_data) => return Ok(wav_data),
+        }
+    }
+}
+
+enum SynthesisStep {
+    Next(SynthesisPhase),
+    Done(Vec<u8>),
+}
+
+async fn run_synthesis_phase(
+    phase: SynthesisPhase,
+    request: &DaemonSynthesisBytesRequest<'_>,
+    output: &dyn AppOutput,
+    client: &mut Option<DaemonClient>,
+) -> Result<SynthesisStep> {
+    match phase {
+        SynthesisPhase::Validate => {
+            validate_text_synthesis_request(request.text, request.style_id, request.rate)?;
+            Ok(SynthesisStep::Next(SynthesisPhase::EnsureResources))
+        }
+        SynthesisPhase::EnsureResources => {
+            ensure_models_on_demand(request, output).await?;
+            Ok(SynthesisStep::Next(SynthesisPhase::Connect))
+        }
+        SynthesisPhase::Connect => {
+            *client = Some(connect_daemon_client_auto_start(request.socket_path).await?);
+            Ok(SynthesisStep::Next(SynthesisPhase::Synthesize))
+        }
+        SynthesisPhase::Synthesize => {
+            let mut client = client
+                .take()
+                .expect("client must exist in synthesize phase");
+            let synth_req = TextSynthesisRequest {
+                text: request.text,
+                style_id: request.style_id,
+                rate: request.rate,
+            };
+            let wav_data = synthesize_bytes(&mut client, &synth_req).await?;
+            Ok(SynthesisStep::Done(wav_data))
+        }
+    }
 }

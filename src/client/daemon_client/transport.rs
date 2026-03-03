@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::Path;
@@ -8,8 +8,9 @@ use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::ipc::{
-    MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES, OwnedRequest, OwnedResponse,
+    OwnedRequest, OwnedResponse, MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES,
 };
+use super::policy::DaemonConnectRetryPolicy;
 
 pub(crate) const DAEMON_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const DAEMON_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -105,6 +106,29 @@ pub(crate) async fn connect_socket_with_timeout(
         })?;
     verify_peer_credentials(&stream)?;
     Ok(stream)
+}
+
+pub(crate) async fn connect_with_retry(
+    socket_path: &Path,
+    timeout_duration: Duration,
+    policy: DaemonConnectRetryPolicy,
+) -> Result<UnixStream> {
+    let mut retry_delay = policy.initial_delay;
+
+    for attempt in 0..policy.attempts {
+        match connect_socket_with_timeout(socket_path, timeout_duration).await {
+            Ok(stream) => return Ok(stream),
+            Err(_) => {
+                if attempt + 1 < policy.attempts {
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(policy.max_delay);
+                }
+            }
+        }
+    }
+
+    // Final connect check without backoff sleep, matching the modeled FinalConnect step.
+    connect_socket_with_timeout(socket_path, timeout_duration).await
 }
 
 pub(crate) async fn connect_daemon_with_timeout(

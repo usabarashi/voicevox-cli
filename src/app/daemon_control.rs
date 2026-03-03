@@ -226,6 +226,10 @@ async fn maybe_detach(
                     ExecutionDecision::exit(0)
                 }
                 Ok(Some(status)) => {
+                    if status.code() == Some(exit_daemon::ALREADY_RUNNING) {
+                        output.info("VOICEVOX daemon is already running");
+                        return ExecutionDecision::exit(exit_daemon::ALREADY_RUNNING);
+                    }
                     output.error(&format!("Daemon failed to start: exit code {status}"));
                     ExecutionDecision::exit(1)
                 }

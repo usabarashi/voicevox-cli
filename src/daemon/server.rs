@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
@@ -100,6 +100,23 @@ fn encode_response_or_log(response: &OwnedResponse) -> Option<Vec<u8>> {
 ///
 /// Returns an error if reading from or writing to the framed Unix stream fails.
 pub async fn handle_client(stream: UnixStream, state: Arc<DaemonState>) -> Result<()> {
+    handle_client_with_limit(
+        stream,
+        state,
+        Arc::new(Semaphore::new(MAX_CONCURRENT_CLIENTS)),
+    )
+    .await
+}
+
+async fn acquire_request_permit(permits: Arc<Semaphore>) -> Option<OwnedSemaphorePermit> {
+    permits.acquire_owned().await.ok()
+}
+
+async fn handle_client_with_limit(
+    stream: UnixStream,
+    state: Arc<DaemonState>,
+    permits: Arc<Semaphore>,
+) -> Result<()> {
     let codec = LengthDelimitedCodec::builder()
         .max_frame_length(MAX_DAEMON_REQUEST_FRAME_BYTES)
         .new_codec();
@@ -118,6 +135,13 @@ pub async fn handle_client(stream: UnixStream, state: Arc<DaemonState>) -> Resul
         };
 
         let Some(request) = decode_request_or_log(&data) else {
+            break;
+        };
+
+        // `DaemonRequestHandling.tla` models permit admission per request, not per
+        // connection. Acquire/release around request handling to keep that contract.
+        let Some(_permit) = acquire_request_permit(Arc::clone(&permits)).await else {
+            log_client_error("Permit semaphore closed", &"request limiter unavailable");
             break;
         };
 
@@ -148,10 +172,7 @@ async fn accept_loop(listener: &UnixListener, state: Arc<DaemonState>) -> Result
         let state_clone = Arc::clone(&state);
         let permits_clone = Arc::clone(&permits);
         tokio::spawn(async move {
-            let Ok(_permit) = permits_clone.acquire_owned().await else {
-                return;
-            };
-            if let Err(error) = handle_client(stream, state_clone).await {
+            if let Err(error) = handle_client_with_limit(stream, state_clone, permits_clone).await {
                 log_client_error("Client handler error", &error);
             }
         });

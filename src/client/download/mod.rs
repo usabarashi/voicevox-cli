@@ -25,6 +25,18 @@ pub(crate) fn collect_missing_resources() -> Vec<&'static str> {
     .collect()
 }
 
+/// Returns startup-critical resources that are currently missing.
+#[must_use]
+pub fn missing_startup_resources() -> Vec<&'static str> {
+    collect_missing_resources()
+}
+
+/// Returns true when all startup-critical resources are available.
+#[must_use]
+pub fn has_startup_resources() -> bool {
+    collect_missing_resources().is_empty()
+}
+
 pub(crate) fn default_download_target_dir() -> PathBuf {
     std::env::var_os("HOME").map_or_else(
         || PathBuf::from("./voicevox"),

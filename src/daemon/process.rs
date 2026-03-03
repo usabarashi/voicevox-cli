@@ -27,11 +27,20 @@ fn current_uid_string() -> String {
 
 fn parse_other_pids(stdout: &[u8]) -> Vec<u32> {
     let current_pid = process::id();
+    // In detached startup, the foreground child can temporarily see the
+    // detach-parent `voicevox-daemon` process. Ignore parent PID to avoid
+    // false "already running" detection during this handoff window.
+    let parent_pid = {
+        // SAFETY: `getppid` has no preconditions.
+        let pid = unsafe { libc::getppid() };
+        u32::try_from(pid).ok()
+    };
 
     String::from_utf8_lossy(stdout)
         .lines()
         .filter_map(|line| line.trim().parse::<u32>().ok())
         .filter(|&pid| pid != current_pid)
+        .filter(|&pid| parent_pid != Some(pid))
         .collect()
 }
 
@@ -47,13 +56,15 @@ fn pgrep_voicevox_daemon_output(match_mode: PgrepMatchMode) -> io::Result<proces
 
 #[derive(Clone, Copy)]
 enum PgrepMatchMode {
-    FullCommandLine,
+    ExactProcessName,
 }
 
 impl PgrepMatchMode {
     const fn flag(self) -> &'static str {
         match self {
-            Self::FullCommandLine => "-f",
+            // Match executable name exactly to avoid false positives from shell
+            // command-lines that include "voicevox-daemon" as an argument.
+            Self::ExactProcessName => "-x",
         }
     }
 }
@@ -181,7 +192,7 @@ fn check_for_other_daemons() -> DaemonResult<()> {
 /// Returns an error only if `pgrep` execution fails unexpectedly in a way surfaced by
 /// the process API. Missing processes are reported as an empty list.
 pub fn find_daemon_processes() -> Result<Vec<u32>> {
-    let output = pgrep_voicevox_daemon_output(PgrepMatchMode::FullCommandLine)?;
+    let output = pgrep_voicevox_daemon_output(PgrepMatchMode::ExactProcessName)?;
 
     if output.status.success() && !output.stdout.is_empty() {
         Ok(parse_other_pids(&output.stdout))

@@ -10,6 +10,6 @@ pub use daemon_client::{
 };
 pub use download::{
     cleanup_unnecessary_files, count_vvm_files_recursive, ensure_models_available,
-    launch_downloader_for_user,
+    has_startup_resources, launch_downloader_for_user, missing_startup_resources,
 };
 pub use input::get_input_text_from_sources;

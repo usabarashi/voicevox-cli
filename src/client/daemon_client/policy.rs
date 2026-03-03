@@ -43,14 +43,20 @@ impl DaemonAutoStartPolicy {
     }
 
     #[must_use]
-    pub fn mcp_default() -> EnsureDaemonRunningOptions {
-        EnsureDaemonRunningOptions {
-            remove_stale_socket: true,
-            connect_timeout: daemon::startup::connect_timeout(),
-            wait_attempts: daemon::startup::MAX_CONNECT_ATTEMPTS,
-            initial_retry_delay: daemon::startup::initial_retry_delay(),
-            max_retry_delay: daemon::startup::max_retry_delay(),
-            sleep_before_first_check: false,
+    pub fn mcp_default() -> Self {
+        Self {
+            startup_grace_period: Duration::from_millis(0),
+            final_connection_timeout: daemon::startup::connect_timeout(),
+            ensure_running: EnsureDaemonRunningOptions {
+                remove_stale_socket: true,
+                connect_timeout: daemon::startup::connect_timeout(),
+                // MCP startup can happen under heavier load than CLI usage.
+                // Keep readiness wait below Claude's MCP 30s connect timeout.
+                wait_attempts: 12,
+                initial_retry_delay: Duration::from_millis(250),
+                max_retry_delay: Duration::from_millis(1000),
+                sleep_before_first_check: true,
+            },
         }
     }
 }

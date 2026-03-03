@@ -4,6 +4,7 @@ pub mod mcp_server;
 pub mod output;
 pub mod say;
 pub mod synthesis_job;
+pub mod system_state;
 
 pub use daemon_control::{run_daemon_cli, ControlCommand, DaemonRunFlags, StartMode};
 pub use inspect::{run_list_models_command, run_list_speakers_command, run_status_command};

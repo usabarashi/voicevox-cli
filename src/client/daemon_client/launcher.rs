@@ -1,12 +1,28 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::path::Path;
 use tokio::net::UnixStream;
 
+use crate::app::system_state::StartupPhase;
 use super::policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
-use super::transport::{DAEMON_CONNECTION_TIMEOUT, connect_socket_with_timeout};
+use super::transport::{connect_socket_with_timeout, connect_with_retry, DAEMON_CONNECTION_TIMEOUT};
 use crate::daemon::{
-    EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome, ensure_daemon_running,
+    ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
 };
+
+async fn connect_once(socket_path: &Path) -> Result<UnixStream> {
+    connect_socket_with_timeout(socket_path, DAEMON_CONNECTION_TIMEOUT).await
+}
+
+fn validate_startup_preconditions() -> Result<()> {
+    let missing = crate::client::missing_startup_resources();
+    if !missing.is_empty() {
+        let resources = missing.join(", ");
+        return Err(anyhow!(
+            "Required VOICEVOX resources are missing ({resources}). Please run 'voicevox-setup'."
+        ));
+    }
+    Ok(())
+}
 
 async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
     use std::io::Write;
@@ -63,18 +79,41 @@ async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
 }
 
 pub(crate) async fn connect_or_start(socket_path: &Path) -> Result<UnixStream> {
-    if let Ok(stream) = connect_socket_with_timeout(socket_path, DAEMON_CONNECTION_TIMEOUT).await {
-        return Ok(stream);
+    let mut phase = StartupPhase::InitialConnect;
+
+    loop {
+        let (connected, next_phase) = run_startup_phase(phase, socket_path).await?;
+        if let Some(stream) = connected {
+            return Ok(stream);
+        }
+        if let Some(next) = next_phase {
+            phase = next;
+        }
     }
+}
 
-    crate::voice::has_available_models().then_some(()).ok_or_else(|| {
-        anyhow!(
-            "No VOICEVOX models found. Please run 'voicevox-setup' or place .vvm files in the models directory."
-        )
-    })?;
-
-    start_daemon_automatically(socket_path).await?;
-    connect_after_start_with_retry(socket_path).await
+async fn run_startup_phase(
+    phase: StartupPhase,
+    socket_path: &Path,
+) -> Result<(Option<UnixStream>, Option<StartupPhase>)> {
+    match phase {
+        StartupPhase::InitialConnect => match connect_once(socket_path).await {
+            Ok(stream) => Ok((Some(stream), None)),
+            Err(_) => Ok((None, Some(StartupPhase::ValidateModels))),
+        },
+        StartupPhase::ValidateModels => {
+            validate_startup_preconditions()?;
+            Ok((None, Some(StartupPhase::StartDaemon)))
+        }
+        StartupPhase::StartDaemon => {
+            start_daemon_automatically(socket_path).await?;
+            Ok((None, Some(StartupPhase::ConnectRetry)))
+        }
+        StartupPhase::ConnectRetry => {
+            let stream = connect_after_start_with_retry(socket_path).await?;
+            Ok((Some(stream), None))
+        }
+    }
 }
 
 async fn connect_after_start_with_retry(socket_path: &Path) -> Result<UnixStream> {
@@ -83,38 +122,19 @@ async fn connect_after_start_with_retry(socket_path: &Path) -> Result<UnixStream
 
     tokio::time::sleep(auto_start_policy.startup_grace_period).await;
 
-    let mut delay = retry_policy.initial_delay;
-
-    for attempt in 0..retry_policy.attempts {
-        match connect_socket_with_timeout(socket_path, auto_start_policy.final_connection_timeout)
-            .await
-        {
-            Ok(stream) => return Ok(stream),
-            Err(_) => {
-                if attempt + 1 < retry_policy.attempts {
-                    tokio::time::sleep(delay).await;
-                    delay = (delay * 2).min(retry_policy.max_delay);
-                }
-            }
-        }
-    }
-
-    // Final connect check without backoff sleep, matching the modeled FinalConnect step.
-    let final_error =
-        match connect_socket_with_timeout(socket_path, auto_start_policy.final_connection_timeout)
-            .await
-        {
-            Ok(stream) => return Ok(stream),
-            Err(error) => error,
-        };
-
-    let attempts = retry_policy.attempts;
-    let last_error_text = final_error.to_string();
-
-    Err(anyhow!(
-        "Daemon started but failed to connect at {} after {} attempts: {}",
-        socket_path.display(),
-        attempts,
-        last_error_text
-    ))
+    connect_with_retry(
+        socket_path,
+        auto_start_policy.final_connection_timeout,
+        retry_policy,
+    )
+    .await
+    .map_err(|error| {
+        let attempts = retry_policy.attempts;
+        anyhow!(
+            "Daemon started but failed to connect at {} after {} attempts: {}",
+            socket_path.display(),
+            attempts,
+            error
+        )
+    })
 }

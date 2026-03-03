@@ -1,36 +1,67 @@
-# Rust Phase to TLA+ Traceability
+# TLA+ State Traceability
 
-This document maps runtime phases in Rust to the current TLA+ models.
-It is intentionally approximate: TLA+ models are abstractions, not line-by-line code mirrors.
+This document is closed within TLA+ artifacts only.
+It maps state ownership, cross-module synchronization, and scenario coverage across `modeling/tla` and `modeling/cfg`.
 
-## Rust source of phase enums
+## State Ownership
 
-- `src/app/system_state.rs`
+| Concern | Primary module | Core states/actions |
+|---|---|---|
+| Daemon lifecycle | `Daemon.tla` | `DaemonDown/Starting/Ready/Recovering`, `StartDaemon`, `DaemonReady`, `DaemonFail`, `Recover`, `GiveUp` |
+| Startup resources | `StartupResources.tla` | runtime/dictionary/socket/model readiness states and retries |
+| ONNX runtime resource | `ONNXRuntime.tla` | runtime load/retry/fail transitions |
+| Dictionary resource | `Dictionary.tla` | dictionary load/retry/fail transitions |
+| Voice model availability | `VoicevoxModel.tla` | `Missing/Exists` style availability and invalid-target outcomes |
+| Socket binding/readiness | `Socket.tla` | bind, ready, failure, recovery transitions |
+| MCP server connect/playback view | `MCPServer.tla` | `StartConnect`, `ConnectOk`, `ConnectRetry`, playback state transitions |
+| Synthesis lifecycle | `Synthesis.tla` | `Idle/Queued/Synthesizing/Done/Failed/Canceled`, retry and invalid-target terminal fail |
+| Parallel synthesis safety/progress | `SynthesisParallel.tla` | concurrent request safety/liveness abstraction |
+| IPC contract behavior | `IPC.tla` | request/response safety and progress |
+| Say command flow | `Say.tla` | synthesis + playback path for `say` use case |
+| Integrated end-to-end | `System.tla` | composed transition families and cross-view synchronization |
 
-## Mapping
+## Cross-Module Synchronization
 
-| Rust Phase | Rust meaning | TLA+ module | TLA+ states/actions |
-|---|---|---|---|
-| `StartupPhase::InitialConnect` | Try existing daemon socket first | `MCPServer.tla`, `Daemon.tla` | `StartConnect`, `ConnectOk`, daemon-side `AcceptReq` precondition |
-| `StartupPhase::ValidateModels` | Verify startup resources exist before spawn | `StartupResources.tla`, `ONNXRuntime.tla` | `ResourceReady` guard (`runtimeState/dictState/modelState = "Ready"`) |
-| `StartupPhase::StartDaemon` | Spawn/recover daemon process | `Daemon.tla`, `StartupResources.tla` | `StartDaemon`, `DaemonReady`, `DaemonFail`, `Recover`, `GiveUp` |
-| `StartupPhase::ConnectRetry` | Retry connect with backoff after spawn | `MCPServer.tla` | `ConnectRetry`, `ConnectOk`, `ConnectFail` |
-| `McpStartupPhase::InitialStart` | MCP startup attempt for daemon | `Daemon.tla` | `StartDaemon`, `DaemonReady`, `DaemonFail` |
-| `McpStartupPhase::RecoverAlreadyRunning` | Kill/recover stuck daemon and retry | `Daemon.tla` | `CrashFromReady` + `Recover` abstraction |
-| `SynthesisPhase::Validate` | Validate text/style/rate request | `Synthesis.tla` | pre-`Enqueue` guard (abstracted) |
-| `SynthesisPhase::EnsureResources` | Optional on-demand resource setup | `StartupResources.tla`, `System.tla` | startup/resource readiness path before synthesis |
-| `SynthesisPhase::Connect` | Obtain daemon client/session | `MCPServer.tla`, `System.tla` | `StartConnect`, `ConnectOk` |
-| `SynthesisPhase::Synthesize` | RPC synthesis call execution | `Synthesis.tla` | `Enqueue`, `StartSynth`, `SynthOk`, `SynthFail`, `InvalidTargetFail`, `Cancel` |
-| `SayPhase::Validate` | CLI input validation | `MCPServer.tla` | pre-connection guard (abstracted) |
-| `SayPhase::Synthesize` | Run daemon synthesis pipeline | `System.tla`, `Synthesis.tla` | same as synthesis path above |
-| `SayPhase::Emit` | Playback/write output | `Playback.tla` | `AudioArrived`, `StartPlayback`, `LaunchOk`, `NaturalEnd`, `LaunchFail` |
-| `McpTtsPhase::Attempt` | Synthesis attempt (with cancellation checks) | `Synthesis.tla`, `SynthesisParallel.tla` | `StartSynth`, `SynthOk`, `SynthFail`, `InvalidTargetFail`, `Cancel` |
-| `McpTtsPhase::Backoff` | Retry delay before next attempt | `Synthesis.tla` | retry progression via `SynthFail` + bounded `retryCount` |
-| `McpTtsPhase::Finish` | Terminal return path | `Synthesis.tla` | terminal states `Done/Failed/Canceled` |
+`System.tla` is the integration point and preserves these correspondences:
 
-## Notes on abstraction gaps
+- daemon source of truth: `fsDaemonState`
+- MCP connection view: `clientDaemonState = IF fsDaemonState = "Ready" THEN "Ready" ELSE "DaemonDown"`
+- synthesis readiness view: `synthDaemonReady = (fsDaemonState = "Ready")`
+- connected requires ready: `clientState = "Connected" => fsDaemonState = "Ready"`
+- synthesizing requires ready: `synthState = "Synthesizing" => fsDaemonState = "Ready"`
 
-- Rust has concrete error formatting and IO details; TLA+ intentionally omits message text and file paths.
-- Rust has explicit sleep/backoff durations; TLA+ models retry as bounded counters and nondeterministic scheduling.
-- `McpStartupPhase::RecoverAlreadyRunning` includes PID/signal handling in Rust, but is represented as state transitions (`Ready/Recovering/Starting`) in TLA+.
-- Playback is modeled separately (`Playback.tla`) and is only loosely coupled in Rust via emit stage.
+This establishes a single authoritative daemon state with synchronized client/synthesis projections.
+
+## Scenario Coverage (`cfg` -> `tla`)
+
+| Scenario config | Module | Main check intent |
+|---|---|---|
+| `Daemon.startup.cfg` | `Daemon.tla` | daemon startup/recovery bounded behavior |
+| `FirstStartup.bootstrap.cfg` | `StartupResources.tla` | first-start resource bootstrap completion |
+| `ONNXRuntime.load.cfg` | `ONNXRuntime.tla` | runtime load progress/failure bounds |
+| `Dictionary.load.cfg` | `Dictionary.tla` | dictionary load progress/failure bounds |
+| `Socket.bind.cfg` | `Socket.tla` | socket bind/readiness transitions |
+| `VoicevoxModel.standard.cfg` | `VoicevoxModel.tla` | model existence/missing and target validity |
+| `MCPServer.connect.cfg` | `MCPServer.tla` | connect retries and terminal outcomes |
+| `IPC.safety.cfg` | `IPC.tla` | IPC safety invariants |
+| `IPC.progress.cfg` | `IPC.tla` | IPC liveness/progress |
+| `Synthesis.full.cfg` | `Synthesis.tla` | full synthesis state machine |
+| `Synthesis.normal-flow.cfg` | `Synthesis.tla` | success-only normal path |
+| `Synthesis.invalid-target.cfg` | `Synthesis.tla` | invalid target leads to terminal failure |
+| `Synthesis.progress.cfg` | `Synthesis.tla` | eventual leave-from-synthesizing properties |
+| `SynthesisParallel.safety.cfg` | `SynthesisParallel.tla` | parallel safety properties |
+| `SynthesisParallel.progress.cfg` | `SynthesisParallel.tla` | parallel liveness/progress |
+| `Playback.standard.cfg` | `Playback.tla` | playback state transitions and completion |
+| `Say.standard.cfg` | `Say.tla` | standard say flow |
+| `Say.daemon.cfg` | `Say.tla` | say flow with daemon-coupled scenario |
+| `System.integration.cfg` | `System.tla` | cross-module integration consistency |
+
+## Modeling Rules
+
+- Module-local details stay in each `*.tla`.
+- Integration consistency is checked in `System.tla`.
+- Scenario-specific constraints belong in `*.cfg`, not in module logic.
+- If a new state is introduced, update:
+  - owning `*.tla`
+  - relevant integration mapping in `System.tla` (if shared)
+  - at least one `*.cfg` scenario that exercises it

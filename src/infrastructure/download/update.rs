@@ -47,7 +47,7 @@ async fn run_update(kind: UpdateKind) -> Result<UpdateOutcome> {
 
     if try_run_downloader_only(kind.resource(), &target_dir).await? {
         let model_count = match kind {
-            UpdateKind::Models => Some(count_vvm_files_recursive(&target_dir.join("models"))),
+            UpdateKind::Models => Some(count_vvm_files_recursive(&target_dir)),
             _ => None,
         };
         return Ok(UpdateOutcome {

@@ -12,17 +12,17 @@ pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
 }
 
 fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
-    use rodio::{Decoder, Sink};
+    use rodio::{Decoder, Player};
     use std::io::Cursor;
 
-    match rodio::OutputStreamBuilder::open_default_stream() {
+    match rodio::DeviceSinkBuilder::open_default_sink() {
         Ok(stream) => {
             let wav_data_owned = wav_data.to_vec();
             let cursor = Cursor::new(wav_data_owned);
 
             match Decoder::new(cursor) {
                 Ok(source) => {
-                    let sink = Sink::connect_new(stream.mixer());
+                    let sink = Player::connect_new(stream.mixer());
                     sink.append(source);
                     sink.play();
                     sink.sleep_until_end();

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rodio::{Decoder, Sink};
+use rodio::{Decoder, Player};
 use std::io::Cursor;
 
 use crate::client::DaemonClient;
@@ -26,7 +26,7 @@ impl StreamingSynthesizer {
         text: &str,
         style_id: u32,
         rate: f32,
-        sink: &Sink,
+        sink: &Player,
     ) -> Result<()> {
         let segments = self.text_splitter.split(text);
 

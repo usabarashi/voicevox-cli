@@ -96,12 +96,14 @@ impl StreamingSynthesizer {
     ///
     /// Returns an error if any audio segment cannot be decoded.
     pub fn append_segments_to_sink(&self, wav_segments: &[Vec<u8>], sink: &Sink) -> Result<()> {
-        sink.play();
         for (i, wav_data) in wav_segments.iter().enumerate() {
             let cursor = Cursor::new(wav_data.clone());
             let source = Decoder::new(cursor)
                 .with_context(|| format!("Failed to decode audio for segment {i}"))?;
             sink.append(source);
+            if i == 0 {
+                sink.play();
+            }
         }
         Ok(())
     }

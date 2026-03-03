@@ -1,7 +1,7 @@
-------------------------------- MODULE FirstStartup -------------------------------
+----------------------------- MODULE StartupResources -----------------------------
 (***************************************************************************)
-(* Integrated first-startup model.                                         *)
-(* Composes Runtime/Dictionary/Socket modules and checks download gates.   *)
+(* Startup resources and daemon bootstrap domain model.                    *)
+(* Composes ONNXRuntime/Dictionary/Socket and tracks daemon readiness.     *)
 (***************************************************************************)
 
 EXTENDS Naturals
@@ -21,7 +21,7 @@ vars == << runtimeState, runtimeRetry,
            modelState, modelRetry,
            daemonState >>
 
-R == INSTANCE Runtime WITH
+R == INSTANCE ONNXRuntime WITH
     MAX_RETRY <- MAX_RETRY,
     runtimeState <- runtimeState,
     retryCount <- runtimeRetry
@@ -66,7 +66,7 @@ Init ==
     /\ modelRetry = 0
     /\ daemonState = "Down"
 
-RuntimeStep ==
+ONNXRuntimeStep ==
     /\ \/ R!BeginLoad
        \/ R!LoadOk
        \/ R!LoadFail
@@ -162,7 +162,7 @@ Stutter ==
     UNCHANGED vars
 
 Next ==
-    \/ RuntimeStep
+    \/ ONNXRuntimeStep
     \/ DictionaryStep
     \/ SocketStep
     \/ StartModelDownload

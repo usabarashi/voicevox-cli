@@ -1,6 +1,6 @@
---------------------------------- MODULE Runtime ----------------------------------
+------------------------------- MODULE ONNXRuntime -------------------------------
 (***************************************************************************)
-(* Minimal runtime lifecycle model (e.g. ONNX runtime loader).             *)
+(* Minimal ONNX Runtime lifecycle model (loader/setup state).              *)
 (***************************************************************************)
 
 EXTENDS Naturals

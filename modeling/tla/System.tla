@@ -1,7 +1,7 @@
 ----------------------------------- MODULE System ----------------------------------
 (***************************************************************************)
-(* Top-level integrated model: FirstStartup + Client + Synthesis.          *)
-(* Daemon availability is sourced from FirstStartup and synchronized to     *)
+(* Top-level integrated model: StartupResources + MCPServer + Synthesis.   *)
+(* Daemon availability is sourced from StartupResources and synchronized to *)
 (* client/synthesis views in a single transition family.                   *)
 (***************************************************************************)
 
@@ -17,6 +17,7 @@ VARIABLES fsRuntimeState, fsRuntimeRetry,
           fsModelState, fsModelRetry,
           fsDaemonState,
           clientDaemonState, clientState, clientAttempt,
+          clientPlaybackAudioReady, clientPlaybackState, clientPlaybackCancelRequested, clientPlaybackErrorKind,
           synthDaemonReady, synthState, synthRetryCount, synthErrorKind
 
 vars == << fsRuntimeState, fsRuntimeRetry,
@@ -25,9 +26,10 @@ vars == << fsRuntimeState, fsRuntimeRetry,
            fsModelState, fsModelRetry,
            fsDaemonState,
            clientDaemonState, clientState, clientAttempt,
+           clientPlaybackAudioReady, clientPlaybackState, clientPlaybackCancelRequested, clientPlaybackErrorKind,
            synthDaemonReady, synthState, synthRetryCount, synthErrorKind >>
 
-FS == INSTANCE FirstStartup WITH
+FS == INSTANCE StartupResources WITH
     MAX_RETRY <- MAX_RETRY,
     runtimeState <- fsRuntimeState,
     runtimeRetry <- fsRuntimeRetry,
@@ -39,11 +41,15 @@ FS == INSTANCE FirstStartup WITH
     modelRetry <- fsModelRetry,
     daemonState <- fsDaemonState
 
-C == INSTANCE Client WITH
+C == INSTANCE MCPServer WITH
     MAX_ATTEMPTS <- MAX_ATTEMPTS,
     daemonState <- clientDaemonState,
     clientState <- clientState,
-    attempt <- clientAttempt
+    attempt <- clientAttempt,
+    playbackAudioReady <- clientPlaybackAudioReady,
+    playbackState <- clientPlaybackState,
+    playbackCancelRequested <- clientPlaybackCancelRequested,
+    playbackErrorKind <- clientPlaybackErrorKind
 
 Y == INSTANCE Synthesis WITH
     MAX_RETRY <- MAX_RETRY,
@@ -73,6 +79,10 @@ Init ==
     /\ clientDaemonState = "DaemonDown"
     /\ clientState = "Idle"
     /\ clientAttempt = 0
+    /\ clientPlaybackAudioReady = FALSE
+    /\ clientPlaybackState = "Idle"
+    /\ clientPlaybackCancelRequested = FALSE
+    /\ clientPlaybackErrorKind = "None"
     /\ synthDaemonReady = FALSE
     /\ synthState = "Idle"
     /\ synthRetryCount = 0
@@ -87,6 +97,8 @@ SyncViewsAndDependentStates ==
         THEN "Idle"
         ELSE clientState
     /\ clientAttempt' = clientAttempt
+    /\ UNCHANGED << clientPlaybackAudioReady, clientPlaybackState,
+                    clientPlaybackCancelRequested, clientPlaybackErrorKind >>
     /\ synthState' =
         IF fsDaemonState' # "Ready" /\ synthState \in {"Queued", "Synthesizing"}
         THEN "Idle"
@@ -97,7 +109,7 @@ SyncViewsAndDependentStates ==
         THEN "None"
         ELSE synthErrorKind
 
-FirstStartupStep ==
+StartupResourcesStep ==
     /\ FS!Next
     /\ SyncViewsAndDependentStates
 
@@ -106,6 +118,15 @@ ClientStep ==
        \/ C!ConnectOk
        \/ C!ConnectRetry
        \/ C!ConnectFail
+       \/ C!ReceiveAudio
+       \/ C!PlaybackStart
+       \/ C!PlaybackLaunchOk
+       \/ C!PlaybackLaunchFail
+       \/ C!PlaybackCancel
+       \/ C!PlaybackStopByCancel
+       \/ C!PlaybackDeviceFail
+       \/ C!PlaybackNaturalEnd
+       \/ C!PlaybackReset
     /\ UNCHANGED << fsRuntimeState, fsRuntimeRetry,
                     fsDictState, fsDictRetry,
                     fsSocketState, fsSocketRetry,
@@ -126,13 +147,15 @@ SynthesisStep ==
                     fsSocketState, fsSocketRetry,
                     fsModelState, fsModelRetry,
                     fsDaemonState,
-                    clientDaemonState, clientState, clientAttempt >>
+                    clientDaemonState, clientState, clientAttempt,
+                    clientPlaybackAudioReady, clientPlaybackState,
+                    clientPlaybackCancelRequested, clientPlaybackErrorKind >>
 
 Stutter ==
     UNCHANGED vars
 
 Next ==
-    \/ FirstStartupStep
+    \/ StartupResourcesStep
     \/ ClientStep
     \/ SynthesisStep
     \/ Stutter

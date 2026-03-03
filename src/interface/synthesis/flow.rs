@@ -129,9 +129,9 @@ pub async fn synthesize_bytes_via_daemon(
 ) -> Result<Vec<u8>> {
     match synthesize_bytes_via_daemon_cancellable(request, output, None).await? {
         SynthesisFlowOutcome::Completed(wav_data) => Ok(wav_data),
-        SynthesisFlowOutcome::Canceled(_reason) => {
-            Err(anyhow!("Unexpected cancellation without cancellation receiver"))
-        }
+        SynthesisFlowOutcome::Canceled(_reason) => Err(anyhow!(
+            "Unexpected cancellation without cancellation receiver"
+        )),
     }
 }
 

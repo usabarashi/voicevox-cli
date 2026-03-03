@@ -69,13 +69,9 @@ async fn process_line(
         None => return Ok(LoopControl::Break),
     };
 
-    if let Some(error_response) = (line.len() > MAX_JSONRPC_LINE_BYTES)
-        .then_some(JsonRpcResponse::error(
-            Value::Null,
-            INVALID_REQUEST,
-            "Request too large",
-        ))
-    {
+    if let Some(error_response) = (line.len() > MAX_JSONRPC_LINE_BYTES).then_some(
+        JsonRpcResponse::error(Value::Null, INVALID_REQUEST, "Request too large"),
+    ) {
         send_response(&error_response, stdout).await?;
         return Ok(LoopControl::Continue);
     }

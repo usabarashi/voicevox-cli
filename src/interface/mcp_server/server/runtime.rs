@@ -84,10 +84,19 @@ impl ActiveRequests {
         let active_requests = self.clone();
         if tool_name == "text_to_speech" {
             let (abort_tx, abort_rx) = oneshot::channel::<String>();
-            self.abort_channels
-                .lock()
-                .await
-                .insert(request_id.clone(), abort_tx);
+            {
+                let mut channels = self.abort_channels.lock().await;
+                if channels.contains_key(&request_id) {
+                    let response = JsonRpcResponse::error(
+                        id,
+                        INTERNAL_ERROR,
+                        "Duplicate request ID for in-flight request",
+                    );
+                    let _ = self.response_sender.send(response).await;
+                    return;
+                }
+                channels.insert(request_id.clone(), abort_tx);
+            }
             spawn_non_send_text_to_speech_task(move || {
                 Box::pin(async move {
                     let _permit = permit;

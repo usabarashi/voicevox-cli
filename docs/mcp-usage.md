@@ -252,4 +252,4 @@ Common errors:
 - "Invalid style_id": Use `list_voice_styles` to see available style IDs
 - "Audio device not available": Check system audio settings
 - "Request too large": The MCP JSON-RPC line exceeded the server limit
-- "Too many concurrent tool executions": Reduce parallel MCP `tools/call` requests
+- "Too many concurrent tool handlers": Reduce parallel MCP `tools/call` requests (limit: 4)

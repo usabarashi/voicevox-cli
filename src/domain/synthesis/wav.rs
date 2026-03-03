@@ -40,7 +40,11 @@ pub fn concatenate_wav_segments(segments: &[Vec<u8>]) -> Result<Vec<u8>> {
     // Copy everything before the data chunk from the first segment, then write new data chunk
     let pre_data_len = first_header.data_offset - 8; // offset of "data" chunk header
     let output_size = pre_data_len + 8 + total_data_size; // pre-data + data header + PCM
-    let file_size = (output_size - 8) as u32; // RIFF size excludes first 8 bytes
+
+    let data_size_u32 =
+        u32::try_from(total_data_size).context("Combined PCM data exceeds WAV 4 GB limit")?;
+    let file_size = u32::try_from(output_size - 8)
+        .context("Combined WAV file size exceeds RIFF 4 GB limit")?;
 
     let mut output = Vec::with_capacity(output_size);
 
@@ -54,7 +58,7 @@ pub fn concatenate_wav_segments(segments: &[Vec<u8>]) -> Result<Vec<u8>> {
 
     // Data chunk header with combined size
     output.extend_from_slice(b"data");
-    output.extend_from_slice(&(total_data_size as u32).to_le_bytes());
+    output.extend_from_slice(&data_size_u32.to_le_bytes());
 
     // Combined PCM data
     for pcm in &pcm_chunks {

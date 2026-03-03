@@ -106,6 +106,10 @@ fn parse_wav_header(data: &[u8]) -> Result<WavHeader> {
 
         if chunk_id == b"fmt " {
             ensure!(chunk_size >= 16, "fmt chunk too small");
+            ensure!(
+                pos + 8 + chunk_size <= data.len(),
+                "fmt chunk payload extends beyond buffer"
+            );
             let fmt_data = &data[pos + 8..];
             channels = u16::from_le_bytes([fmt_data[2], fmt_data[3]]);
             sample_rate = u32::from_le_bytes([fmt_data[4], fmt_data[5], fmt_data[6], fmt_data[7]]);
@@ -117,6 +121,10 @@ fn parse_wav_header(data: &[u8]) -> Result<WavHeader> {
             if !found_fmt {
                 bail!("data chunk found before fmt chunk");
             }
+            ensure!(
+                pos + 8 + chunk_size <= data.len(),
+                "data chunk payload extends beyond buffer"
+            );
             return Ok(WavHeader {
                 channels,
                 sample_rate,

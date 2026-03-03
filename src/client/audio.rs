@@ -22,7 +22,7 @@ fn play_audio_via_rodio(wav_data: &[u8]) -> Result<()> {
 
             match Decoder::new(cursor) {
                 Ok(source) => {
-                    let sink = Player::connect_new(&stream.mixer());
+                    let sink = Player::connect_new(stream.mixer());
                     sink.append(source);
                     sink.play();
                     sink.sleep_until_end();

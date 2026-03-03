@@ -216,7 +216,7 @@ async fn handle_streaming_synthesis_cancellable(
 ) -> Result<ToolCallResult> {
     let stream = rodio::DeviceSinkBuilder::open_default_sink()
         .context("Failed to create audio output stream")?;
-    let sink = Arc::new(Player::connect_new(&stream.mixer()));
+    let sink = Arc::new(Player::connect_new(stream.mixer()));
 
     let mut synthesizer = StreamingSynthesizer::new()
         .await
@@ -363,7 +363,7 @@ async fn play_low_latency_with_cancel(
 ) -> Result<PlaybackOutcome> {
     let stream = rodio::DeviceSinkBuilder::open_default_sink()
         .context("Failed to create audio output stream")?;
-    let sink = Arc::new(Player::connect_new(&stream.mixer()));
+    let sink = Arc::new(Player::connect_new(stream.mixer()));
     let _stream_guard = stream;
 
     let cursor = std::io::Cursor::new(wav_data);

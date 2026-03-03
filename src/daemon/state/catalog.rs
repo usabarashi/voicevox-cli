@@ -3,6 +3,12 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::core::VoicevoxCore;
+
+pub(super) enum TargetResolution {
+    Exists { style_id: u32, model_id: u32 },
+    Missing { message: String },
+}
+
 pub(super) struct ModelCatalog {
     style_to_model_map: HashMap<u32, u32>,
     model_default_style_map: HashMap<u32, u32>,
@@ -48,9 +54,12 @@ impl ModelCatalog {
         })
     }
 
-    pub(super) fn resolve_synthesis_target(&self, requested_id: u32) -> Result<(u32, u32), String> {
+    pub(super) fn resolve_synthesis_target(&self, requested_id: u32) -> TargetResolution {
         if let Some(model_id) = self.style_to_model_map.get(&requested_id).copied() {
-            return Ok((requested_id, model_id));
+            return TargetResolution::Exists {
+                style_id: requested_id,
+                model_id,
+            };
         }
 
         if self
@@ -58,17 +67,26 @@ impl ModelCatalog {
             .iter()
             .any(|model| model.model_id == requested_id)
         {
-            let style_id = self
+            let Some(style_id) = self
                 .model_default_style_map
                 .get(&requested_id)
                 .copied()
-                .ok_or_else(|| format!("Model {requested_id} has no resolvable style IDs"))?;
-            return Ok((style_id, requested_id));
+            else {
+                return TargetResolution::Missing {
+                    message: format!("Model {requested_id} has no resolvable style IDs"),
+                };
+            };
+            return TargetResolution::Exists {
+                style_id,
+                model_id: requested_id,
+            };
         }
 
-        Err(format!(
-            "Unknown style/model ID {requested_id}. Use --list-speakers or --list-models to inspect available IDs."
-        ))
+        TargetResolution::Missing {
+            message: format!(
+                "Unknown style/model ID {requested_id}. Use --list-speakers or --list-models to inspect available IDs."
+            ),
+        }
     }
 
     pub(super) fn get_model_path(&self, model_id: u32) -> Option<&Path> {
@@ -88,5 +106,67 @@ impl ModelCatalog {
 
     pub(super) fn available_models(&self) -> &[crate::voice::AvailableModel] {
         &self.available_models
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ModelCatalog, TargetResolution};
+    use crate::voice::AvailableModel;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    fn test_catalog() -> ModelCatalog {
+        ModelCatalog {
+            style_to_model_map: HashMap::from([(11, 1)]),
+            model_default_style_map: HashMap::from([(1, 11), (2, 21)]),
+            all_speakers: vec![],
+            available_models: vec![
+                AvailableModel {
+                    model_id: 1,
+                    file_path: PathBuf::from("/tmp/1.vvm"),
+                    speakers: Default::default(),
+                },
+                AvailableModel {
+                    model_id: 2,
+                    file_path: PathBuf::from("/tmp/2.vvm"),
+                    speakers: Default::default(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn resolve_style_id_as_existing_target() {
+        match test_catalog().resolve_synthesis_target(11) {
+            TargetResolution::Exists { style_id, model_id } => {
+                assert_eq!(style_id, 11);
+                assert_eq!(model_id, 1);
+            }
+            TargetResolution::Missing { message } => panic!("unexpected missing target: {message}"),
+        }
+    }
+
+    #[test]
+    fn resolve_model_id_to_default_style() {
+        match test_catalog().resolve_synthesis_target(2) {
+            TargetResolution::Exists { style_id, model_id } => {
+                assert_eq!(style_id, 21);
+                assert_eq!(model_id, 2);
+            }
+            TargetResolution::Missing { message } => panic!("unexpected missing target: {message}"),
+        }
+    }
+
+    #[test]
+    fn unknown_target_is_missing() {
+        match test_catalog().resolve_synthesis_target(999) {
+            TargetResolution::Exists { style_id, model_id } => {
+                panic!("unexpected existing target: style={style_id}, model={model_id}")
+            }
+            TargetResolution::Missing { message } => {
+                assert!(message.contains("Unknown style/model ID 999"));
+            }
+        }
     }
 }

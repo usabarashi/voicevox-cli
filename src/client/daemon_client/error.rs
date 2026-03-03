@@ -2,6 +2,13 @@ use anyhow::anyhow;
 
 use crate::ipc::DaemonErrorCode;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceTargetState {
+    Unknown,
+    Exists,
+    Missing,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{context}: {message}")]
 pub struct DaemonRpcError {
@@ -38,6 +45,20 @@ pub fn find_daemon_rpc_error(error: &anyhow::Error) -> Option<&DaemonRpcError> {
     error
         .chain()
         .find_map(|cause| cause.downcast_ref::<DaemonRpcError>())
+}
+
+#[must_use]
+pub fn infer_voice_target_state(error: &anyhow::Error) -> VoiceTargetState {
+    let Some(daemon_error) = find_daemon_rpc_error(error) else {
+        return VoiceTargetState::Unknown;
+    };
+
+    match daemon_error.code() {
+        DaemonErrorCode::InvalidTargetId | DaemonErrorCode::ModelLoadFailed => {
+            VoiceTargetState::Missing
+        }
+        DaemonErrorCode::SynthesisFailed | DaemonErrorCode::Internal => VoiceTargetState::Exists,
+    }
 }
 
 pub fn format_daemon_rpc_error_for_mcp(error: &anyhow::Error) -> String {
@@ -148,5 +169,25 @@ mod tests {
         )
         .context("wrapper");
         assert_eq!(daemon_rpc_exit_code(&err), Some(2));
+    }
+
+    #[test]
+    fn infers_missing_target_for_invalid_target_error() {
+        let err = daemon_response_error(
+            "Synthesis error",
+            DaemonErrorCode::InvalidTargetId,
+            "bad id",
+        );
+        assert_eq!(infer_voice_target_state(&err), VoiceTargetState::Missing);
+    }
+
+    #[test]
+    fn infers_existing_target_for_synthesis_failure() {
+        let err = daemon_response_error(
+            "Synthesis error",
+            DaemonErrorCode::SynthesisFailed,
+            "temporary error",
+        );
+        assert_eq!(infer_voice_target_state(&err), VoiceTargetState::Exists);
     }
 }

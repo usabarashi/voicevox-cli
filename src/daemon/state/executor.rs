@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::core::VoicevoxCore;
 
-use super::catalog::ModelCatalog;
+use super::catalog::{ModelCatalog, TargetResolution};
 use super::result::{DaemonServiceError, DaemonServiceErrorKind, DaemonServiceResult};
 
 pub(super) struct DaemonSynthesisExecutor {
@@ -52,8 +52,8 @@ impl DaemonSynthesisExecutor {
         rate: f32,
     ) -> Result<DaemonServiceResult, DaemonServiceError> {
         let (style_id, model_id) = match catalog.resolve_synthesis_target(requested_id) {
-            Ok(target) => target,
-            Err(message) => {
+            TargetResolution::Exists { style_id, model_id } => (style_id, model_id),
+            TargetResolution::Missing { message } => {
                 return Err(DaemonServiceError::new(
                     DaemonServiceErrorKind::InvalidTargetId,
                     message,

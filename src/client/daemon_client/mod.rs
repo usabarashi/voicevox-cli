@@ -15,7 +15,8 @@ use crate::voice::{AvailableModel, Speaker};
 pub use crate::daemon::find_daemon_binary;
 pub use error::{
     daemon_response_error, daemon_rpc_exit_code, find_daemon_rpc_error,
-    format_daemon_rpc_error_for_cli, format_daemon_rpc_error_for_mcp, DaemonRpcError,
+    format_daemon_rpc_error_for_cli, format_daemon_rpc_error_for_mcp, infer_voice_target_state,
+    DaemonRpcError, VoiceTargetState,
 };
 pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 pub use rpc::{daemon_mode, list_speakers_daemon};

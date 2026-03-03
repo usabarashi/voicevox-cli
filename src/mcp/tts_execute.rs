@@ -8,9 +8,8 @@ use crate::app::{
     system_state::McpTtsPhase, synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest,
     NoopAppOutput,
 };
-use crate::client::{find_daemon_rpc_error, format_daemon_rpc_error_for_mcp};
+use crate::client::{format_daemon_rpc_error_for_mcp, infer_voice_target_state, VoiceTargetState};
 use crate::daemon::startup;
-use crate::ipc::DaemonErrorCode;
 use crate::mcp::tool_types::{audio_result, text_result};
 use crate::mcp::tts_params::{parse_synthesize_params, text_char_count, SynthesizeParams};
 use crate::synthesis::wav::concatenate_wav_segments;
@@ -287,17 +286,14 @@ async fn run_daemon_synthesis_phase(
 }
 
 fn is_retryable_daemon_synthesis_error(error: &anyhow::Error) -> bool {
-    match find_daemon_rpc_error(error).map(|err| err.code()) {
-        Some(DaemonErrorCode::InvalidTargetId) | Some(DaemonErrorCode::ModelLoadFailed) => false,
-        Some(DaemonErrorCode::SynthesisFailed) | Some(DaemonErrorCode::Internal) => true,
-        None => true,
-    }
+    !matches!(infer_voice_target_state(error), VoiceTargetState::Missing)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::client::daemon_client::daemon_response_error;
+    use crate::ipc::DaemonErrorCode;
     use crate::mcp::tool_types::ToolContent;
     use serde_json::json;
     use tokio::sync::oneshot;

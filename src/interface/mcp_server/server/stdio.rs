@@ -1,7 +1,9 @@
 use anyhow::Result;
+use futures_util::StreamExt;
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
+use tokio_util::codec::{FramedRead, LinesCodec};
 
 use crate::interface::mcp_server::protocol::{
     parse_notification_message, parse_request_message, serialize_success_response,
@@ -17,8 +19,8 @@ const MAX_JSONRPC_LINE_BYTES: usize = 256 * 1024;
 pub async fn run_stdio_server() -> Result<()> {
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
-    let reader = BufReader::new(stdin);
-    let mut lines = reader.lines();
+    let codec = LinesCodec::new_with_max_length(MAX_JSONRPC_LINE_BYTES);
+    let mut lines = FramedRead::new(stdin, codec);
 
     let (response_tx, mut response_rx) = mpsc::channel::<JsonRpcResponse>(RESPONSE_QUEUE_CAPACITY);
     let active_requests = ActiveRequests::new(response_tx);
@@ -28,8 +30,8 @@ pub async fn run_stdio_server() -> Result<()> {
 
     loop {
         tokio::select! {
-            line_result = lines.next_line() => {
-                match process_line(line_result?, &active_requests, &mut stdout).await? {
+            frame = lines.next() => {
+                match process_frame(frame, &active_requests, &mut stdout).await? {
                     LoopControl::Continue => {}
                     LoopControl::Break => {
                         active_requests.cancel_all_requests("Client disconnected").await;
@@ -58,23 +60,23 @@ enum LoopControl {
     Break,
 }
 
-async fn process_line(
-    line_option: Option<String>,
+async fn process_frame(
+    frame: Option<Result<String, tokio_util::codec::LinesCodecError>>,
     active_requests: &ActiveRequests,
     stdout: &mut tokio::io::Stdout,
 ) -> Result<LoopControl> {
-    let line = match line_option {
-        Some(line) if !line.trim().is_empty() => line,
-        Some(_) => return Ok(LoopControl::Continue),
+    let line = match frame {
         None => return Ok(LoopControl::Break),
+        Some(Err(tokio_util::codec::LinesCodecError::MaxLineLengthExceeded)) => {
+            let response =
+                JsonRpcResponse::error(Value::Null, INVALID_REQUEST, "Request too large");
+            send_response(&response, stdout).await?;
+            return Ok(LoopControl::Continue);
+        }
+        Some(Err(e)) => return Err(e.into()),
+        Some(Ok(line)) if line.trim().is_empty() => return Ok(LoopControl::Continue),
+        Some(Ok(line)) => line,
     };
-
-    if let Some(error_response) = (line.len() > MAX_JSONRPC_LINE_BYTES).then_some(
-        JsonRpcResponse::error(Value::Null, INVALID_REQUEST, "Request too large"),
-    ) {
-        send_response(&error_response, stdout).await?;
-        return Ok(LoopControl::Continue);
-    }
 
     let Some(raw_message) = parse_json_request(&line, stdout).await? else {
         return Ok(LoopControl::Continue);

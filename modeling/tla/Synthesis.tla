@@ -111,6 +111,29 @@ Next ==
 Spec ==
     Init /\ [][Next]_vars
 
+ProgressNext ==
+    \/ DaemonUp
+    \/ DaemonDown
+    \/ Enqueue
+    \/ StartSynth
+    \/ SynthOk
+    \/ SynthFail
+    \/ InvalidTargetFail
+    \/ Cancel
+    \/ Reset
+
+ProgressSpec ==
+    /\ Init
+    /\ [][Next]_vars
+    /\ WF_vars(SynthOk
+               \/ SynthFail
+               \/ InvalidTargetFail
+               \/ Cancel
+               \/ DaemonDown)
+
+EventuallyLeavesSynthesizing ==
+    [](synthState = "Synthesizing" => <>(synthState # "Synthesizing"))
+
 NormalNext ==
     \/ DaemonUp
     \/ Enqueue

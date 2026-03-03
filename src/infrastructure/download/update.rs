@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::path::PathBuf;
 
 use super::{
@@ -59,19 +59,20 @@ async fn run_update(kind: UpdateKind) -> Result<UpdateOutcome> {
         });
     }
 
-    let fallback_model_count = match kind {
-        UpdateKind::Dictionary => None,
-        UpdateKind::Models | UpdateKind::SpecificModel(_) => {
-            Some(launch_models_downloader(&target_dir).await?)
+    match kind {
+        UpdateKind::Dictionary => {
+            bail!("Dictionary update failed and no fallback is available")
         }
-    };
-
-    Ok(UpdateOutcome {
-        kind,
-        target_dir,
-        model_count: fallback_model_count,
-        used_fallback: true,
-    })
+        UpdateKind::Models | UpdateKind::SpecificModel(_) => {
+            let model_count = launch_models_downloader(&target_dir).await?;
+            Ok(UpdateOutcome {
+                kind,
+                target_dir,
+                model_count: Some(model_count),
+                used_fallback: true,
+            })
+        }
+    }
 }
 
 pub async fn update_models_only() -> Result<UpdateOutcome> {

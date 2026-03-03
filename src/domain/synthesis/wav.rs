@@ -43,8 +43,8 @@ pub fn concatenate_wav_segments(segments: &[Vec<u8>]) -> Result<Vec<u8>> {
 
     let data_size_u32 =
         u32::try_from(total_data_size).context("Combined PCM data exceeds WAV 4 GB limit")?;
-    let file_size = u32::try_from(output_size - 8)
-        .context("Combined WAV file size exceeds RIFF 4 GB limit")?;
+    let file_size =
+        u32::try_from(output_size - 8).context("Combined WAV file size exceeds RIFF 4 GB limit")?;
 
     let mut output = Vec::with_capacity(output_size);
 
@@ -115,6 +115,11 @@ fn parse_wav_header(data: &[u8]) -> Result<WavHeader> {
                 "fmt chunk payload extends beyond buffer"
             );
             let fmt_data = &data[pos + 8..];
+            let audio_format = u16::from_le_bytes([fmt_data[0], fmt_data[1]]);
+            ensure!(
+                audio_format == 1,
+                "Unsupported audio format {audio_format} (only PCM is supported)"
+            );
             channels = u16::from_le_bytes([fmt_data[2], fmt_data[3]]);
             sample_rate = u32::from_le_bytes([fmt_data[4], fmt_data[5], fmt_data[6], fmt_data[7]]);
             bits_per_sample = u16::from_le_bytes([fmt_data[14], fmt_data[15]]);

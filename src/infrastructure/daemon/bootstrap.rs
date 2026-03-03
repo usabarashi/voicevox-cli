@@ -1,5 +1,6 @@
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
+use std::time::Duration;
 
 use super::{
     socket_probe, start_daemon_detached, startup, DaemonError, DaemonResult, StartDaemonOutcome,
@@ -141,6 +142,63 @@ where
             }),
         }
     }
+}
+
+async fn wait_for_process_exit(pid: u32, attempts: u32, delay: Duration) -> bool {
+    for _ in 0..attempts {
+        let status = {
+            // SAFETY: `kill` with signal 0 only probes process existence.
+            unsafe { libc::kill(pid as i32, 0) }
+        };
+        if status != 0 {
+            return true;
+        }
+        tokio::time::sleep(delay).await;
+    }
+    false
+}
+
+async fn terminate_stuck_daemon(pid: u32) -> std::io::Result<()> {
+    let term_status = {
+        // SAFETY: Best-effort signal delivery to an existing pid.
+        unsafe { libc::kill(pid as i32, libc::SIGTERM) }
+    };
+    if term_status != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::NotFound {
+            return Err(err);
+        }
+        return Ok(());
+    }
+
+    if wait_for_process_exit(pid, 10, Duration::from_millis(100)).await {
+        return Ok(());
+    }
+
+    let kill_status = {
+        // SAFETY: Fallback for unresponsive daemon process.
+        unsafe { libc::kill(pid as i32, libc::SIGKILL) }
+    };
+    if kill_status != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::NotFound {
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+pub async fn recover_stuck_daemon_and_retry(
+    pid: u32,
+    socket_path: &Path,
+    options: EnsureDaemonRunningOptions,
+) -> DaemonResult<EnsureDaemonRunningOutcome> {
+    terminate_stuck_daemon(pid)
+        .await
+        .map_err(|error| DaemonError::StartupFailed {
+            message: format!("Failed to terminate unresponsive daemon (PID: {pid}): {error}"),
+        })?;
+    ensure_daemon_running(socket_path, options, |_| {}).await
 }
 
 pub async fn ensure_daemon_running<F>(

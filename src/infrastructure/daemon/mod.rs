@@ -1,7 +1,7 @@
 pub mod bootstrap;
 pub mod control;
 pub mod process;
-pub mod rpc;
+pub mod client;
 pub mod server;
 pub mod socket_probe;
 pub mod start_process;
@@ -12,11 +12,12 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 pub use bootstrap::{
-    ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
+    ensure_daemon_running, recover_stuck_daemon_and_retry, EnsureDaemonRunningOptions,
+    EnsureDaemonRunningOutcome,
 };
 pub use control::{is_socket_responsive, pid_memory_info_line, terminate_process};
 pub use process::{check_and_prevent_duplicate, find_daemon_processes};
-pub use server::{handle_client, run_daemon};
+pub use server::run_daemon;
 pub use start_process::{find_daemon_binary, start_daemon_detached, StartDaemonOutcome};
 pub use state::DaemonState;
 

@@ -4,10 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::Duration;
 
-use crate::domain::daemon::{
-    daemon_not_running_lines, daemon_socket_line, daemon_start_banner_lines, daemon_usage_lines,
-    decide_daemon_invocation, DaemonCliFlags, DaemonInvocation,
-};
+use crate::interface::cli::daemon_invocation::{decide_daemon_invocation, DaemonCliFlags, DaemonInvocation};
 use crate::infrastructure::daemon::{
     check_and_prevent_duplicate, exit_codes as exit_daemon, is_socket_responsive,
     pid_memory_info_line, terminate_process, DaemonError,
@@ -50,6 +47,41 @@ impl DaemonControlOs for SystemDaemonControlOs {
     fn kill_term(&self, pid: u32) -> bool {
         terminate_process(pid)
     }
+}
+
+fn daemon_usage_lines(version: &str) -> Vec<String> {
+    vec![
+        format!("VOICEVOX Daemon v{version}"),
+        "\nDaemon Operations:".to_string(),
+        "  --start     Start the daemon (default)".to_string(),
+        "  --stop      Stop the running daemon".to_string(),
+        "  --status    Check daemon status".to_string(),
+        "  --restart   Restart the daemon".to_string(),
+        "\nExecution Modes:".to_string(),
+        "  --foreground Run in foreground (for development)".to_string(),
+        "  --detach     Run as background process".to_string(),
+        "\nUse --help for all options".to_string(),
+    ]
+}
+
+fn daemon_start_banner_lines(version: &str, socket_path: &Path) -> Vec<String> {
+    vec![
+        format!("VOICEVOX Daemon v{version}"),
+        "Starting user daemon...".to_string(),
+        format!("Socket: {} (user-specific)", socket_path.display()),
+        "Models: Load and unload per request (no caching)".to_string(),
+    ]
+}
+
+fn daemon_socket_line(socket_path: &Path) -> String {
+    format!("Socket: {}", socket_path.display())
+}
+
+fn daemon_not_running_lines(socket_path: &Path) -> [String; 2] {
+    [
+        "Daemon is not running".to_string(),
+        format!("   Socket: {}", socket_path.display()),
+    ]
 }
 
 fn print_usage_banner(output: &dyn AppOutput) {

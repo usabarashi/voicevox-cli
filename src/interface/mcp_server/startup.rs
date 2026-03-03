@@ -1,12 +1,18 @@
-use crate::domain::mcp::McpStartupPhase;
-use crate::infrastructure::daemon::rpc::DaemonAutoStartPolicy;
-use crate::infrastructure::daemon::{ensure_daemon_running, DaemonError, DaemonResult};
+use crate::infrastructure::daemon::client::DaemonAutoStartPolicy;
+use crate::infrastructure::daemon::{
+    ensure_daemon_running, recover_stuck_daemon_and_retry as recover_stuck_daemon_and_retry_impl,
+    DaemonError, DaemonResult,
+};
 use crate::infrastructure::paths::get_socket_path;
 use crate::interface::{AppOutput, StdAppOutput};
 use anyhow::Result;
-use std::io;
 use std::path::Path;
-use std::time::Duration;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum McpStartupPhase {
+    InitialStart,
+    RecoverAlreadyRunning { pid: u32 },
+}
 
 async fn attempt_mcp_daemon_start(socket_path: &Path) -> DaemonResult<()> {
     let policy = DaemonAutoStartPolicy::mcp_default();
@@ -15,58 +21,11 @@ async fn attempt_mcp_daemon_start(socket_path: &Path) -> DaemonResult<()> {
         .map(|_| ())
 }
 
-async fn wait_for_process_exit(pid: u32, attempts: u32, delay: Duration) -> bool {
-    for _ in 0..attempts {
-        let status = {
-            // SAFETY: `kill` with signal 0 only probes process existence.
-            unsafe { libc::kill(pid as i32, 0) }
-        };
-        if status != 0 {
-            return true;
-        }
-        tokio::time::sleep(delay).await;
-    }
-    false
-}
-
-async fn terminate_stuck_daemon(pid: u32) -> io::Result<()> {
-    let term_status = {
-        // SAFETY: Best-effort signal delivery to an existing pid.
-        unsafe { libc::kill(pid as i32, libc::SIGTERM) }
-    };
-    if term_status != 0 {
-        let err = io::Error::last_os_error();
-        if err.kind() != io::ErrorKind::NotFound {
-            return Err(err);
-        }
-        return Ok(());
-    }
-
-    if wait_for_process_exit(pid, 10, Duration::from_millis(100)).await {
-        return Ok(());
-    }
-
-    let kill_status = {
-        // SAFETY: Fallback for unresponsive daemon process.
-        unsafe { libc::kill(pid as i32, libc::SIGKILL) }
-    };
-    if kill_status != 0 {
-        let err = io::Error::last_os_error();
-        if err.kind() != io::ErrorKind::NotFound {
-            return Err(err);
-        }
-    }
-    Ok(())
-}
-
-async fn recover_stuck_daemon_and_retry(pid: u32, socket_path: &Path) -> DaemonResult<()> {
-    terminate_stuck_daemon(pid)
+async fn recover_stuck_daemon_for_mcp(pid: u32, socket_path: &Path) -> DaemonResult<()> {
+    let policy = DaemonAutoStartPolicy::mcp_default();
+    recover_stuck_daemon_and_retry_impl(pid, socket_path, policy.ensure_running)
         .await
-        .map_err(|error| DaemonError::StartupFailed {
-            message: format!("Failed to terminate unresponsive daemon (PID: {pid}): {error}"),
-        })?;
-
-    attempt_mcp_daemon_start(socket_path).await
+        .map(|_| ())
 }
 
 async fn run_mcp_startup_phase(
@@ -86,7 +45,7 @@ async fn run_mcp_startup_phase(
             output.info(&format!(
                 "Recovering possibly stuck daemon process (PID: {pid})..."
             ));
-            recover_stuck_daemon_and_retry(pid, socket_path).await?;
+            recover_stuck_daemon_for_mcp(pid, socket_path).await?;
             Ok(None)
         }
     }

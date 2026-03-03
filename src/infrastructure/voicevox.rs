@@ -112,51 +112,6 @@ pub(crate) fn collect_speakers_from_synthesizer(
         .collect()
 }
 
-#[must_use]
-pub fn format_speakers_output(
-    header: &str,
-    speakers: &[Speaker],
-    style_to_model: Option<&HashMap<u32, u32>>,
-) -> String {
-    let body = speakers
-        .iter()
-        .map(|speaker| format_speaker_block(speaker, style_to_model))
-        .collect::<Vec<_>>()
-        .join("\n\n");
-
-    if body.is_empty() {
-        header.to_string()
-    } else {
-        format!("{header}\n{body}\n")
-    }
-}
-
-fn format_speaker_block(speaker: &Speaker, style_to_model: Option<&HashMap<u32, u32>>) -> String {
-    let style_lines = speaker
-        .styles
-        .iter()
-        .flat_map(|style| {
-            let main_line = match style_to_model.and_then(|map| map.get(&style.id)) {
-                Some(model_id) => format!(
-                    "    {} (Model: {model_id}, Style ID: {})",
-                    style.name, style.id
-                ),
-                None => format!("    {} (Style ID: {})", style.name, style.id),
-            };
-
-            std::iter::once(main_line).chain(
-                style
-                    .style_type
-                    .iter()
-                    .map(|style_type| format!("        Type: {style_type}")),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!("  {}\n{style_lines}", speaker.name)
-}
-
 fn available_models_from_paths(model_files: Vec<PathBuf>) -> Vec<AvailableModel> {
     model_files
         .into_iter()
@@ -239,10 +194,10 @@ fn record_new_style_ids<I>(
 
 fn unload_model_quietly(core: &crate::infrastructure::core::VoicevoxCore, model_path: &Path) {
     if let Err(error) = core.unload_voice_model_by_path(model_path) {
-        eprintln!(
-            "Warning: failed to unload model {}: {error}",
+        crate::infrastructure::logging::warn(&format!(
+            "Failed to unload model {}: {error}",
             model_path.display()
-        );
+        ));
     }
 }
 
@@ -368,99 +323,6 @@ fn scan_model_file_entries(models_dir: &Path) -> Result<Vec<(u32, PathBuf)>> {
     Ok(entries)
 }
 
-/// Resolves a CLI voice input string into a style/model ID and description.
-///
-/// # Errors
-///
-/// Returns an error if model discovery fails or the provided voice/model specifier cannot
-/// be resolved to an available voice.
-pub fn resolve_voice_dynamic(voice_input: &str) -> Result<(u32, String)> {
-    let voice_input = voice_input.trim();
-
-    if voice_input == "?" {
-        return Err(anyhow!(
-            "Voice help is a CLI concern. Call `print_voice_help()` before resolving."
-        ));
-    }
-
-    voice_input
-        .parse::<u32>()
-        .ok()
-        .filter(|&id| id > 0 && id < 1000)
-        .map(|style_id| (style_id, format!("Style ID {style_id}")))
-        .map_or_else(|| try_resolve_from_available_models(voice_input), Ok)
-}
-
-pub fn print_voice_help() {
-    const HELP_TEXT: &str = r#"Available VOICEVOX voices:
-
-  Use one of these options to discover voices:
-    --list-models        - Show available VVM models
-    --list-speakers      - Show all speaker details from loaded models
-    --speaker-id N       - Use specific style ID directly
-    --model N            - Use model N.vvm
-
-  Examples:
-    voicevox-say --speaker-id 3 "text"
-    voicevox-say --model 3 "text"
-"#;
-    println!("{HELP_TEXT}");
-}
-
-fn try_resolve_from_available_models(voice_input: &str) -> Result<(u32, String)> {
-    let voice_input = voice_input.trim();
-    let available_models = scan_available_models().map_err(|e| {
-        anyhow!(
-            "Failed to scan available models: {e}. Use --speaker-id for direct ID specification."
-        )
-    })?;
-
-    (!available_models.is_empty())
-        .then_some(())
-        .ok_or_else(|| anyhow!(
-            "No voice models available. Please download models first or use --speaker-id for direct ID specification."
-        ))?;
-
-    voice_input
-        .parse::<u32>()
-        .ok()
-        .filter(|&model_id| available_models.iter().any(|m| m.model_id == model_id))
-        .map(|model_id| (model_id, format!("Model {model_id} (Default Style)")))
-        .map_or_else(
-            || {
-                let model_suggestions = available_models
-                    .iter()
-                    .take(3)
-                    .map(|m| format!("--model {}", m.model_id))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                Err(anyhow!(
-                    "Voice '{voice_input}' not found. Available options:\n  \
-                    Use --speaker-id N for direct style ID\n  \
-                    Use --model N for model selection (e.g., {model_suggestions})\n  \
-                    Use --list-models to see all {} available models\n  \
-                    Use --list-speakers for detailed speaker information",
-                    available_models.len()
-                ))
-            },
-            Ok,
-        )
-}
-
-#[must_use]
-pub fn get_model_for_voice_id(voice_id: u32) -> Option<u32> {
-    scan_available_models().ok().and_then(|available_models| {
-        available_models
-            .iter()
-            .find(|model| {
-                model.model_id == voice_id
-                    || (voice_id >= model.model_id * 10 && voice_id < (model.model_id + 1) * 10)
-            })
-            .map(|model| model.model_id)
-    })
-}
-
 /// Build style-to-model mapping by scanning all available models dynamically
 ///
 /// # Errors
@@ -510,14 +372,16 @@ where
         progress_callback(index + 1, total_models, model_filename);
 
         if let Err(error) = core.load_specific_model(*model_id) {
-            eprintln!("Warning: failed to load model {model_id} ({model_filename}): {error}");
+            crate::infrastructure::logging::warn(&format!(
+                "Failed to load model {model_id} ({model_filename}): {error}"
+            ));
             continue;
         }
 
         let Ok(current_speakers) = core.get_speakers() else {
-            eprintln!(
-                "Warning: failed to read speakers after loading model {model_id} ({model_filename})"
-            );
+            crate::infrastructure::logging::warn(&format!(
+                "Failed to read speakers after loading model {model_id} ({model_filename})"
+            ));
             unload_model_quietly(core, path);
             continue;
         };
@@ -540,10 +404,10 @@ where
             |(model_id, path)| match core.load_specific_model(*model_id) {
                 Ok(()) => Some(path),
                 Err(error) => {
-                    eprintln!(
-                        "Warning: failed to load model {model_id} ({}): {error}",
+                    crate::infrastructure::logging::warn(&format!(
+                        "Failed to load model {model_id} ({}): {error}",
                         path.display()
-                    );
+                    ));
                     None
                 }
             },
@@ -573,20 +437,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        populate_model_speakers, resolve_voice_dynamic, AvailableModel, Speaker, SpeakerList,
-        Style, StyleList,
-    };
+    use super::{populate_model_speakers, AvailableModel, Speaker, SpeakerList, Style, StyleList};
     use std::collections::HashMap;
     use std::path::PathBuf;
-
-    #[test]
-    fn resolve_voice_dynamic_trims_direct_style_id() {
-        let (style_id, description) =
-            resolve_voice_dynamic("  3  ").expect("trimmed numeric style id should resolve");
-        assert_eq!(style_id, 3);
-        assert_eq!(description, "Style ID 3");
-    }
 
     #[test]
     fn populate_model_speakers_groups_styles_by_model() {

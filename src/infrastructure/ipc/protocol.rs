@@ -1,9 +1,32 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::infrastructure::voicevox::{AvailableModel, Speaker};
-
 use super::DEFAULT_SYNTHESIS_RATE;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IpcStyle {
+    pub name: String,
+    pub id: u32,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub style_type: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IpcSpeaker {
+    pub name: String,
+    #[serde(default)]
+    pub speaker_uuid: String,
+    pub styles: Vec<IpcStyle>,
+    #[serde(default)]
+    pub version: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IpcModel {
+    pub model_id: u32,
+    pub file_path: std::path::PathBuf,
+    pub speakers: Vec<IpcSpeaker>,
+}
 
 /// Request messages sent from client to daemon.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -38,11 +61,11 @@ pub enum DaemonResponse {
         wav_data: Vec<u8>,
     },
     SpeakersListWithModels {
-        speakers: Vec<Speaker>,
+        speakers: Vec<IpcSpeaker>,
         style_to_model: HashMap<u32, u32>,
     },
     ModelsList {
-        models: Vec<AvailableModel>,
+        models: Vec<IpcModel>,
     },
     Error {
         code: DaemonErrorCode,

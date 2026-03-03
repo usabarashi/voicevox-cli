@@ -64,13 +64,18 @@ fn is_likely_incomplete_download_file(path: &Path) -> bool {
 fn log_remove_file(path: &Path, label: &str, success_message: &str) {
     std::fs::remove_file(path).map_or_else(
         |error| {
-            eprintln!(
-                "Warning: Failed to clean up {label} {}: {}",
+            crate::infrastructure::logging::warn(&format!(
+                "Failed to clean up {label} {}: {}",
                 path.display(),
                 error
-            );
+            ));
         },
-        |()| println!("{success_message}: {}", path.display()),
+        |()| {
+            crate::infrastructure::logging::info(&format!(
+                "{success_message}: {}",
+                path.display()
+            ));
+        },
     );
 }
 
@@ -139,8 +144,8 @@ fn process_cleanup_file(path: &Path, unnecessary_extensions: &[&str]) {
     }
 
     std::fs::remove_file(path).map_or_else(
-        |error| eprintln!("Warning: Failed to remove {name}: {error}"),
-        |()| println!("   Cleaned up: {name}"),
+        |error| crate::infrastructure::logging::warn(&format!("Failed to remove {name}: {error}")),
+        |()| crate::infrastructure::logging::info(&format!("Cleaned up: {name}")),
     );
 }
 
@@ -154,8 +159,16 @@ fn try_remove_empty_directory(path: &Path) {
 
     if let Some(dir_name) = path.file_name().and_then(|name| name.to_str()) {
         std::fs::remove_dir(path).map_or_else(
-            |error| eprintln!("Warning: Failed to remove empty directory {dir_name}: {error}"),
-            |()| println!("   Removed empty directory: {dir_name}"),
+            |error| {
+                crate::infrastructure::logging::warn(&format!(
+                    "Failed to remove empty directory {dir_name}: {error}"
+                ));
+            },
+            |()| {
+                crate::infrastructure::logging::info(&format!(
+                    "Removed empty directory: {dir_name}"
+                ));
+            },
         );
     }
 }

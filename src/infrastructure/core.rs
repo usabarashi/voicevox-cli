@@ -10,7 +10,7 @@ use crate::infrastructure::openjtalk;
 use crate::infrastructure::voicevox::{
     open_voice_model_file, open_voice_model_file_by_id, Speaker,
 };
-use crate::interface::ipc::{
+use crate::infrastructure::ipc::{
     is_valid_synthesis_rate, DEFAULT_SYNTHESIS_RATE, MAX_SYNTHESIS_RATE, MIN_SYNTHESIS_RATE,
 };
 

@@ -3,17 +3,20 @@ use clap::{ArgGroup, Parser};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use voicevox_cli::infrastructure::daemon::rpc::{
-    daemon_rpc_exit_code, find_daemon_rpc_error, format_daemon_rpc_error_for_cli,
+use voicevox_cli::infrastructure::daemon::client::find_daemon_client_error;
+use voicevox_cli::interface::cli::daemon_error::{
+    daemon_client_exit_code, format_daemon_client_error_for_cli,
 };
 use voicevox_cli::infrastructure::paths::get_socket_path;
-use voicevox_cli::infrastructure::voicevox::{print_voice_help, resolve_voice_dynamic};
 use voicevox_cli::interface::cli::input::get_input_text_from_sources;
 use voicevox_cli::interface::cli::inspect::{
     run_list_models_command, run_list_speakers_command, run_status_command,
 };
 use voicevox_cli::interface::cli::say::{run_say_synthesis, SaySynthesisRequest};
-use voicevox_cli::interface::ipc::DEFAULT_SYNTHESIS_RATE;
+use voicevox_cli::interface::cli::voice_help::print_voice_help;
+use voicevox_cli::interface::cli::voice_selector::resolve_voice_input;
+use voicevox_cli::infrastructure::ipc::DEFAULT_SYNTHESIS_RATE;
+use voicevox_cli::interface::StdAppOutput;
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]
@@ -119,7 +122,7 @@ impl CliArgs {
 
 fn handle_voice_help_request(args: &CliArgs) -> bool {
     if args.wants_voice_help() {
-        print_voice_help();
+        print_voice_help(&StdAppOutput);
         return true;
     }
     false
@@ -200,7 +203,7 @@ fn resolve_voice_from_args(args: &CliArgs) -> Result<u32> {
     match VoiceSelection::from_args(args) {
         VoiceSelection::SpeakerId(id) | VoiceSelection::ModelId(id) => Ok(id),
         VoiceSelection::VoiceName(voice_name) => {
-            resolve_voice_dynamic(voice_name).map(|(style_id, _description)| style_id)
+            resolve_voice_input(voice_name).map(|(style_id, _description)| style_id)
         }
         VoiceSelection::Default => Ok(default_voice_selection()),
     }
@@ -217,7 +220,7 @@ async fn run_client_command(args: &CliArgs) -> Result<()> {
 }
 
 fn should_print_error_in_main(args: &CliArgs, error: &anyhow::Error) -> bool {
-    if find_daemon_rpc_error(error).is_none() {
+    if find_daemon_client_error(error).is_none() {
         return true;
     }
 
@@ -229,15 +232,15 @@ fn print_cli_error(args: &CliArgs, error: &anyhow::Error) {
         return;
     }
 
-    if find_daemon_rpc_error(error).is_some() {
-        eprintln!("{}", format_daemon_rpc_error_for_cli(error));
+    if find_daemon_client_error(error).is_some() {
+        eprintln!("{}", format_daemon_client_error_for_cli(error));
     } else {
         eprintln!("Error: {error}");
     }
 }
 
 fn exit_code_for_error(error: &anyhow::Error) -> ExitCode {
-    ExitCode::from(daemon_rpc_exit_code(error).unwrap_or(1))
+    ExitCode::from(daemon_client_exit_code(error).unwrap_or(1))
 }
 
 #[tokio::main]

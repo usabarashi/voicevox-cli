@@ -11,7 +11,7 @@ use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::infrastructure::daemon::state::DaemonState;
-use crate::interface::ipc::{DaemonRequest, OwnedResponse, MAX_DAEMON_REQUEST_FRAME_BYTES};
+use crate::infrastructure::ipc::{DaemonRequest, OwnedResponse, MAX_DAEMON_REQUEST_FRAME_BYTES};
 
 const SOCKET_DIR_MODE: u32 = 0o700;
 const SOCKET_FILE_MODE: u32 = 0o600;

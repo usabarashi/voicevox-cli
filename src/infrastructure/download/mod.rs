@@ -10,9 +10,14 @@ use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
 pub use cleanup::{cleanup_unnecessary_files, count_vvm_files_recursive};
-pub use install::{ensure_resources_available, launch_downloader_for_user};
-pub use status::{check_updates, show_version_info};
-pub use update::{update_dictionary_only, update_models_only, update_specific_model};
+pub use install::{
+    default_models_download_target_dir, download_missing_resources, launch_models_downloader,
+    missing_resource_descriptions,
+};
+pub use status::{collect_update_status, collect_version_info, UpdateStatus, VersionInfo};
+pub use update::{
+    update_dictionary_only, update_models_only, update_specific_model, UpdateKind, UpdateOutcome,
+};
 
 pub(crate) fn collect_missing_resources() -> Vec<&'static str> {
     [
@@ -25,13 +30,11 @@ pub(crate) fn collect_missing_resources() -> Vec<&'static str> {
     .collect()
 }
 
-/// Returns startup-critical resources that are currently missing.
 #[must_use]
 pub fn missing_startup_resources() -> Vec<&'static str> {
     collect_missing_resources()
 }
 
-/// Returns true when all startup-critical resources are available.
 #[must_use]
 pub fn has_startup_resources() -> bool {
     collect_missing_resources().is_empty()
@@ -44,11 +47,6 @@ pub(crate) fn default_download_target_dir() -> PathBuf {
     )
 }
 
-/// Find the voicevox-download binary.
-///
-/// # Errors
-///
-/// Returns an error when the downloader executable cannot be found.
 pub(crate) fn find_downloader_binary() -> Result<PathBuf> {
     if let Ok(current_exe) = std::env::current_exe() {
         let downloader = current_exe.with_file_name("voicevox-download");
@@ -65,13 +63,4 @@ pub(crate) fn find_downloader_binary() -> Result<PathBuf> {
     }
 
     Err(anyhow!("voicevox-download not found"))
-}
-
-/// Backward-compatible alias used by CLI call paths.
-///
-/// # Errors
-///
-/// Returns an error if resource setup fails.
-pub async fn ensure_models_available() -> Result<()> {
-    ensure_resources_available().await
 }

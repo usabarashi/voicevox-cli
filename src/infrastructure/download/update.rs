@@ -1,13 +1,36 @@
 use anyhow::Result;
-use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::{
-    cleanup::{cleanup_unnecessary_files, count_vvm_files_recursive},
-    default_download_target_dir, find_downloader_binary, launch_downloader_for_user,
+    cleanup::count_vvm_files_recursive, default_download_target_dir, install::launch_models_downloader,
+    find_downloader_binary,
 };
 
-async fn try_run_downloader_only(resource: &str, target_dir: &Path) -> Result<bool> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateKind {
+    Models,
+    Dictionary,
+    SpecificModel(u32),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateOutcome {
+    pub kind: UpdateKind,
+    pub target_dir: PathBuf,
+    pub model_count: Option<usize>,
+    pub used_fallback: bool,
+}
+
+impl UpdateKind {
+    const fn resource(self) -> &'static str {
+        match self {
+            Self::Models | Self::SpecificModel(_) => "models",
+            Self::Dictionary => "dict",
+        }
+    }
+}
+
+async fn try_run_downloader_only(resource: &str, target_dir: &std::path::Path) -> Result<bool> {
     let status = tokio::process::Command::new(find_downloader_binary()?)
         .arg("--only")
         .arg(resource)
@@ -19,96 +42,46 @@ async fn try_run_downloader_only(resource: &str, target_dir: &Path) -> Result<bo
     Ok(status.success())
 }
 
-async fn prepare_update_target_dir() -> Result<PathBuf> {
+async fn run_update(kind: UpdateKind) -> Result<UpdateOutcome> {
     let target_dir = default_download_target_dir();
     tokio::fs::create_dir_all(&target_dir).await?;
-    println!(" Target directory: {}", target_dir.display());
-    Ok(target_dir)
-}
 
-enum UpdateRequest {
-    Models,
-    Dictionary,
-    SpecificModel(u32),
-}
+    if try_run_downloader_only(kind.resource(), &target_dir).await? {
+        let model_count = match kind {
+            UpdateKind::Models => Some(count_vvm_files_recursive(&target_dir.join("models"))),
+            _ => None,
+        };
+        return Ok(UpdateOutcome {
+            kind,
+            target_dir,
+            model_count,
+            used_fallback: false,
+        });
+    }
 
-impl UpdateRequest {
-    const fn resource(&self) -> &'static str {
-        match self {
-            Self::Models | Self::SpecificModel(_) => "models",
-            Self::Dictionary => "dict",
+    let fallback_model_count = match kind {
+        UpdateKind::Dictionary => None,
+        UpdateKind::Models | UpdateKind::SpecificModel(_) => {
+            Some(launch_models_downloader(&target_dir).await?)
         }
-    }
+    };
 
-    fn start_message(&self) -> Cow<'static, str> {
-        match self {
-            Self::Models => Cow::Borrowed(" Updating voice models only..."),
-            Self::Dictionary => Cow::Borrowed(" Updating dictionary only..."),
-            Self::SpecificModel(model_id) => {
-                Cow::Owned(format!(" Updating model {model_id} only..."))
-            }
-        }
-    }
-
-    fn progress_message(&self) -> Cow<'static, str> {
-        match self {
-            Self::Models => Cow::Borrowed(" Downloading voice models only..."),
-            Self::Dictionary => Cow::Borrowed(" Downloading dictionary only..."),
-            Self::SpecificModel(model_id) => {
-                Cow::Owned(format!(" Downloading model {model_id} only..."))
-            }
-        }
-    }
-
-    const fn fallback_message(&self) -> &'static str {
-        match self {
-            Self::Models => "  Models-only update not supported, falling back to full update...",
-            Self::Dictionary => {
-                "  Dictionary-only update not supported, falling back to full update..."
-            }
-            Self::SpecificModel(_) => {
-                "  Specific model update not supported, falling back to full update..."
-            }
-        }
-    }
-
-    fn print_success(&self, target_dir: &Path) {
-        match self {
-            Self::Models => {
-                let vvm_count = count_vvm_files_recursive(&target_dir.join("models"));
-                println!(" Voice models updated successfully!");
-                println!("   Found {vvm_count} VVM model files");
-            }
-            Self::Dictionary => println!(" Dictionary updated successfully!"),
-            Self::SpecificModel(model_id) => println!(" Model {model_id} updated successfully!"),
-        }
-    }
+    Ok(UpdateOutcome {
+        kind,
+        target_dir,
+        model_count: fallback_model_count,
+        used_fallback: true,
+    })
 }
 
-async fn run_update_request(request: UpdateRequest) -> Result<()> {
-    println!("{}", request.start_message());
-
-    let target_dir = prepare_update_target_dir().await?;
-    println!("{}", request.progress_message());
-
-    if try_run_downloader_only(request.resource(), &target_dir).await? {
-        request.print_success(&target_dir);
-        cleanup_unnecessary_files(&target_dir);
-        Ok(())
-    } else {
-        println!("{}", request.fallback_message());
-        launch_downloader_for_user().await
-    }
+pub async fn update_models_only() -> Result<UpdateOutcome> {
+    run_update(UpdateKind::Models).await
 }
 
-pub async fn update_models_only() -> Result<()> {
-    run_update_request(UpdateRequest::Models).await
+pub async fn update_dictionary_only() -> Result<UpdateOutcome> {
+    run_update(UpdateKind::Dictionary).await
 }
 
-pub async fn update_dictionary_only() -> Result<()> {
-    run_update_request(UpdateRequest::Dictionary).await
-}
-
-pub async fn update_specific_model(model_id: u32) -> Result<()> {
-    run_update_request(UpdateRequest::SpecificModel(model_id)).await
+pub async fn update_specific_model(model_id: u32) -> Result<UpdateOutcome> {
+    run_update(UpdateKind::SpecificModel(model_id)).await
 }

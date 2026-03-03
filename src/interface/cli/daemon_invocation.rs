@@ -1,5 +1,3 @@
-use std::path::Path;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DaemonStartMode {
     Foreground,
@@ -63,43 +61,4 @@ pub const fn decide_daemon_invocation(flags: DaemonCliFlags) -> DaemonInvocation
         }
         DaemonControlCommand::None => DaemonInvocation::Start,
     }
-}
-
-#[must_use]
-pub fn daemon_usage_lines(version: &str) -> Vec<String> {
-    vec![
-        format!("VOICEVOX Daemon v{version}"),
-        "\nDaemon Operations:".to_string(),
-        "  --start     Start the daemon (default)".to_string(),
-        "  --stop      Stop the running daemon".to_string(),
-        "  --status    Check daemon status".to_string(),
-        "  --restart   Restart the daemon".to_string(),
-        "\nExecution Modes:".to_string(),
-        "  --foreground Run in foreground (for development)".to_string(),
-        "  --detach     Run as background process".to_string(),
-        "\nUse --help for all options".to_string(),
-    ]
-}
-
-#[must_use]
-pub fn daemon_start_banner_lines(version: &str, socket_path: &Path) -> Vec<String> {
-    vec![
-        format!("VOICEVOX Daemon v{version}"),
-        "Starting user daemon...".to_string(),
-        format!("Socket: {} (user-specific)", socket_path.display()),
-        "Models: Load and unload per request (no caching)".to_string(),
-    ]
-}
-
-#[must_use]
-pub fn daemon_socket_line(socket_path: &Path) -> String {
-    format!("Socket: {}", socket_path.display())
-}
-
-#[must_use]
-pub fn daemon_not_running_lines(socket_path: &Path) -> [String; 2] {
-    [
-        "Daemon is not running".to_string(),
-        format!("   Socket: {}", socket_path.display()),
-    ]
 }

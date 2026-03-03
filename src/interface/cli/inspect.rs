@@ -1,16 +1,123 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::path::Path;
 
-use crate::domain::inspect::{
-    list_models_lines, missing_status_lines, status_models_lines, InstalledModelView, ModelView,
-    NO_MODELS_MESSAGE,
-};
-use crate::infrastructure::daemon::rpc::DaemonRpcClient;
-use crate::infrastructure::voicevox::{
-    format_speakers_output, scan_available_models, AvailableModel, Speaker,
-};
-use crate::interface::cli::synthesis::flow::connect_daemon_rpc_auto_start;
+use crate::infrastructure::daemon::client::DaemonClient;
+use crate::infrastructure::voicevox::{scan_available_models, AvailableModel, Speaker};
+use crate::interface::synthesis::flow::connect_daemon_client_auto_start;
 use crate::interface::{AppOutput, StdAppOutput};
+
+const NO_MODELS_MESSAGE: &str =
+    "No voice models found. Please run 'voicevox-setup' to download required resources.";
+
+fn format_speaker_block(speaker: &Speaker, style_to_model: Option<&HashMap<u32, u32>>) -> String {
+    let style_lines = speaker
+        .styles
+        .iter()
+        .flat_map(|style| {
+            let main_line = match style_to_model.and_then(|map| map.get(&style.id)) {
+                Some(model_id) => format!(
+                    "    {} (Model: {model_id}, Style ID: {})",
+                    style.name, style.id
+                ),
+                None => format!("    {} (Style ID: {})", style.name, style.id),
+            };
+
+            std::iter::once(main_line).chain(
+                style
+                    .style_type
+                    .iter()
+                    .map(|style_type| format!("        Type: {style_type}")),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!("  {}\n{style_lines}", speaker.name)
+}
+
+fn format_speakers_output(
+    header: &str,
+    speakers: &[Speaker],
+    style_to_model: Option<&HashMap<u32, u32>>,
+) -> String {
+    let body = speakers
+        .iter()
+        .map(|speaker| format_speaker_block(speaker, style_to_model))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    if body.is_empty() {
+        header.to_string()
+    } else {
+        format!("{header}\n{body}\n")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelView {
+    model_id: u32,
+    file_path: String,
+    default_style_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InstalledModelView {
+    model_id: u32,
+    file_path: String,
+    file_name: Option<String>,
+    size_kb: Option<u64>,
+}
+
+fn missing_status_lines(name: &str) -> [String; 2] {
+    [
+        format!("{name}: Not found"),
+        "  Install with: voicevox-setup".to_string(),
+    ]
+}
+
+fn list_models_lines(models: &[ModelView]) -> Vec<String> {
+    if models.is_empty() {
+        return vec![NO_MODELS_MESSAGE.to_string()];
+    }
+
+    let mut lines = vec!["Available voice models:".to_string()];
+    for model in models {
+        lines.push(format!("  Model {} ({})", model.model_id, model.file_path));
+        lines.push(format!(
+            "    Usage: --model {} or --speaker-id <STYLE_ID>",
+            model.model_id
+        ));
+        if let Some(default_style_id) = model.default_style_id {
+            lines.push(format!(
+                "    Default style ID (auto-selected by --model): {default_style_id}"
+            ));
+        }
+    }
+    lines.push("\nTips:".to_string());
+    lines.push("  - Use --model N to load model N.vvm".to_string());
+    lines.push("  - Use --speaker-id for direct style ID specification".to_string());
+    lines.push("  - Use --list-speakers for detailed speaker information".to_string());
+    lines
+}
+
+fn status_models_lines(models: &[InstalledModelView]) -> Vec<String> {
+    if models.is_empty() {
+        return missing_status_lines("Voice Models").into();
+    }
+
+    let mut lines = vec![format!("Voice Models: {} files installed", models.len())];
+    for model in models {
+        let line = match (&model.file_name, model.size_kb) {
+            (Some(name), Some(size_kb)) => {
+                format!("  Model {}: {name} ({size_kb} KB)", model.model_id)
+            }
+            _ => format!("  Model {} ({})", model.model_id, model.file_path),
+        };
+        lines.push(line);
+    }
+    lines
+}
 
 fn print_no_models_message(output: &dyn AppOutput) {
     output.info(NO_MODELS_MESSAGE);
@@ -53,7 +160,7 @@ pub async fn run_list_models_command_with_output(
     socket_path: &Path,
     output: &dyn AppOutput,
 ) -> Result<()> {
-    match connect_daemon_rpc_auto_start(socket_path).await {
+    match connect_daemon_client_auto_start(socket_path).await {
         Ok(mut client) => {
             let models = client.list_models().await?;
             print_list_models_output(&models, output);
@@ -145,7 +252,7 @@ pub async fn run_list_speakers_command_with_output(
     socket_path: &Path,
     output: &dyn AppOutput,
 ) -> Result<()> {
-    if let Ok(mut client) = DaemonRpcClient::new_at(socket_path).await {
+    if let Ok(mut client) = DaemonClient::new_at(socket_path).await {
         let (speakers, style_to_model) = client.list_speakers_with_models().await?;
         output.info(&format_speakers_output(
             "All available speakers and styles from daemon:",
@@ -155,7 +262,7 @@ pub async fn run_list_speakers_command_with_output(
         return Ok(());
     }
 
-    match connect_daemon_rpc_auto_start(socket_path).await {
+    match connect_daemon_client_auto_start(socket_path).await {
         Ok(mut client) => {
             let speakers = client.list_speakers().await?;
             print_speakers(&speakers, output);

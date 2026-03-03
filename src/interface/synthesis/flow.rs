@@ -1,11 +1,19 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::domain::synthesis::{validate_basic_request, SynthesisPhase, TextSynthesisRequest};
-use crate::infrastructure::daemon::rpc::DaemonRpcClient;
+use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
+use crate::infrastructure::daemon::client::DaemonClient;
 use crate::interface::cli::download::{ensure_models_available, missing_startup_resources};
-use crate::interface::cli::synthesis::daemon::DaemonSynthesizer;
+use crate::interface::synthesis::daemon::DaemonSynthesizer;
 use crate::interface::AppOutput;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SynthesisPhase {
+    Validate,
+    EnsureResources,
+    Connect,
+    Synthesize,
+}
 
 #[derive(Default, Clone, Copy)]
 pub struct NoopAppOutput;
@@ -32,8 +40,8 @@ pub fn validate_text_synthesis_request(text: &str, style_id: u32, rate: f32) -> 
     })
 }
 
-pub async fn connect_daemon_rpc_auto_start(socket_path: &Path) -> Result<DaemonRpcClient> {
-    DaemonRpcClient::new_with_auto_start_at(socket_path).await
+pub async fn connect_daemon_client_auto_start(socket_path: &Path) -> Result<DaemonClient> {
+    DaemonClient::new_with_auto_start_at(socket_path).await
 }
 
 async fn ensure_models_on_demand(
@@ -94,7 +102,7 @@ async fn run_synthesis_phase(
             Ok(SynthesisStep::Next(SynthesisPhase::Connect))
         }
         SynthesisPhase::Connect => {
-            let client = connect_daemon_rpc_auto_start(request.socket_path).await?;
+            let client = connect_daemon_client_auto_start(request.socket_path).await?;
             *synthesizer = Some(DaemonSynthesizer::new_with_client(client));
             Ok(SynthesisStep::Next(SynthesisPhase::Synthesize))
         }

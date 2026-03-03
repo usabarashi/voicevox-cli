@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::runtime::Handle;
@@ -8,18 +9,36 @@ use super::types::{audio_result, text_result, ToolCallResult};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
 use crate::domain::synthesis::{validate_basic_request, TextSynthesisRequest};
 use crate::domain::text_to_speech::{
-    parse_synthesize_params, text_char_count, McpTtsPhase, SynthesizeParams,
+    default_rate, default_streaming, text_char_count, validate_style_id, SynthesizeParams,
 };
-use crate::infrastructure::daemon::rpc::{infer_voice_target_state, VoiceTargetState};
 use crate::infrastructure::daemon::startup;
-use crate::interface::cli::playback::{emit_and_play, PlaybackOutcome, PlaybackRequest};
-use crate::interface::cli::synthesis::flow::{
+use crate::interface::playback::{emit_and_play, PlaybackOutcome, PlaybackRequest};
+use crate::interface::synthesis::flow::{
     synthesize_bytes_via_daemon, DaemonSynthesisBytesRequest, NoopAppOutput,
 };
-use crate::interface::cli::synthesis::mode::{select_synthesis_mode_with_config, SynthesisMode};
-use crate::interface::mcp_server::daemon_error::format_daemon_rpc_error_for_mcp;
+use crate::interface::synthesis::mode::{select_synthesis_mode_with_config, SynthesisMode};
+use crate::interface::mcp_server::daemon_error::{
+    format_daemon_client_error_for_mcp, is_retryable_daemon_synthesis_error,
+};
 
 const MCP_DAEMON_MAX_RETRIES: u32 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum McpTtsPhase {
+    Attempt,
+    Backoff,
+    Finish,
+}
+
+#[derive(Debug, Deserialize)]
+struct TextToSpeechToolInput {
+    text: String,
+    style_id: u32,
+    #[serde(default = "default_rate")]
+    rate: f32,
+    #[serde(default = "default_streaming")]
+    streaming: bool,
+}
 
 enum DaemonRetryStep {
     Next(McpTtsPhase),
@@ -62,7 +81,15 @@ pub async fn handle_text_to_speech_cancellable(
     arguments: Value,
     cancel_rx: Option<oneshot::Receiver<String>>,
 ) -> Result<ToolCallResult> {
-    let params = parse_synthesize_params(arguments)?;
+    let parsed: TextToSpeechToolInput =
+        serde_json::from_value(arguments).context("Invalid parameters for text_to_speech")?;
+    validate_style_id(parsed.style_id)?;
+    let params = SynthesizeParams {
+        text: parsed.text,
+        style_id: parsed.style_id,
+        rate: parsed.rate,
+        streaming: parsed.streaming,
+    };
     validate_basic_request(&TextSynthesisRequest {
         text: &params.text,
         style_id: params.style_id,
@@ -197,7 +224,7 @@ async fn handle_daemon_synthesis(
 
     let Some(wav_data) = wav_data else {
         let error = last_error.expect("last error should exist when synthesis failed");
-        return Ok(text_result(format_daemon_rpc_error_for_mcp(&error), true));
+        return Ok(text_result(format_daemon_client_error_for_mcp(&error), true));
     };
 
     let text_len = text_char_count(&text);
@@ -283,10 +310,6 @@ async fn run_daemon_retry_phase(
     }
 }
 
-fn is_retryable_daemon_synthesis_error(error: &anyhow::Error) -> bool {
-    !matches!(infer_voice_target_state(error), VoiceTargetState::Missing)
-}
-
 fn synthesis_success_message(text_len: usize, style_id: u32) -> String {
     format!("Synthesized {text_len} characters using style ID {style_id}")
 }
@@ -333,8 +356,8 @@ async fn play_generated_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::daemon::rpc::daemon_response_error;
-    use crate::interface::ipc::DaemonErrorCode;
+    use crate::infrastructure::daemon::client::daemon_response_error;
+    use crate::infrastructure::ipc::DaemonErrorCode;
     use crate::interface::mcp_server::tools::types::ToolContent;
     use serde_json::json;
     use tokio::sync::oneshot;

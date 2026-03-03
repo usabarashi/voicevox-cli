@@ -7,6 +7,6 @@ pub use limits::{
     MIN_SYNTHESIS_RATE,
 };
 pub use protocol::{
-    DaemonErrorCode, DaemonRequest, DaemonResponse, OwnedRequest, OwnedResponse,
-    OwnedSynthesizeOptions, SynthesizeOptions,
+    DaemonErrorCode, DaemonRequest, DaemonResponse, IpcModel, IpcSpeaker, IpcStyle, OwnedRequest,
+    OwnedResponse, OwnedSynthesizeOptions, SynthesizeOptions,
 };

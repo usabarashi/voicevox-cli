@@ -19,15 +19,10 @@ impl Default for TextSplitter {
 
 impl TextSplitter {
     #[must_use]
-    pub fn from_config(config: &crate::config::TextSplitterConfig) -> Self {
-        let mut delimiters = config
-            .delimiters
-            .iter()
-            .filter_map(|s| s.chars().next())
-            .collect::<Vec<_>>();
+    pub fn new(mut delimiters: Vec<char>, max_length: usize) -> Self {
         delimiters.sort_unstable();
         delimiters.dedup();
-        let max_length = config.max_length.max(1);
+        let max_length = max_length.max(1);
 
         if delimiters.is_empty() {
             Self {

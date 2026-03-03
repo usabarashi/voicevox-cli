@@ -6,10 +6,17 @@ use super::policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 use super::transport::{
     connect_socket_with_timeout, connect_with_retry, DAEMON_CONNECTION_TIMEOUT,
 };
-use crate::domain::startup::StartupPhase;
 use crate::infrastructure::daemon::{
     ensure_daemon_running, EnsureDaemonRunningOptions, EnsureDaemonRunningOutcome,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartupPhase {
+    InitialConnect,
+    ValidateModels,
+    StartDaemon,
+    ConnectRetry,
+}
 
 async fn connect_once(socket_path: &Path) -> Result<UnixStream> {
     connect_socket_with_timeout(socket_path, DAEMON_CONNECTION_TIMEOUT).await
@@ -27,8 +34,6 @@ fn validate_startup_preconditions() -> Result<()> {
 }
 
 async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
-    use std::io::Write;
-
     crate::infrastructure::logging::info(
         "Starting VOICEVOX daemon (first startup may take a few seconds)...",
     );
@@ -52,31 +57,21 @@ async fn start_daemon_automatically(socket_path: &Path) -> Result<()> {
     crate::infrastructure::logging::info(
         "  Building voice model mappings (this may take a moment)...",
     );
-
-    print!("  Starting daemon process");
-    std::io::stdout().flush()?;
+    crate::infrastructure::logging::info("  Starting daemon process...");
 
     let policy = DaemonAutoStartPolicy::cli_default();
     let startup_options: EnsureDaemonRunningOptions = policy.ensure_running;
 
-    match ensure_daemon_running(socket_path, startup_options, |_| {
-        print!(".");
-        let _ = std::io::stdout().flush();
-    })
-    .await
-    {
+    match ensure_daemon_running(socket_path, startup_options, |_| {}).await {
         Ok(EnsureDaemonRunningOutcome::Started) => {
-            println!(" done!");
             crate::infrastructure::logging::info("VOICEVOX daemon started successfully");
             Ok(())
         }
         Ok(EnsureDaemonRunningOutcome::AlreadyRunningRecovered) => {
-            println!(" done!");
             crate::infrastructure::logging::info("VOICEVOX daemon is already running");
             Ok(())
         }
         Ok(EnsureDaemonRunningOutcome::AlreadyResponsive) => {
-            println!(" done!");
             crate::infrastructure::logging::info("VOICEVOX daemon is already running");
             Ok(())
         }

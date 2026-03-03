@@ -9,13 +9,14 @@ use std::path::Path;
 use tokio::net::UnixStream;
 
 use crate::infrastructure::paths::get_socket_path;
-use crate::infrastructure::voicevox::{AvailableModel, Speaker};
-use crate::interface::ipc::{OwnedRequest, OwnedResponse, OwnedSynthesizeOptions};
+use crate::infrastructure::voicevox::{AvailableModel, Speaker, Style};
+use crate::infrastructure::ipc::{
+    IpcModel, IpcSpeaker, IpcStyle, OwnedRequest, OwnedResponse, OwnedSynthesizeOptions,
+};
 
 pub use crate::infrastructure::daemon::find_daemon_binary;
 pub use error::{
-    daemon_response_error, daemon_rpc_exit_code, find_daemon_rpc_error,
-    format_daemon_rpc_error_for_cli, infer_voice_target_state, DaemonRpcError, VoiceTargetState,
+    daemon_response_error, find_daemon_client_error, DaemonClientError,
 };
 pub use policy::{DaemonAutoStartPolicy, DaemonConnectRetryPolicy};
 
@@ -23,11 +24,36 @@ fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error 
     anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")
 }
 
-pub struct DaemonRpcClient {
+fn map_ipc_style(style: IpcStyle) -> Style {
+    Style {
+        name: style.name.into(),
+        id: style.id,
+        style_type: style.style_type.map(Into::into),
+    }
+}
+
+fn map_ipc_speaker(speaker: IpcSpeaker) -> Speaker {
+    Speaker {
+        name: speaker.name.into(),
+        speaker_uuid: speaker.speaker_uuid.into(),
+        styles: speaker.styles.into_iter().map(map_ipc_style).collect(),
+        version: speaker.version.into(),
+    }
+}
+
+fn map_ipc_model(model: IpcModel) -> AvailableModel {
+    AvailableModel {
+        model_id: model.model_id,
+        file_path: model.file_path,
+        speakers: model.speakers.into_iter().map(map_ipc_speaker).collect(),
+    }
+}
+
+pub struct DaemonClient {
     stream: UnixStream,
 }
 
-impl DaemonRpcClient {
+impl DaemonClient {
     async fn from_stream(stream: UnixStream) -> Result<Self> {
         Ok(Self { stream })
     }
@@ -105,7 +131,9 @@ impl DaemonRpcClient {
             .send_request_and_receive_response(OwnedRequest::ListSpeakers)
             .await?
         {
-            OwnedResponse::SpeakersListWithModels { speakers, .. } => Ok(speakers),
+            OwnedResponse::SpeakersListWithModels { speakers, .. } => {
+                Ok(speakers.into_iter().map(map_ipc_speaker).collect())
+            }
             OwnedResponse::Error { code, message } => {
                 Err(daemon_response_error("List speakers error", code, &message))
             }
@@ -124,7 +152,7 @@ impl DaemonRpcClient {
             OwnedResponse::SpeakersListWithModels {
                 speakers,
                 style_to_model,
-            } => Ok((speakers, style_to_model)),
+            } => Ok((speakers.into_iter().map(map_ipc_speaker).collect(), style_to_model)),
             OwnedResponse::Error { code, message } => {
                 Err(daemon_response_error("List speakers error", code, &message))
             }
@@ -140,7 +168,7 @@ impl DaemonRpcClient {
             .send_request_and_receive_response(OwnedRequest::ListModels)
             .await?
         {
-            OwnedResponse::ModelsList { models } => Ok(models),
+            OwnedResponse::ModelsList { models } => Ok(models.into_iter().map(map_ipc_model).collect()),
             OwnedResponse::Error { code, message } => {
                 Err(daemon_response_error("List models error", code, &message))
             }

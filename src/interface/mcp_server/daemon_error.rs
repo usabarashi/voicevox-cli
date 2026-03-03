@@ -1,8 +1,32 @@
-use crate::infrastructure::daemon::rpc::find_daemon_rpc_error;
-use crate::interface::ipc::DaemonErrorCode;
+use crate::infrastructure::daemon::client::find_daemon_client_error;
+use crate::infrastructure::ipc::DaemonErrorCode;
 
-pub fn format_daemon_rpc_error_for_mcp(error: &anyhow::Error) -> String {
-    let Some(daemon_error) = find_daemon_rpc_error(error) else {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VoiceTargetState {
+    Unknown,
+    Exists,
+    Missing,
+}
+
+fn infer_voice_target_state(error: &anyhow::Error) -> VoiceTargetState {
+    let Some(daemon_error): Option<&crate::infrastructure::daemon::client::DaemonClientError> =
+        find_daemon_client_error(error)
+    else {
+        return VoiceTargetState::Unknown;
+    };
+
+    match daemon_error.code() {
+        DaemonErrorCode::InvalidTargetId | DaemonErrorCode::ModelLoadFailed => {
+            VoiceTargetState::Missing
+        }
+        DaemonErrorCode::SynthesisFailed | DaemonErrorCode::Internal => VoiceTargetState::Exists,
+    }
+}
+
+pub fn format_daemon_client_error_for_mcp(error: &anyhow::Error) -> String {
+    let Some(daemon_error): Option<&crate::infrastructure::daemon::client::DaemonClientError> =
+        find_daemon_client_error(error)
+    else {
         return format!("Failed to reach VOICEVOX daemon or synthesize audio: {error}");
     };
 
@@ -20,4 +44,9 @@ pub fn format_daemon_rpc_error_for_mcp(error: &anyhow::Error) -> String {
             format!("VOICEVOX daemon internal error: {}", daemon_error.message())
         }
     }
+}
+
+#[must_use]
+pub fn is_retryable_daemon_synthesis_error(error: &anyhow::Error) -> bool {
+    !matches!(infer_voice_target_state(error), VoiceTargetState::Missing)
 }

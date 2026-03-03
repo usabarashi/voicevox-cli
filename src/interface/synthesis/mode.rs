@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 
 use crate::config::Config;
-use crate::infrastructure::daemon::rpc::DaemonRpcClient;
+use crate::infrastructure::daemon::client::DaemonClient;
 
 use super::daemon::DaemonSynthesizer;
 use super::streaming::StreamingSynthesizer;
@@ -11,8 +11,8 @@ pub enum SynthesisMode {
     Daemon(DaemonSynthesizer),
 }
 
-async fn connect_daemon_rpc_with_retry_context() -> Result<DaemonRpcClient> {
-    DaemonRpcClient::connect_with_retry()
+async fn connect_daemon_client_with_retry_context() -> Result<DaemonClient> {
+    DaemonClient::connect_with_retry()
         .await
         .context("Failed to connect to VOICEVOX daemon after multiple attempts")
 }
@@ -35,7 +35,7 @@ pub async fn select_synthesis_mode_with_config(
     streaming: bool,
     config: &Config,
 ) -> Result<SynthesisMode> {
-    let client = connect_daemon_rpc_with_retry_context().await?;
+    let client = connect_daemon_client_with_retry_context().await?;
     if streaming {
         Ok(SynthesisMode::Streaming(
             StreamingSynthesizer::new_with_client_and_config(client, config)?,

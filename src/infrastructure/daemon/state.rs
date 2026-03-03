@@ -1,4 +1,6 @@
-use crate::interface::ipc::{DaemonErrorCode, OwnedRequest, OwnedResponse};
+use crate::infrastructure::ipc::{
+    DaemonErrorCode, IpcModel, IpcSpeaker, IpcStyle, OwnedRequest, OwnedResponse,
+};
 
 mod catalog;
 mod executor;
@@ -18,6 +20,31 @@ pub struct DaemonState {
 }
 
 impl DaemonState {
+    fn to_ipc_style(style: &crate::infrastructure::voicevox::Style) -> IpcStyle {
+        IpcStyle {
+            name: style.name.to_string(),
+            id: style.id,
+            style_type: style.style_type.as_ref().map(ToString::to_string),
+        }
+    }
+
+    fn to_ipc_speaker(speaker: &crate::infrastructure::voicevox::Speaker) -> IpcSpeaker {
+        IpcSpeaker {
+            name: speaker.name.to_string(),
+            speaker_uuid: speaker.speaker_uuid.to_string(),
+            styles: speaker.styles.iter().map(Self::to_ipc_style).collect(),
+            version: speaker.version.to_string(),
+        }
+    }
+
+    fn to_ipc_model(model: &crate::infrastructure::voicevox::AvailableModel) -> IpcModel {
+        IpcModel {
+            model_id: model.model_id,
+            file_path: model.file_path.clone(),
+            speakers: model.speakers.iter().map(Self::to_ipc_speaker).collect(),
+        }
+    }
+
     /// Builds daemon state and precomputes model/style metadata used by requests.
     ///
     /// # Errors
@@ -57,10 +84,12 @@ impl DaemonState {
                 speakers,
                 style_to_model,
             } => OwnedResponse::SpeakersListWithModels {
-                speakers,
+                speakers: speakers.iter().map(Self::to_ipc_speaker).collect(),
                 style_to_model,
             },
-            DaemonServiceResult::ModelsList { models } => OwnedResponse::ModelsList { models },
+            DaemonServiceResult::ModelsList { models } => OwnedResponse::ModelsList {
+                models: models.iter().map(Self::to_ipc_model).collect(),
+            },
         }
     }
 

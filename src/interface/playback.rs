@@ -3,7 +3,7 @@ use rodio::Sink;
 use std::{env, path::Path, sync::Arc};
 use tokio::sync::oneshot;
 
-use crate::interface::cli::audio::{
+use crate::interface::audio::{
     create_temp_wav_file, play_audio_from_memory, preferred_audio_players,
 };
 

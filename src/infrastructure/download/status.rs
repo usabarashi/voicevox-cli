@@ -1,75 +1,63 @@
 use anyhow::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::infrastructure::paths::find_openjtalk_dict;
 use crate::infrastructure::voicevox::scan_available_models;
 
-/// Prints currently installed resources and available update commands.
-///
-/// # Errors
-///
-/// Returns an error if installed model scanning fails.
-pub fn check_updates() -> Result<()> {
-    println!("Checking for available updates...");
-    let current_models = scan_available_models()?;
-
-    println!("Current installation status:");
-    println!("  Voice models: {} VVM files", current_models.len());
-    for model in &current_models {
-        println!(
-            "    Model {} ({})",
-            model.model_id,
-            model.file_path.display()
-        );
-    }
-
-    match find_openjtalk_dict() {
-        Ok(dict_path) => println!("  Dictionary: {}", dict_path.display()),
-        Err(_) => println!("  Dictionary: Not found"),
-    }
-
-    println!();
-    println!("Update options:");
-    println!("  --update-models     Update all voice models");
-    println!("  --update-dict       Update dictionary only");
-    println!("  --update-model N    Update specific model N");
-
-    Ok(())
+#[derive(Debug, Clone)]
+pub struct UpdateStatus {
+    pub models: Vec<crate::infrastructure::voicevox::AvailableModel>,
+    pub dictionary_path: Option<PathBuf>,
 }
 
-/// Prints version and installed resource information for diagnostics.
-///
-/// # Errors
-///
-/// Returns an error if installed model scanning or file metadata queries fail.
-pub fn show_version_info() -> Result<()> {
-    println!("VOICEVOX CLI Version Information");
-    println!("=====================================");
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionModelEntry {
+    pub model_id: u32,
+    pub file_name: String,
+    pub modified: String,
+}
 
-    println!("Application: v{}", env!("CARGO_PKG_VERSION"));
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionInfo {
+    pub app_version: &'static str,
+    pub models: Vec<VersionModelEntry>,
+    pub dictionary_path: Option<PathBuf>,
+}
+
+pub fn collect_update_status() -> Result<UpdateStatus> {
+    let models = scan_available_models()?;
+    let dictionary_path = find_openjtalk_dict().ok();
+    Ok(UpdateStatus {
+        models,
+        dictionary_path,
+    })
+}
+
+pub fn collect_version_info() -> Result<VersionInfo> {
     let current_models = scan_available_models()?;
-
-    println!("Voice Models: {} installed", current_models.len());
-    for model in &current_models {
-        let modified = get_file_modified(&model.file_path)?;
-        println!(
-            "  Model {}: {} ({})",
-            model.model_id,
-            model
+    let models = current_models
+        .iter()
+        .map(|model| {
+            let modified = get_file_modified(&model.file_path)?;
+            let file_name = model
                 .file_path
                 .file_name()
                 .unwrap_or_default()
-                .to_string_lossy(),
-            modified
-        );
-    }
+                .to_string_lossy()
+                .into_owned();
+            Ok(VersionModelEntry {
+                model_id: model.model_id,
+                file_name,
+                modified,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    match find_openjtalk_dict() {
-        Ok(dict_path) => println!("Dictionary: {}", dict_path.display()),
-        Err(_) => println!("Dictionary: Not installed"),
-    }
-
-    Ok(())
+    Ok(VersionInfo {
+        app_version: env!("CARGO_PKG_VERSION"),
+        models,
+        dictionary_path: find_openjtalk_dict().ok(),
+    })
 }
 
 fn get_file_modified(path: &Path) -> Result<String> {

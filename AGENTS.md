@@ -4,60 +4,46 @@ VOICEVOX CLI design and implementation guidelines.
 
 ## System Shape
 
-- Client-server architecture with three binaries:
-- `voicevox-say`: CLI client
-- `voicevox-daemon`: synthesis daemon
-- `voicevox-mcp-server`: MCP server
-- Unix domain socket IPC between client and daemon
+- Three binaries:
+- `voicevox-say` (CLI)
+- `voicevox-daemon` (daemon)
+- `voicevox-mcp-server` (MCP server)
+- Client/daemon communication uses Unix domain socket IPC.
 
-## Current Project Policy
+## Layer Structure
 
-- Optimize for the current architecture and current IPC contract.
-- Backward compatibility is not a default requirement.
-- `voicevox-say` and `voicevox-daemon` are released as a matched set.
-- Do not add runtime client-daemon version/feature negotiation unless explicitly requested.
+- `src/bin/*`: entrypoints only (argument parsing, top-level error/exit handling).
+- `src/interface/*`: protocol/UI boundary (CLI, MCP, stdio, playback orchestration).
+- `src/infrastructure/*`: external systems (VOICEVOX Core, daemon process/socket, downloads, filesystem, IPC wire types).
+- `src/domain/*`: pure rules and value-level logic (validation, splitting, synthesis constraints).
 
-## Design Guidelines
+## Current Responsibility Map
 
-- Keep binary entrypoints (`src/bin/*`) thin.
-- Put use-case orchestration in `src/app/*`.
-- Keep daemon internals modular: request handling, startup, process control, and synthesis policy should stay separated.
-- Prefer explicit policies over implicit behavior (example: serialized synthesis policy, no model cache policy).
-- Favor simple fixed contracts over compatibility layers when changing IPC.
+- `src/interface/cli/*`: CLI flows and user-facing behavior.
+- `src/interface/mcp_server/*`: MCP protocol handling and tool routing.
+- `src/interface/synthesis/*`: shared synthesis orchestration used by CLI and MCP.
+- `src/interface/playback.rs`: shared playback path used by CLI and MCP.
+- `src/infrastructure/daemon/*`: daemon runtime, daemon client transport, process control.
+- `src/infrastructure/ipc/*`: daemon IPC contract and frame limits.
+- `src/infrastructure/voicevox.rs`: VOICEVOX model/speaker discovery and mappings.
 
-## Synthesis and Model Handling
+## Design Rules
+
+- Keep entrypoints thin; move behavior into interface/infrastructure/domain modules.
+- Keep domain free of CLI/MCP/process concepts.
+- Keep interface free of OS/process primitives where possible; push those to infrastructure.
+- Keep IPC contracts explicit and stable; update both client and daemon in the same change.
+- Do not add compatibility layers unless explicitly requested.
+
+## Synthesis Policy
 
 - Do not cache voice models in memory.
-- Load/unload models per request to keep memory usage predictable.
-- Prioritize end-to-end user experience (including playback time), not only synthesis latency.
-- Keep synthesis and playback concerns separated where practical.
-- Keep text segmentation logic replaceable (strategy-style abstractions are preferred).
+- Load/unload models per request.
+- Prefer predictable memory behavior over raw latency micro-optimizations.
+- Keep text segmentation logic replaceable.
 
-## Client/Daemon Behavior
+## Delivery Notes
 
-- Client should support automatic daemon startup and retry on first connection failure.
-- Startup/retry/backoff behavior should be shared, not duplicated across call paths.
-- User-facing startup messages should be concise and actionable.
-
-## IPC Guidelines
-
-- IPC types in `src/ipc.rs` define the source of truth for client-daemon communication.
-- Prefer explicit request/response enums with clear error paths.
-- When changing IPC, update client and daemon together in the same change.
-- Remove obsolete IPC variants instead of keeping unused compatibility branches.
-
-## Module Responsibilities
-
-- `src/app/*`: application/use-case orchestration
-- `src/client/*`: CLI-side daemon connection, playback, downloads/setup
-- `src/daemon/*`: daemon startup, socket server, process control, request execution
-- `src/synthesis/*`: synthesis backend preparation, streaming, segmentation, shared synthesis services
-- `src/mcp/*`: MCP protocol handling and tool execution
-- `src/core*`: VOICEVOX Core bindings/integration
-
-## Implementation Notes
-
-- `nix flake check` uses the Git-tracked flake source snapshot.
-- New files may be excluded until tracked (for example `git add -N <path>`).
-- TLC is available via the `tlc` command in this environment.
-- MCP instruction loading behavior is defined by the implementation and `VOICEVOX.md`; keep `AGENTS.md` focused on design/implementation guidance.
+- Backward compatibility is not required by default.
+- `voicevox-say` and `voicevox-daemon` are treated as a matched set.
+- `nix flake check` uses the Git-tracked flake snapshot.

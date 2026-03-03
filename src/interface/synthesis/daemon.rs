@@ -1,16 +1,16 @@
 use anyhow::Result;
 
 use crate::domain::synthesis::TextSynthesisRequest;
-use crate::infrastructure::daemon::rpc::DaemonRpcClient;
-use crate::interface::ipc::OwnedSynthesizeOptions;
+use crate::infrastructure::daemon::client::DaemonClient;
+use crate::infrastructure::ipc::OwnedSynthesizeOptions;
 
 pub struct DaemonSynthesizer {
-    daemon_rpc: DaemonRpcClient,
+    daemon_rpc: DaemonClient,
 }
 
 impl DaemonSynthesizer {
     #[must_use]
-    pub fn new_with_client(daemon_rpc: DaemonRpcClient) -> Self {
+    pub fn new_with_client(daemon_rpc: DaemonClient) -> Self {
         Self { daemon_rpc }
     }
 

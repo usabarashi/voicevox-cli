@@ -1,13 +1,19 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-use crate::domain::text_to_speech::SayPhase;
-use crate::infrastructure::daemon::rpc::format_daemon_rpc_error_for_cli;
-use crate::interface::cli::playback::{emit_and_play, PlaybackRequest};
-use crate::interface::cli::synthesis::flow::{
+use crate::interface::playback::{emit_and_play, PlaybackRequest};
+use crate::interface::synthesis::flow::{
     synthesize_bytes_via_daemon, validate_text_synthesis_request, DaemonSynthesisBytesRequest,
 };
+use crate::interface::cli::daemon_error::format_daemon_client_error_for_cli;
 use crate::interface::{AppOutput, StdAppOutput};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SayPhase {
+    Validate,
+    Synthesize,
+    Emit,
+}
 
 pub struct SaySynthesisRequest<'a> {
     pub text: &'a str,
@@ -76,7 +82,7 @@ async fn run_say_phase(
                 }
                 Err(error) => {
                     if !request.quiet {
-                        output.error(&format_daemon_rpc_error_for_cli(&error));
+                        output.error(&format_daemon_client_error_for_cli(&error));
                     }
                     Err(error)
                 }

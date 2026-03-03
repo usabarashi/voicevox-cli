@@ -3,17 +3,17 @@ use clap::{ArgGroup, Parser};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use voicevox_cli::app::{
-    run_list_models_command, run_list_speakers_command, run_say_synthesis, run_status_command,
-    SaySynthesisRequest,
-};
-use voicevox_cli::client::{
+use voicevox_cli::infrastructure::paths::get_socket_path;
+use voicevox_cli::infrastructure::voicevox::{print_voice_help, resolve_voice_dynamic};
+use voicevox_cli::interface::cli::{
     daemon_rpc_exit_code, find_daemon_rpc_error, format_daemon_rpc_error_for_cli,
     get_input_text_from_sources,
 };
+use voicevox_cli::interface::cli::{
+    run_list_models_command, run_list_speakers_command, run_say_synthesis, run_status_command,
+    SaySynthesisRequest,
+};
 use voicevox_cli::ipc::DEFAULT_SYNTHESIS_RATE;
-use voicevox_cli::paths::get_socket_path;
-use voicevox_cli::voice::{print_voice_help, resolve_voice_dynamic};
 
 // Clap option flags are intentionally represented as booleans.
 #[allow(clippy::struct_excessive_bools)]

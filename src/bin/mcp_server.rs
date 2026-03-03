@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use voicevox_cli::app::run_mcp_server_app;
+use voicevox_cli::interface::mcp_server::run_mcp_server_app;
 
 #[derive(Parser, Debug)]
 #[command(

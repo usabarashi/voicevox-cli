@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use voicevox_cli::daemon::startup;
-    use voicevox_cli::paths::get_socket_path;
+    use voicevox_cli::infrastructure::daemon::startup;
+    use voicevox_cli::infrastructure::paths::get_socket_path;
 
     #[test]
     fn test_exponential_backoff_timing() {

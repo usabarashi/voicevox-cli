@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::voice::{AvailableModel, Speaker};
+use crate::infrastructure::voicevox::{AvailableModel, Speaker};
 
 pub const DEFAULT_SYNTHESIS_RATE: f32 = 1.0;
 pub const MIN_SYNTHESIS_RATE: f32 = 0.5;

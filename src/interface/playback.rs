@@ -22,7 +22,7 @@ pub struct PlaybackRequest<'a> {
 #[allow(clippy::future_not_send)]
 pub async fn emit_and_play(request: PlaybackRequest<'_>) -> Result<PlaybackOutcome> {
     if let Some(output_file) = request.output_file {
-        std::fs::write(output_file, request.wav_data)?;
+        tokio::fs::write(output_file, request.wav_data).await?;
     }
 
     if !request.play {

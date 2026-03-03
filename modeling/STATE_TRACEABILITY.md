@@ -1,6 +1,6 @@
 # TLA+ State Traceability
 
-This document is closed within TLA+ artifacts only.
+This document is scoped to TLA+ artifacts only.
 It maps state ownership, cross-module synchronization, and scenario coverage across `modeling/tla` and `modeling/cfg`.
 
 ## State Ownership

@@ -108,11 +108,14 @@ impl StreamingSynthesizer {
         Ok(())
     }
 
-    /// Synthesizes text in segments and appends decoded audio to the provided sink.
+    /// Synthesizes text in segments and streams each to the sink as soon as it is ready.
+    ///
+    /// Playback begins after the first segment is synthesized; subsequent segments are
+    /// appended while earlier ones are already playing.
     ///
     /// # Errors
     ///
-    /// Returns an error if segment synthesis fails or any audio segment cannot be decoded.
+    /// Returns an error if segment synthesis or audio decoding fails.
     pub async fn synthesize_streaming(
         &mut self,
         text: &str,
@@ -120,9 +123,30 @@ impl StreamingSynthesizer {
         rate: f32,
         sink: &Player,
     ) -> Result<()> {
-        let wav_segments = self
-            .request_streaming_synthesis_segments(text, style_id, rate)
-            .await?;
-        self.append_segments_to_sink(&wav_segments, sink)
+        let segments = self.text_segmenter.split(text);
+        let options = crate::infrastructure::ipc::OwnedSynthesizeOptions { rate };
+
+        for (i, segment) in segments
+            .iter()
+            .filter(|s| !s.trim().is_empty())
+            .enumerate()
+        {
+            let wav_data = self
+                .daemon_rpc
+                .synthesize(segment, style_id, options)
+                .await
+                .with_context(|| {
+                    format!("Failed to synthesize segment {i} ({} bytes)", segment.len())
+                })?;
+
+            let cursor = Cursor::new(wav_data);
+            let source = Decoder::new(cursor)
+                .with_context(|| format!("Failed to decode audio for segment {i}"))?;
+            sink.append(source);
+            if i == 0 {
+                sink.play();
+            }
+        }
+        Ok(())
     }
 }

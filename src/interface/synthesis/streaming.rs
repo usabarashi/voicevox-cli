@@ -83,7 +83,7 @@ impl StreamingSynthesizer {
                 .daemon_rpc
                 .synthesize(segment, style_id, options)
                 .await
-                .with_context(|| format!("Failed to synthesize segment {i}: {segment}"))?;
+                .with_context(|| format!("Failed to synthesize segment {i} ({} bytes)", segment.len()))?;
             wav_segments.push(wav_data);
         }
 

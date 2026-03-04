@@ -89,6 +89,7 @@ pub fn open_voice_model_file_by_id(model_id: u32) -> Result<VoiceModelFile> {
     VoiceModelFile::open(&model_path).map_err(|e| anyhow!("Failed to open model {model_id}: {e}"))
 }
 
+#[allow(clippy::useless_conversion)] // voicevox_core may use CompactString
 pub(crate) fn collect_speakers_from_synthesizer(
     synthesizer: &Synthesizer<OpenJtalk>,
 ) -> Vec<Speaker> {
@@ -96,18 +97,18 @@ pub(crate) fn collect_speakers_from_synthesizer(
         .metas()
         .iter()
         .map(|meta| Speaker {
-            name: meta.name.clone(),
-            speaker_uuid: meta.speaker_uuid.clone(),
+            name: meta.name.clone().into(),
+            speaker_uuid: meta.speaker_uuid.clone().into(),
             styles: meta
                 .styles
                 .iter()
                 .map(|style| Style {
-                    name: style.name.clone(),
+                    name: style.name.clone().into(),
                     id: style.id.0,
-                    style_type: Some(format!("{:?}", style.r#type)),
+                    style_type: Some(format!("{:?}", style.r#type).into()),
                 })
                 .collect(),
-            version: meta.version.to_string(),
+            version: meta.version.to_string().into(),
         })
         .collect()
 }

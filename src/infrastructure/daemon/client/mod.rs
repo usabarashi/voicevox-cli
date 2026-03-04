@@ -22,20 +22,22 @@ fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error 
     anyhow!("Daemon returned an unexpected response while {operation} (expected: {expected})")
 }
 
+#[allow(clippy::useless_conversion)] // voicevox_core may use CompactString
 fn map_ipc_style(style: IpcStyle) -> Style {
     Style {
-        name: style.name,
+        name: style.name.into(),
         id: style.id,
-        style_type: style.style_type,
+        style_type: style.style_type.map(Into::into),
     }
 }
 
+#[allow(clippy::useless_conversion)] // voicevox_core may use CompactString
 fn map_ipc_speaker(speaker: IpcSpeaker) -> Speaker {
     Speaker {
-        name: speaker.name,
-        speaker_uuid: speaker.speaker_uuid,
+        name: speaker.name.into(),
+        speaker_uuid: speaker.speaker_uuid.into(),
         styles: speaker.styles.into_iter().map(map_ipc_style).collect(),
-        version: speaker.version,
+        version: speaker.version.into(),
     }
 }
 

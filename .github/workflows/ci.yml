@@ -31,6 +31,7 @@ jobs:
 
       - name: Setup Cachix
         uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
+        continue-on-error: true # cachix daemon stop returns exit 1 on cleanup
         with:
           name: voicevox-cli
           extraPullNames: nix-community

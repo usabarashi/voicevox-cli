@@ -47,7 +47,13 @@ async fn run_update(kind: UpdateKind) -> Result<UpdateOutcome> {
 
     if try_run_downloader_only(kind.resource(), &target_dir).await? {
         let model_count = match kind {
-            UpdateKind::Models => Some(count_vvm_files_recursive(&target_dir)),
+            UpdateKind::Models => {
+                let count = count_vvm_files_recursive(&target_dir);
+                if count == 0 {
+                    bail!("Model update succeeded but no VVM files were produced");
+                }
+                Some(count)
+            }
             _ => None,
         };
         return Ok(UpdateOutcome {

@@ -24,18 +24,18 @@ fn unexpected_daemon_response(operation: &str, expected: &str) -> anyhow::Error 
 
 fn map_ipc_style(style: IpcStyle) -> Style {
     Style {
-        name: style.name.into(),
+        name: style.name,
         id: style.id,
-        style_type: style.style_type.map(Into::into),
+        style_type: style.style_type,
     }
 }
 
 fn map_ipc_speaker(speaker: IpcSpeaker) -> Speaker {
     Speaker {
-        name: speaker.name.into(),
-        speaker_uuid: speaker.speaker_uuid.into(),
+        name: speaker.name,
+        speaker_uuid: speaker.speaker_uuid,
         styles: speaker.styles.into_iter().map(map_ipc_style).collect(),
-        version: speaker.version.into(),
+        version: speaker.version,
     }
 }
 

@@ -96,18 +96,18 @@ pub(crate) fn collect_speakers_from_synthesizer(
         .metas()
         .iter()
         .map(|meta| Speaker {
-            name: meta.name.clone().into(),
-            speaker_uuid: meta.speaker_uuid.clone().into(),
+            name: meta.name.clone(),
+            speaker_uuid: meta.speaker_uuid.clone(),
             styles: meta
                 .styles
                 .iter()
                 .map(|style| Style {
-                    name: style.name.clone().into(),
+                    name: style.name.clone(),
                     id: style.id.0,
-                    style_type: Some(format!("{:?}", style.r#type).into()),
+                    style_type: Some(format!("{:?}", style.r#type)),
                 })
                 .collect(),
-            version: meta.version.to_string().into(),
+            version: meta.version.to_string(),
         })
         .collect()
 }

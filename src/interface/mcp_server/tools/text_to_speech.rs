@@ -249,10 +249,10 @@ async fn run_daemon_retry_phase(
 ) -> Result<DaemonRetryStep> {
     match phase {
         McpTtsPhase::Attempt => {
-            if let Some(cancel_rx) = ctx.cancel_rx.as_mut() {
-                if let Some(reason) = try_take_cancellation(cancel_rx) {
-                    return Ok(DaemonRetryStep::Return(cancellation_result(reason)));
-                }
+            if let Some(cancel_rx) = ctx.cancel_rx.as_mut()
+                && let Some(reason) = try_take_cancellation(cancel_rx)
+            {
+                return Ok(DaemonRetryStep::Return(cancellation_result(reason)));
             }
 
             let synth_request = DaemonSynthesisBytesRequest {

@@ -154,12 +154,12 @@ pub async fn synthesize_bytes_via_daemon_cancellable(
             lifecycle = lifecycle.start();
         }
 
-        if let Some(receiver) = cancel_rx.as_mut() {
-            if let Some(reason) = try_take_cancellation(receiver) {
-                lifecycle = lifecycle.cancel();
-                if matches!(lifecycle, SynthesisLifecycleState::Canceled) {
-                    return Ok(SynthesisFlowOutcome::Canceled(reason));
-                }
+        if let Some(receiver) = cancel_rx.as_mut()
+            && let Some(reason) = try_take_cancellation(receiver)
+        {
+            lifecycle = lifecycle.cancel();
+            if matches!(lifecycle, SynthesisLifecycleState::Canceled) {
+                return Ok(SynthesisFlowOutcome::Canceled(reason));
             }
         }
 

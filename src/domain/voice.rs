@@ -36,13 +36,12 @@ pub fn filter_speakers(
             let speaker_name_lower =
                 speaker_name_filter.map(|_| speaker.speaker_name.to_lowercase());
 
-            if let Some(name_filter) = speaker_name_filter {
-                if !speaker_name_lower
+            if let Some(name_filter) = speaker_name_filter
+                && !speaker_name_lower
                     .as_deref()
                     .is_some_and(|lower| lower.contains(name_filter))
-                {
-                    return None;
-                }
+            {
+                return None;
             }
 
             let filtered_styles = speaker

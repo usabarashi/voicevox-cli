@@ -33,10 +33,10 @@ fn instruction_candidates() -> Vec<PathBuf> {
         );
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            candidates.push(parent.join(crate::config::MCP_INSTRUCTIONS_FILE));
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        candidates.push(parent.join(crate::config::MCP_INSTRUCTIONS_FILE));
     }
 
     candidates.push(PathBuf::from(crate::config::MCP_INSTRUCTIONS_FILE));

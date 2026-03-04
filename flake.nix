@@ -29,12 +29,18 @@
       flake-utils,
       fenix,
     }:
-    flake-utils.lib.eachSystem [ "aarch64-darwin" ] (
+    let
+      systems = [ "aarch64-darwin" ];
+    in
+    flake-utils.lib.eachSystem systems (
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        lib = pkgs.lib;
+        cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+        version = cargoToml.package.version;
 
-        # Read rust-toolchain.toml to ensure consistency
+        # Fenix stable toolchain used for local builds/checks
         rustToolchain = fenix.packages.${system}.stable;
 
         # Shared cargo lock configuration (used by build and checks)
@@ -48,7 +54,7 @@
         };
 
         # Shared source filter
-        srcFiltered = pkgs.lib.cleanSourceWith {
+        srcFiltered = lib.cleanSourceWith {
           src = ./.;
           filter =
             path: type:
@@ -56,8 +62,8 @@
               baseName = baseNameOf path;
             in
             !(
-              (type == "directory" && pkgs.lib.hasSuffix "-extract" baseName)
-              || (type == "regular" && pkgs.lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+              (type == "directory" && lib.hasSuffix "-extract" baseName)
+              || (type == "regular" && lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
             );
         };
 
@@ -84,7 +90,7 @@
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
           url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.3/download-osx-arm64";
-          sha256 = "sha256-7GMosxM4HRDAix6BImNP5Q5PNpWJYEvMLNApKjNht+k=";
+          hash = "sha256-7GMosxM4HRDAix6BImNP5Q5PNpWJYEvMLNApKjNht+k=";
         };
 
         # Simple resources for voicevox-download binary
@@ -100,57 +106,56 @@
           '';
         };
 
-        packageMeta = with pkgs.lib; {
+        packageMeta = {
           description = "VOICEVOX CLI for Apple Silicon - Dynamic voice detection system";
           homepage = "https://github.com/usabarashi/voicevox-cli";
-          license = with licenses; [
+          license = with lib.licenses; [
             mit
             asl20
           ];
-          maintainers = [ "usabarashi" ];
-          platforms = [ "aarch64-darwin" ];
+          platforms = systems;
         };
 
-        voicevox-cli = pkgs.rustPlatform.buildRustPackage {
+        mkRustPackage =
+          extraAttrs:
+          pkgs.rustPlatform.buildRustPackage (
+            {
+              inherit version;
+
+              src = srcFiltered;
+              cargoLock = cargoLockConfig;
+
+              doCheck = false;
+
+              # Force offline mode to ensure reproducible builds
+              CARGO_NET_OFFLINE = true;
+
+              # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
+              ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
+
+              # Minimal pre-configure setup
+              preConfigure = ''
+                # Create a temporary HOME for build process
+                export HOME=$PWD/build-home
+                mkdir -p $HOME
+              '';
+
+              nativeBuildInputs = commonNativeBuildInputs;
+
+              # Build-time environment variables
+              preBuild = ''
+                # Git SSL configuration
+                export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              '';
+
+              meta = packageMeta;
+            }
+            // extraAttrs
+          );
+
+        voicevoxCli = mkRustPackage {
           pname = "voicevox-cli";
-          version = "0.1.0";
-
-          src = srcFiltered;
-          cargoLock = cargoLockConfig;
-
-          doCheck = false;
-
-          # Force offline mode to ensure reproducible builds
-          CARGO_NET_OFFLINE = true;
-
-          # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
-          ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
-
-          # Minimal pre-configure setup
-          preConfigure = ''
-            # Create a temporary HOME for build process
-            export HOME=$PWD/build-home
-            mkdir -p $HOME
-          '';
-
-          nativeBuildInputs = commonNativeBuildInputs;
-
-
-          buildInputs = [ ];
-
-          # Build-time environment variables
-          preBuild = ''
-            # Git SSL configuration
-            export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-          '';
-
-          # Clippy analysis runs after cargo build --release completes.
-          # Reuses build artifacts from the same sandbox environment,
-          # avoiding double compilation from a separate checks.clippy derivation.
-          postBuild = ''
-            cargo clippy --release --all-targets --all-features -- -D warnings
-          '';
 
           postInstall = ''
             # Install download utility
@@ -163,89 +168,118 @@
             install -m644 ${./VOICEVOX.md} $out/bin/VOICEVOX.md
           '';
 
-          meta = packageMeta;
         };
 
         # Development utility: reset daemon state
-        voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (builtins.readFile ./scripts/voicevox-reset.sh);
+        voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (
+          builtins.readFile ./scripts/voicevox-reset.sh
+        );
 
+        mkApp = program: {
+          type = "app";
+          inherit program;
+        };
+        appBins = [
+          "voicevox-say"
+          "voicevox-daemon"
+          "voicevox-mcp-server"
+        ];
+        appAttrs = lib.genAttrs appBins (bin: mkApp "${voicevoxCli}/bin/${bin}");
 
       in
       {
-        packages = {
-          default = voicevox-cli;
-          voicevox-cli = voicevox-cli;
-          voicevox-say = voicevox-cli;
-          voicevoxResources = voicevoxResources;
+        packages = rec {
+          default = voicevoxCli;
+          voicevox-cli = default;
+          voicevox-say = default;
+          inherit voicevoxResources;
         };
 
         checks = {
           # Code formatting check
-          formatting = pkgs.runCommand "check-formatting" {
-            nativeBuildInputs = [ rustToolchain.defaultToolchain ];
-            src = srcFiltered;
-          } ''
-            cd $src
-            export HOME=$TMPDIR
-            cargo fmt --check
-            touch $out
-          '';
+          formatting =
+            pkgs.runCommand "check-formatting"
+              {
+                nativeBuildInputs = [ rustToolchain.defaultToolchain ];
+                src = srcFiltered;
+              }
+              ''
+                cd $src
+                export HOME=$TMPDIR
+                cargo fmt --all --check
+                touch $out
+              '';
 
           # Shell script syntax validation
-          scripts = pkgs.runCommand "check-scripts" {
-            nativeBuildInputs = with pkgs; [
-              bash
-              gnused
-              gnugrep
-            ];
-            src = ./.;
-          } ''
-            test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
+          scripts =
+            pkgs.runCommand "check-scripts"
+              {
+                nativeBuildInputs = with pkgs; [
+                  bash
+                  gnused
+                  gnugrep
+                ];
+                src = srcFiltered;
+              }
+              ''
+                test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
 
-            for script in $src/scripts/*.sh; do
-              if [ -f "$script" ]; then
-                echo "Validating: $(basename "$script")"
-                if grep -q '@@.*@@' "$script"; then
-                  sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
-                else
-                  bash -n "$script"
-                fi
-              fi
-            done
-            touch $out
-          '';
+                for script in $src/scripts/*.sh; do
+                  if [ -f "$script" ]; then
+                    echo "Validating: $(basename "$script")"
+                    if grep -q '@@.*@@' "$script"; then
+                      sed 's/@@[^@]*@@/placeholder/g' "$script" | bash -n
+                    else
+                      bash -n "$script"
+                    fi
+                  fi
+                done
+                touch $out
+              '';
 
           # Build verification
-          build = voicevox-cli;
+          build = voicevoxCli;
+
+          # Static analysis (kept separate from package build for clearer check/package responsibilities)
+          clippy = mkRustPackage {
+            pname = "voicevox-cli-clippy";
+
+            buildPhase = ''
+              runHook preBuild
+              cargo clippy --release --all-targets --all-features -- -D warnings
+              runHook postBuild
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+            '';
+          };
+
+          # Test suite verification
+          tests = mkRustPackage {
+            pname = "voicevox-cli-tests";
+
+            buildPhase = ''
+              runHook preBuild
+              cargo test --release --all-targets --all-features
+              runHook postBuild
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+            '';
+          };
         };
 
-        apps = {
-          default = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-say";
-          };
-          voicevox-say = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-say";
-          };
-          voicevox-daemon = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-daemon";
-          };
-          voicevox-mcp-server = {
-            type = "app";
-            program = "${voicevox-cli}/bin/voicevox-mcp-server";
-          };
-
+        apps = appAttrs // {
+          default = appAttrs.voicevox-say;
         };
 
         devShells.default = pkgs.mkShell {
-          CARGO_HOME = "./.project-home/.cargo";
-
           # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
           ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
 
-          buildInputs = with pkgs; [
+          packages = with pkgs; [
             # Use fenix-provided rust toolchain that matches rust-toolchain.toml
             rustToolchain.defaultToolchain
             rustToolchain.rust-analyzer
@@ -254,14 +288,24 @@
             # Build tools
             pkg-config
             cmake
+            gcc
 
             # Development utilities
             voicevoxResetWrapper
+
+            # TLC model checker for modeling/*.tla
+            tlaplus
           ];
 
           shellHook = ''
+            # Work around Nix Darwin cc-wrapper linker conflicts when host/build SDK env vars differ.
+            unset DEVELOPER_DIR_FOR_BUILD
+            unset SDKROOT_FOR_BUILD
+            unset NIX_APPLE_SDK_VERSION_FOR_BUILD
+
             # Create project-home directory for CARGO_HOME
             mkdir -p .project-home
+            export CARGO_HOME="$PWD/.project-home/.cargo"
 
             echo "VOICEVOX CLI Development Environment (Apple Silicon)"
             echo "Available commands:"
@@ -269,8 +313,12 @@
             echo "  cargo build --bin voicevox-daemon  - Build daemon"
             echo "  cargo run --bin voicevox-say       - Run client"
             echo "  nix build                          - Build with Nix"
+            echo "  nix flake check                    - Run formatting/scripts/build/clippy/tests"
             echo "  nix run                            - Run voicevox-say directly"
             echo "  voicevox-reset                     - Reset daemon state (kill processes + remove socket)"
+            echo "  cargo test                         - Also works in this shell (FOR_BUILD SDK vars sanitized)"
+            echo "  cargo kani                         - Run Kani proofs (install: cargo install --locked kani-verifier && cargo kani setup)"
+            echo "  tlc -deadlock -config X.cfg X.tla  - Run TLC model checker (in modeling/)"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
           '';
@@ -279,7 +327,7 @@
       }
     )
     // {
-      overlays.default = final: prev: {
+      overlays.default = final: _prev: {
         voicevox-cli = (self.packages.${final.system} or self.packages.aarch64-darwin).voicevox-cli;
         voicevox-say = final.voicevox-cli;
       };

@@ -30,7 +30,8 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Cachix
-        uses: cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad # v16
+        uses: cachix/cachix-action@3ba601ff5bbb07c7220846facfa2cd81eeee15a1 # v16
+        continue-on-error: true # cachix daemon stop returns exit 1 on cleanup
         with:
           name: voicevox-cli
           extraPullNames: nix-community
@@ -78,3 +79,61 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
           nix-store -qR ./result | cachix push voicevox-cli
+
+  tla-model-check:
+    name: TLA+ Model Checking
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Install Nix with cache
+        uses: cachix/install-nix-action@9280e7aca88deada44c930f1e2c78e21c3ae3edd # v31.7.0
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run TLA+ model checking
+        run: |
+          nix develop --accept-flake-config --command bash -c '
+            set -euo pipefail
+
+            check() {
+              echo "::group::$1"
+              tlc -config "modeling/cfg/$1.cfg" "modeling/tla/$2.tla"
+              echo "::endgroup::"
+            }
+
+            # Startup and readiness
+            check Daemon.startup Daemon
+            check FirstStartup.bootstrap StartupResources
+            check ONNXRuntime.load ONNXRuntime
+            check VoicevoxModel.standard VoicevoxModel
+            check Dictionary.load Dictionary
+            check Socket.bind Socket
+
+            # Client and IPC
+            check MCPServer.connect MCPServer
+            check MCPServer.degraded MCPServer
+            check IPC.safety IPC
+            check IPC.progress IPC
+
+            # Synthesis
+            check Synthesis.full Synthesis
+            check Synthesis.normal-flow Synthesis
+            check Synthesis.invalid-target Synthesis
+            check Synthesis.progress Synthesis
+            check Synthesis.retry-boundary Synthesis
+            check Synthesis.cancel-sources Synthesis
+            check SynthesisParallel.safety SynthesisParallel
+            check SynthesisParallel.progress SynthesisParallel
+
+            # Playback and integrated system
+            check Playback.standard Playback
+            check Say.standard Say
+            check Say.daemon Say
+            check System.integration System
+
+            echo "All 22 TLA+ scenarios passed"
+          '

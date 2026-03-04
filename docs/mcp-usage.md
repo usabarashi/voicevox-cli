@@ -19,6 +19,16 @@ voicevox-mcp-server
 
 The server communicates via stdio (standard input/output) using JSON-RPC protocol.
 
+### Usage Notes
+
+- The MCP server may start `voicevox-daemon` automatically when synthesis is needed.
+- The default socket path is typically under an app-specific directory such as:
+  - `$XDG_RUNTIME_DIR/voicevox/voicevox-daemon.sock`
+  - `$XDG_STATE_HOME/voicevox/voicevox-daemon.sock`
+  - `~/.local/state/voicevox/voicevox-daemon.sock`
+
+If you override the socket path with `VOICEVOX_SOCKET_PATH`, use a directory owned by the same user with restrictive permissions (recommended: `0700` for the directory).
+
 ## Server Initialization
 
 Before using any tools, initialize the MCP server:
@@ -141,6 +151,11 @@ Converts Japanese text to speech (TTS) and plays it on the server.
 - `rate` (optional): Speech rate (0.5-2.0, default: 1.0)
 - `streaming` (optional): Enable streaming playback (default: true)
 
+**Usage Limits:**
+- Text length is limited (currently 10,000 characters)
+- Extremely large MCP JSON-RPC request lines are rejected
+- Concurrent tool executions are limited to prevent local resource exhaustion
+
 **Example:**
 ```json
 {
@@ -236,3 +251,5 @@ Common errors:
 - "Failed to connect to daemon": Daemon auto-start failed, check system resources
 - "Invalid style_id": Use `list_voice_styles` to see available style IDs
 - "Audio device not available": Check system audio settings
+- "Request too large": The MCP JSON-RPC line exceeded the server limit
+- "Too many concurrent tool handlers": Reduce parallel MCP `tools/call` requests (limit: 4)

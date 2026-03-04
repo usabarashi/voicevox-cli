@@ -10,7 +10,7 @@ pub fn check_updates() -> Result<()> {
 
 pub fn check_updates_with_output(output: &dyn AppOutput) -> Result<()> {
     let status = collect_update_status()?;
-    output.info("Checking for available updates...");
+    output.info("Checking current installation status...");
     output.info("Current installation status:");
     output.info(&format!(
         "  Voice models: {} VVM files",

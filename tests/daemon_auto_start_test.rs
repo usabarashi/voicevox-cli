@@ -1,19 +1,20 @@
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use voicevox_cli::paths::get_socket_path;
+    use voicevox_cli::infrastructure::daemon::startup;
+    use voicevox_cli::infrastructure::paths::get_socket_path;
 
     #[test]
     fn test_exponential_backoff_timing() {
         // Test that exponential backoff follows expected pattern
-        let delays = [100, 200, 400, 800, 1000, 1000, 1000, 1000, 1000];
+        let expected_delays = [100, 200, 400, 800, 1000, 1000, 1000, 1000, 1000];
         let mut total_delay = Duration::from_millis(0);
+        let mut delay = startup::initial_retry_delay();
 
-        for (i, &expected_ms) in delays.iter().enumerate() {
-            let delay = Duration::from_millis(100) * 2_u32.pow(i as u32).min(10);
-            let capped_delay = delay.min(Duration::from_secs(1));
-            assert_eq!(capped_delay.as_millis(), expected_ms);
-            total_delay += capped_delay;
+        for &expected_ms in &expected_delays {
+            assert_eq!(delay.as_millis(), expected_ms);
+            total_delay += delay;
+            delay = (delay * 2).min(startup::max_retry_delay());
         }
 
         // Total should be 6.5 seconds

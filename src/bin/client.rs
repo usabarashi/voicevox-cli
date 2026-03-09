@@ -1,332 +1,256 @@
-use anyhow::{anyhow, Result};
-use clap::{Arg, Command};
-use std::path::{Path, PathBuf};
+use anyhow::Result;
+use clap::{ArgGroup, Parser};
+use std::path::PathBuf;
+use std::process::ExitCode;
 
-use voicevox_cli::client::{
-    ensure_models_available, get_input_text, list_speakers_daemon, play_audio_from_memory,
-    DaemonClient,
+use voicevox_cli::infrastructure::daemon::client::find_daemon_client_error;
+use voicevox_cli::infrastructure::ipc::DEFAULT_SYNTHESIS_RATE;
+use voicevox_cli::infrastructure::paths::get_socket_path;
+use voicevox_cli::interface::StdAppOutput;
+use voicevox_cli::interface::cli::daemon_error::{
+    daemon_client_exit_code, format_daemon_client_error_for_cli,
 };
-use voicevox_cli::ipc::OwnedSynthesizeOptions;
-use voicevox_cli::paths::get_socket_path;
-use voicevox_cli::voice::{resolve_voice_dynamic, scan_available_models};
+use voicevox_cli::interface::cli::input::get_input_text_from_sources;
+use voicevox_cli::interface::cli::inspect::{
+    run_list_models_command, run_list_speakers_command, run_status_command,
+};
+use voicevox_cli::interface::cli::say::{SaySynthesisRequest, run_say_synthesis};
+use voicevox_cli::interface::cli::voice_help::print_voice_help;
+use voicevox_cli::interface::cli::voice_selector::resolve_voice_input;
 
-fn resolve_voice_from_args(matches: &clap::ArgMatches) -> Result<(u32, String)> {
-    matches
-        .get_one::<u32>("speaker-id")
-        .map(|&id| (id, format!("Style ID {id}")))
-        .or_else(|| {
-            matches
-                .get_one::<u32>("model")
-                .map(|&id| (id, format!("Model {id} (Default Style)")))
-        })
-        .map(Ok)
-        .or_else(|| {
-            matches
-                .get_one::<String>("voice")
-                .map(|voice_name| resolve_voice_dynamic(voice_name))
-        })
-        .unwrap_or_else(|| Ok((3, "Default (Zundamon Normal)".to_string())))
+// Clap option flags are intentionally represented as booleans.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Parser)]
+#[command(
+    name = "voicevox-say",
+    version,
+    about = "VOICEVOX Say - Convert text to audible speech using VOICEVOX",
+    group(
+        ArgGroup::new("meta_command")
+            .args(["list_speakers", "list_models", "status"])
+            .multiple(false)
+    )
+)]
+struct CliArgs {
+    #[arg(help = "Specify the text to speak on the command line", index = 1)]
+    text: Option<String>,
+
+    #[arg(
+        long,
+        short = 'v',
+        value_name = "VOICE",
+        help = "Specify the voice to be used. Use '?' to list all available voices",
+        conflicts_with_all = ["speaker_id", "model"]
+    )]
+    voice: Option<String>,
+
+    #[arg(
+        long,
+        short = 'r',
+        value_name = "RATE",
+        default_value_t = DEFAULT_SYNTHESIS_RATE,
+        help = "Speech rate multiplier (0.5-2.0, default: 1.0)"
+    )]
+    rate: f32,
+
+    #[arg(long = "output-file", short = 'o', value_name = "FILE")]
+    output_file: Option<PathBuf>,
+
+    #[arg(long = "input-file", short = 'f', value_name = "FILE")]
+    input_file: Option<String>,
+
+    #[arg(long, short = 'q', help = "Don't play audio, only save to file")]
+    quiet: bool,
+
+    #[arg(
+        long = "list-speakers",
+        help = "List all available speakers and styles"
+    )]
+    list_speakers: bool,
+
+    #[arg(
+        long = "speaker-id",
+        value_name = "ID",
+        help = "Directly specify speaker style ID (advanced users)",
+        conflicts_with_all = ["voice", "model"]
+    )]
+    speaker_id: Option<u32>,
+
+    #[arg(
+        long,
+        short = 'm',
+        value_name = "MODEL_ID",
+        help = "Specify voice model by file number (e.g., --model 3 for 3.vvm)",
+        conflicts_with_all = ["voice", "speaker_id"]
+    )]
+    model: Option<u32>,
+
+    #[arg(
+        long = "list-models",
+        help = "List all available voice models and exit"
+    )]
+    list_models: bool,
+
+    #[arg(long, help = "Show installation status of voice models and dictionary")]
+    status: bool,
+
+    #[arg(long = "socket-path", short = 'S', value_name = "PATH")]
+    socket_path: Option<PathBuf>,
 }
 
-async fn try_daemon_with_retry(
-    text: &str,
-    style_id: u32,
-    options: OwnedSynthesizeOptions,
-    output_file: Option<&String>,
-    quiet: bool,
-    _socket_path: &Path,
-) -> Result<()> {
-    if voicevox_cli::paths::find_models_dir().is_err() {
-        if !quiet {
-            println!("Voice models not found. Setting up VOICEVOX...");
-        }
-        ensure_models_available().await?;
+impl CliArgs {
+    fn socket_path(&self) -> PathBuf {
+        self.socket_path.clone().unwrap_or_else(get_socket_path)
     }
 
-    match DaemonClient::new_with_auto_start().await {
-        Ok(mut client) => {
-            let wav_data = client.synthesize(text, style_id, options).await?;
+    fn wants_voice_help(&self) -> bool {
+        self.voice.as_deref() == Some("?")
+    }
 
-            if let Some(output_file) = output_file {
-                std::fs::write(output_file, &wav_data)?;
-            }
-
-            if !quiet && output_file.is_none() {
-                if let Err(e) = play_audio_from_memory(&wav_data) {
-                    eprintln!("Error: Audio playback failed: {e}");
-                    return Err(e);
-                }
-            }
-
-            Ok(())
-        }
-        Err(e) => {
-            if !quiet {
-                eprintln!("Failed to connect to daemon: {}", e);
-            }
-            Err(e)
+    fn selected_meta_command(&self) -> Option<MetaCommand> {
+        if self.list_models {
+            Some(MetaCommand::ListModels)
+        } else if self.status {
+            Some(MetaCommand::Status)
+        } else if self.list_speakers {
+            Some(MetaCommand::ListSpeakers)
+        } else {
+            None
         }
     }
+}
+
+fn handle_voice_help_request(args: &CliArgs) -> bool {
+    if args.wants_voice_help() {
+        print_voice_help(&StdAppOutput);
+        return true;
+    }
+    false
+}
+
+const DEFAULT_STYLE_ID: u32 = 3;
+
+const fn default_voice_selection() -> u32 {
+    DEFAULT_STYLE_ID
+}
+
+async fn handle_list_models_command(args: &CliArgs) -> Result<bool> {
+    run_list_models_command(&args.socket_path()).await?;
+    Ok(true)
+}
+
+fn handle_status_command() -> bool {
+    run_status_command();
+    true
+}
+
+async fn handle_list_speakers_command(args: &CliArgs) -> Result<bool> {
+    run_list_speakers_command(&args.socket_path()).await?;
+    Ok(true)
+}
+
+enum MetaCommand {
+    ListModels,
+    Status,
+    ListSpeakers,
+}
+
+enum VoiceSelection<'a> {
+    SpeakerId(u32),
+    ModelId(u32),
+    VoiceName(&'a str),
+    Default,
+}
+
+impl<'a> VoiceSelection<'a> {
+    fn from_args(args: &'a CliArgs) -> Self {
+        if let Some(id) = args.speaker_id {
+            Self::SpeakerId(id)
+        } else if let Some(id) = args.model {
+            Self::ModelId(id)
+        } else if let Some(voice_name) = args.voice.as_deref() {
+            Self::VoiceName(voice_name)
+        } else {
+            Self::Default
+        }
+    }
+}
+
+async fn maybe_handle_meta_commands(args: &CliArgs) -> Result<bool> {
+    match args.selected_meta_command() {
+        Some(MetaCommand::ListModels) => handle_list_models_command(args).await,
+        Some(MetaCommand::Status) => Ok(handle_status_command()),
+        Some(MetaCommand::ListSpeakers) => handle_list_speakers_command(args).await,
+        None => Ok(false),
+    }
+}
+
+async fn run_synthesis_command(args: &CliArgs) -> Result<()> {
+    let text = get_input_text_from_sources(args.text.as_deref(), args.input_file.as_deref())?;
+    let style_id = resolve_voice_from_args(args)?;
+    run_say_synthesis(SaySynthesisRequest {
+        text: &text,
+        style_id,
+        rate: args.rate,
+        output_file: args.output_file.as_deref(),
+        quiet: args.quiet,
+        socket_path: args.socket_path(),
+    })
+    .await
+}
+
+fn resolve_voice_from_args(args: &CliArgs) -> Result<u32> {
+    match VoiceSelection::from_args(args) {
+        VoiceSelection::SpeakerId(id) | VoiceSelection::ModelId(id) => Ok(id),
+        VoiceSelection::VoiceName(voice_name) => {
+            resolve_voice_input(voice_name).map(|(style_id, _description)| style_id)
+        }
+        VoiceSelection::Default => Ok(default_voice_selection()),
+    }
+}
+
+async fn run_client_command(args: &CliArgs) -> Result<()> {
+    if handle_voice_help_request(args) {
+        return Ok(());
+    }
+    if maybe_handle_meta_commands(args).await? {
+        return Ok(());
+    }
+    run_synthesis_command(args).await
+}
+
+fn should_print_error_in_main(args: &CliArgs, error: &anyhow::Error) -> bool {
+    if find_daemon_client_error(error).is_none() {
+        return true;
+    }
+
+    args.quiet || args.selected_meta_command().is_some()
+}
+
+fn print_cli_error(args: &CliArgs, error: &anyhow::Error) {
+    if !should_print_error_in_main(args, error) {
+        return;
+    }
+
+    if find_daemon_client_error(error).is_some() {
+        eprintln!("{}", format_daemon_client_error_for_cli(error));
+    } else {
+        eprintln!("Error: {error}");
+    }
+}
+
+fn exit_code_for_error(error: &anyhow::Error) -> ExitCode {
+    ExitCode::from(daemon_client_exit_code(error).unwrap_or(1))
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let app = Command::new("voicevox-say")
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("VOICEVOX Say - Convert text to audible speech using VOICEVOX")
-        .arg(
-            Arg::new("text")
-                .help("Specify the text to speak on the command line")
-                .index(1)
-                .required(false),
-        )
-        .arg(
-            Arg::new("voice")
-                .help("Specify the voice to be used. Use '?' to list all available voices")
-                .long("voice")
-                .short('v')
-                .value_name("VOICE"),
-        )
-        .arg(
-            Arg::new("rate")
-                .help("Speech rate multiplier (0.5-2.0, default: 1.0)")
-                .long("rate")
-                .short('r')
-                .value_name("RATE")
-                .value_parser(clap::value_parser!(f32))
-                .default_value("1.0"),
-        )
-        .arg(
-            Arg::new("output-file")
-                .help("Specify the path for an audio file to be written")
-                .long("output-file")
-                .short('o')
-                .value_name("FILE"),
-        )
-        .arg(
-            Arg::new("input-file")
-                .help("Specify a file to be spoken. Use '-' for stdin")
-                .long("input-file")
-                .short('f')
-                .value_name("FILE"),
-        )
-        .arg(
-            Arg::new("quiet")
-                .help("Don't play audio, only save to file")
-                .long("quiet")
-                .short('q')
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("list-speakers")
-                .help("List all available speakers and styles")
-                .long("list-speakers")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("speaker-id")
-                .help("Directly specify speaker style ID (advanced users)")
-                .long("speaker-id")
-                .value_name("ID")
-                .value_parser(clap::value_parser!(u32))
-                .conflicts_with_all(["voice", "model"]),
-        )
-        .arg(
-            Arg::new("model")
-                .help("Specify voice model by file number (e.g., --model 3 for 3.vvm)")
-                .long("model")
-                .short('m')
-                .value_name("MODEL_ID")
-                .value_parser(clap::value_parser!(u32))
-                .conflicts_with_all(["voice", "speaker-id"]),
-        )
-        .arg(
-            Arg::new("list-models")
-                .help("List all available voice models and exit")
-                .long("list-models")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("status")
-                .help("Show installation status of voice models and dictionary")
-                .long("status")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("socket-path")
-                .help("Specify custom Unix socket path")
-                .long("socket-path")
-                .short('S')
-                .value_name("PATH"),
-        );
-
-    let matches = app.get_matches();
-
-    if let Some(voice_name) = matches.get_one::<String>("voice") {
-        if voice_name == "?" {
-            resolve_voice_dynamic("?")?;
+async fn main() -> ExitCode {
+    let args = CliArgs::parse();
+    match run_client_command(&args).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            print_cli_error(&args, &error);
+            exit_code_for_error(&error)
         }
     }
-
-    if matches.get_flag("list-models") {
-        match DaemonClient::new_with_auto_start().await {
-            Ok(mut client) => {
-                let models = client.list_models().await?;
-                if models.is_empty() {
-                    println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
-                } else {
-                    println!("Available voice models:");
-                    for model in &models {
-                        println!("  Model {} ({})", model.model_id, model.file_path.display());
-                        println!(
-                            "    Usage: --model {} or --speaker-id <STYLE_ID>",
-                            model.model_id
-                        );
-                    }
-
-                    println!("\nTips:");
-                    println!("  - Use --model N to load model N.vvm");
-                    println!("  - Use --speaker-id for direct style ID specification");
-                    println!("  - Use --list-speakers for detailed speaker information");
-                }
-            }
-            Err(_) => {
-                println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
-            }
-        }
-        return Ok(());
-    }
-
-    if matches.get_flag("status") {
-        println!("VOICEVOX CLI Installation Status");
-        println!("=====================================");
-
-        println!("Application: v{}", env!("CARGO_PKG_VERSION"));
-
-        match voicevox_cli::paths::find_onnxruntime() {
-            Ok(onnx_path) => {
-                println!("ONNX Runtime: {}", onnx_path.display());
-            }
-            Err(_) => {
-                println!("ONNX Runtime: Not found");
-                println!("  Install with: voicevox-setup");
-            }
-        }
-
-        match scan_available_models() {
-            Ok(current_models) => {
-                if current_models.is_empty() {
-                    println!("Voice Models: Not found");
-                    println!("  Install with: voicevox-setup");
-                } else {
-                    println!("Voice Models: {} files installed", current_models.len());
-                    for model in &current_models {
-                        let model_info = match std::fs::metadata(&model.file_path) {
-                            Ok(metadata) => {
-                                let size_kb = metadata.len() / 1024;
-                                let filename = model
-                                    .file_path
-                                    .file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy();
-                                format!("  Model {}: {filename} ({size_kb} KB)", model.model_id)
-                            }
-                            Err(_) => {
-                                format!(
-                                    "  Model {} ({})",
-                                    model.model_id,
-                                    model.file_path.display()
-                                )
-                            }
-                        };
-                        println!("{model_info}");
-                    }
-                }
-
-                use voicevox_cli::paths::find_openjtalk_dict;
-                match find_openjtalk_dict() {
-                    Ok(dict_path) => {
-                        println!("Dictionary: {}", dict_path.display());
-                    }
-                    Err(_) => {
-                        println!("Dictionary: Not found");
-                        println!("  Install with: voicevox-setup");
-                    }
-                }
-            }
-            Err(e) => {
-                println!("Voice Models: Not found");
-                println!("  Install with: voicevox-setup");
-                eprintln!("Error scanning models: {e}");
-            }
-        }
-        return Ok(());
-    }
-
-    if matches.get_flag("list-speakers") {
-        let socket_path = matches
-            .get_one::<String>("socket-path")
-            .map(PathBuf::from)
-            .unwrap_or_else(get_socket_path);
-
-        // Try to connect to daemon first
-        if list_speakers_daemon(&socket_path).await.is_ok() {
-            return Ok(());
-        }
-
-        // If daemon connection fails, try to start daemon automatically
-        match DaemonClient::new_with_auto_start().await {
-            Ok(mut client) => {
-                let speakers = client.list_speakers().await?;
-                println!("All available speakers and styles:");
-                for speaker in &speakers {
-                    println!("  {}", speaker.name);
-                    for style in &speaker.styles {
-                        println!("    {} (Style ID: {})", style.name, style.id);
-                        if let Some(style_type) = &style.style_type {
-                            println!("        Type: {style_type}");
-                        }
-                    }
-                    println!();
-                }
-            }
-            Err(_) => {
-                println!("No voice models found. Please run 'voicevox-setup' to download required resources.");
-            }
-        }
-        return Ok(());
-    }
-
-    let text = get_input_text(&matches)?;
-    if text.trim().is_empty() {
-        return Err(anyhow!(
-            "No text provided. Use command line argument, -f file, or pipe text to stdin."
-        ));
-    }
-
-    let (style_id, _voice_description) = resolve_voice_from_args(&matches)?;
-
-    let rate = *matches.get_one::<f32>("rate").unwrap_or(&1.0);
-    let quiet = matches.get_flag("quiet");
-    let output_file = matches.get_one::<String>("output-file");
-    if !(0.5..=2.0).contains(&rate) {
-        return Err(anyhow!("Rate must be between 0.5 and 2.0, got: {rate}"));
-    }
-
-    let options = OwnedSynthesizeOptions { rate };
-
-    let socket_path = matches
-        .get_one::<String>("socket-path")
-        .map(PathBuf::from)
-        .unwrap_or_else(get_socket_path);
-
-    try_daemon_with_retry(
-        &text,
-        style_id,
-        options.clone(),
-        output_file,
-        quiet,
-        &socket_path,
-    )
-    .await
 }

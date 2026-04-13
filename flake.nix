@@ -20,6 +20,7 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
@@ -28,6 +29,7 @@
       nixpkgs,
       flake-utils,
       fenix,
+      crane,
     }:
     let
       systems = [ "aarch64-darwin" ];
@@ -40,22 +42,23 @@
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         version = cargoToml.package.version;
 
-        # Fenix stable toolchain used for local builds/checks
+        # Fenix stable toolchain
         rustToolchain = fenix.packages.${system}.stable;
 
-        # Shared cargo lock configuration (used by build and checks)
-        cargoLockConfig = {
-          lockFile = ./Cargo.lock;
-          outputHashes = {
-            "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-            "voicevox_core-0.0.0" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
-            "voicevox-ort-2.0.0-rc.10" = "sha256-BsgE3v8eir+IkrPw2rYrhen/s63GHnI4Na0N2c2lHVg=";
-          };
-        };
+        # Minimal toolchain for builds and checks (no rust-src/rust-docs)
+        buildToolchain = fenix.packages.${system}.combine [
+          rustToolchain.rustc
+          rustToolchain.cargo
+          rustToolchain.rustfmt
+          rustToolchain.clippy
+        ];
 
-        # Shared source filter
-        srcFiltered = lib.cleanSourceWith {
-          src = ./.;
+        # Crane library with minimal fenix toolchain
+        craneLib = (crane.mkLib pkgs).overrideToolchain buildToolchain;
+
+        # Source filtering
+        src = lib.cleanSourceWith {
+          src = craneLib.cleanCargoSource ./.;
           filter =
             path: type:
             let
@@ -63,22 +66,9 @@
             in
             !(
               (type == "directory" && lib.hasSuffix "-extract" baseName)
-              || (type == "regular" && lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+              || (type == "regular" && lib.hasSuffix ".tar.gz" baseName)
             );
         };
-
-        # Shared native build inputs for Rust compilation
-        commonNativeBuildInputs = with pkgs; [
-          rustToolchain.defaultToolchain
-          pkg-config
-          cmake
-          gnumake
-          autoconf
-          automake
-          libtool
-          git
-          cacert
-        ];
 
         # ONNX Runtime library search path for build.rs (voicevox-ort-sys).
         # Actual library is loaded at runtime via dlopen (load-dynamic),
@@ -87,13 +77,92 @@
           mkdir -p $out/lib
         '';
 
+        # Vendor cargo dependencies with git dependency hashes
+        cargoVendorDir = craneLib.vendorCargoDeps {
+          inherit src;
+          outputHashes = {
+            "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
+            "voicevox_core-0.0.0" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
+            "voicevox-ort-2.0.0-rc.10" = "sha256-BsgE3v8eir+IkrPw2rYrhen/s63GHnI4Na0N2c2lHVg=";
+          };
+          overrideVendorGitCheckout =
+            ps: drv:
+            # VOICEVOX/ort is a workspace with excluded members (backends,
+            # examples, tests) whose Cargo.toml files confuse crane's
+            # package discovery. Vendor the two needed crates manually.
+            if lib.any (p: p.name == "voicevox-ort") ps then
+              let
+                pkg = name: (lib.findFirst (p: p.name == name) null ps);
+                dir = p: "${p.name}-${p.version}";
+                ortPkg = pkg "voicevox-ort";
+                sysPkg = pkg "voicevox-ort-sys";
+              in
+              assert ortPkg != null && sysPkg != null;
+              drv.overrideAttrs {
+                installPhase =
+                  let
+                    ort = dir ortPkg;
+                    sys = dir sysPkg;
+                  in
+                  ''
+                    mkdir -p $out
+
+                    # Root crate (copy without workspace members)
+                    cp -r . $out/${ort}
+                    rm -rf $out/${ort}/{ort-sys,backends,examples,tests}
+                    echo '{"files":{}}' > $out/${ort}/.cargo-checksum.json
+
+                    # ort-sys sub-crate
+                    cp -r ort-sys $out/${sys}
+                    echo '{"files":{}}' > $out/${sys}/.cargo-checksum.json
+                  '';
+              }
+            else
+              drv;
+        };
+
+        # Shared build arguments for all crane derivations
+        commonArgs = {
+          inherit src cargoVendorDir version;
+          pname = "voicevox-cli";
+          strictDeps = true;
+          doCheck = false;
+          cargoExtraArgs = "--locked --all-features";
+
+          CARGO_NET_OFFLINE = true;
+          ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
+
+          preConfigure = ''
+            export HOME=$PWD/build-home
+            mkdir -p $HOME
+          '';
+
+          preBuild = ''
+            export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+          '';
+
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            cmake
+            gnumake
+            autoconf
+            automake
+            libtool
+            git
+            cacert
+          ];
+        };
+
+        # Build only cargo dependencies (shared by build, clippy, tests)
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
           url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.3/download-osx-arm64";
           hash = "sha256-7GMosxM4HRDAix6BImNP5Q5PNpWJYEvMLNApKjNht+k=";
         };
 
-        # Simple resources for voicevox-download binary
         voicevoxResources = pkgs.stdenv.mkDerivation {
           name = "voicevox-resources";
 
@@ -116,59 +185,21 @@
           platforms = systems;
         };
 
-        mkRustPackage =
-          extraAttrs:
-          pkgs.rustPlatform.buildRustPackage (
-            {
-              inherit version;
+        # Final package
+        voicevoxCli = craneLib.buildPackage (
+          commonArgs
+          // {
+            inherit cargoArtifacts;
 
-              src = srcFiltered;
-              cargoLock = cargoLockConfig;
+            postInstall = ''
+              cp ${voicevoxResources}/bin/voicevox-download $out/bin/
+              install -m755 ${./scripts/voicevox-setup.sh} $out/bin/voicevox-setup
+              install -m644 ${./VOICEVOX.md} $out/bin/VOICEVOX.md
+            '';
 
-              doCheck = false;
-
-              # Force offline mode to ensure reproducible builds
-              CARGO_NET_OFFLINE = true;
-
-              # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
-              ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
-
-              # Minimal pre-configure setup
-              preConfigure = ''
-                # Create a temporary HOME for build process
-                export HOME=$PWD/build-home
-                mkdir -p $HOME
-              '';
-
-              nativeBuildInputs = commonNativeBuildInputs;
-
-              # Build-time environment variables
-              preBuild = ''
-                # Git SSL configuration
-                export GIT_SSL_CAINFO="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-              '';
-
-              meta = packageMeta;
-            }
-            // extraAttrs
-          );
-
-        voicevoxCli = mkRustPackage {
-          pname = "voicevox-cli";
-
-          postInstall = ''
-            # Install download utility
-            cp ${voicevoxResources}/bin/voicevox-download $out/bin/
-
-            # Install setup script
-            install -m755 ${./scripts/voicevox-setup.sh} $out/bin/voicevox-setup
-
-            # Install VOICEVOX.md for MCP server
-            install -m644 ${./VOICEVOX.md} $out/bin/VOICEVOX.md
-          '';
-
-        };
+            meta = packageMeta;
+          }
+        );
 
         # Development utility: reset daemon state
         voicevoxResetWrapper = pkgs.writeShellScriptBin "voicevox-reset" (
@@ -196,19 +227,10 @@
         };
 
         checks = {
-          # Code formatting check
-          formatting =
-            pkgs.runCommand "check-formatting"
-              {
-                nativeBuildInputs = [ rustToolchain.defaultToolchain ];
-                src = srcFiltered;
-              }
-              ''
-                cd $src
-                export HOME=$TMPDIR
-                cargo fmt --all --check
-                touch $out
-              '';
+          # Code formatting
+          formatting = craneLib.cargoFmt {
+            inherit src;
+          };
 
           # Shell script syntax validation
           scripts =
@@ -219,7 +241,16 @@
                   gnused
                   gnugrep
                 ];
-                src = srcFiltered;
+                src = lib.cleanSourceWith {
+                  src = ./.;
+                  filter =
+                    path: type:
+                    let
+                      baseName = baseNameOf path;
+                    in
+                    (type == "directory" && baseName == "scripts")
+                    || (type == "regular" && lib.hasSuffix ".sh" baseName);
+                };
               }
               ''
                 test -f $src/scripts/voicevox-setup.sh || (echo "Missing voicevox-setup.sh" && exit 1)
@@ -240,48 +271,36 @@
           # Build verification
           build = voicevoxCli;
 
-          # Static analysis (kept separate from package build for clearer check/package responsibilities)
-          clippy = mkRustPackage {
-            pname = "voicevox-cli-clippy";
+          # Static analysis (reuses cargoArtifacts)
+          clippy = craneLib.cargoClippy (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoClippyExtraArgs = "--all-targets -- -D warnings";
+            }
+          );
 
-            buildPhase = ''
-              runHook preBuild
-              cargo clippy --release --all-targets --all-features -- -D warnings
-              runHook postBuild
-            '';
-
-            installPhase = ''
-              mkdir -p $out
-            '';
-          };
-
-          # Test suite verification
-          tests = mkRustPackage {
-            pname = "voicevox-cli-tests";
-
-            buildPhase = ''
-              runHook preBuild
-              cargo test --release --all-targets --all-features
-              runHook postBuild
-            '';
-
-            installPhase = ''
-              mkdir -p $out
-            '';
-          };
+          # Test suite (reuses cargoArtifacts)
+          tests = craneLib.cargoTest (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              doCheck = true;
+            }
+          );
         };
 
         apps = appAttrs // {
           default = appAttrs.voicevox-say;
         };
 
-        devShells.default = pkgs.mkShell {
+        devShells.default = craneLib.devShell {
+          checks = self.checks.${system};
+
           # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
           ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
 
           packages = with pkgs; [
-            # Use fenix-provided rust toolchain that matches rust-toolchain.toml
-            rustToolchain.defaultToolchain
             rustToolchain.rust-analyzer
             cargo-audit
 

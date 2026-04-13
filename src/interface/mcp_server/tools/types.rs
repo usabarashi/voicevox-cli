@@ -31,3 +31,27 @@ pub(crate) fn success_result() -> ToolCallResult {
         is_error: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn success_result_serializes_to_expected_json() {
+        let result = success_result();
+
+        let json = serde_json::to_value(&result).unwrap();
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "ok"
+                    }
+                ]
+            })
+        );
+    }
+}

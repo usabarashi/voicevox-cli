@@ -19,9 +19,12 @@
       "matchManagers": ["cargo"],
       "additionalBranchPrefix": "rust-",
       "commitMessagePrefix": "deps(deps):",
-      "labels": ["dependencies", "rust"],
-      "groupName": "minor-updates",
-      "matchUpdateTypes": ["minor", "patch"]
+      "labels": ["dependencies", "rust"]
+    },
+    {
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "minor-and-patch-updates"
     },
     {
       "matchManagers": ["nix"],

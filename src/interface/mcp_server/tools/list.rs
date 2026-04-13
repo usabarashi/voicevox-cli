@@ -30,7 +30,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: "text_to_speech".to_string(),
-            description: "Synthesize Japanese text to speech with VOICEVOX. Returns base64-encoded WAV audio data for client-side playback.".to_string(),
+            description: "Synthesize Japanese text to speech with VOICEVOX. Plays audio server-side and returns a text summary.".to_string(),
             input_schema: ToolInputSchema {
                 schema_type: "object".to_string(),
                 properties: json_object(json!({

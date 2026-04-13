@@ -2903,7 +2903,6 @@ name = "voicevox-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
  "bincode",
  "clap",
  "compact_str",

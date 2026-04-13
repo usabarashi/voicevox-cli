@@ -5,11 +5,11 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
-use super::types::{ToolCallResult, audio_result, text_result};
+use super::types::{ToolCallResult, success_result, text_result};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
 use crate::domain::synthesis::{TextSynthesisRequest, validate_basic_request};
 use crate::domain::text_to_speech::{
-    SynthesizeParams, default_rate, default_streaming, text_char_count, validate_style_id,
+    SynthesizeParams, default_rate, default_streaming, validate_style_id,
 };
 use crate::infrastructure::daemon::startup;
 use crate::interface::mcp_server::daemon_error::{
@@ -72,8 +72,6 @@ pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
 
 /// Executes the `text_to_speech` tool with optional cancellation support.
 ///
-/// Returns base64-encoded WAV audio data for client-side playback.
-///
 /// # Errors
 ///
 /// Returns an error if parameters are invalid or synthesis fails.
@@ -126,7 +124,6 @@ async fn handle_streaming_synthesis(
         rate,
         streaming: _,
     } = params;
-    let text_len = text_char_count(&text);
     let synthesis = do_streaming_synthesis(&text, style_id, rate);
 
     if let Some(mut cancel_rx) = cancel_rx {
@@ -142,17 +139,11 @@ async fn handle_streaming_synthesis(
         if let Some(cancelled_result) = play_generated_audio(&wav_data, Some(cancel_rx)).await? {
             return Ok(cancelled_result);
         }
-        Ok(audio_result(
-            synthesis_success_message(text_len, style_id),
-            &wav_data,
-        ))
+        Ok(success_result())
     } else {
         let wav_data = synthesis.await?;
         play_generated_audio(&wav_data, None).await?;
-        Ok(audio_result(
-            synthesis_success_message(text_len, style_id),
-            &wav_data,
-        ))
+        Ok(success_result())
     }
 }
 
@@ -231,15 +222,11 @@ async fn handle_daemon_synthesis(
         ));
     };
 
-    let text_len = text_char_count(&text);
     if let Some(cancelled_result) = play_generated_audio(&wav_data, cancel_rx).await? {
         return Ok(cancelled_result);
     }
 
-    Ok(audio_result(
-        synthesis_success_message(text_len, style_id),
-        &wav_data,
-    ))
+    Ok(success_result())
 }
 
 #[allow(clippy::future_not_send)]
@@ -308,10 +295,6 @@ async fn run_daemon_retry_phase(
         }
         McpTtsPhase::Finish => Ok(DaemonRetryStep::Finish),
     }
-}
-
-fn synthesis_success_message(text_len: usize, style_id: u32) -> String {
-    format!("Synthesized {text_len} characters using style ID {style_id}")
 }
 
 fn cancellation_message(reason: &str) -> String {

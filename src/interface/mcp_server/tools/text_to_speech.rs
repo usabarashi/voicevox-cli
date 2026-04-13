@@ -297,7 +297,6 @@ async fn run_daemon_retry_phase(
     }
 }
 
-
 fn cancellation_message(reason: &str) -> String {
     if reason.is_empty() {
         "Synthesis cancelled".to_string()

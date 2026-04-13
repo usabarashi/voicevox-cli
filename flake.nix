@@ -66,7 +66,7 @@
             in
             !(
               (type == "directory" && lib.hasSuffix "-extract" baseName)
-              || (type == "regular" && lib.hasSuffix ".tar.gz" baseName && baseName != "Cargo.lock")
+              || (type == "regular" && lib.hasSuffix ".tar.gz" baseName)
             );
         };
 
@@ -79,7 +79,7 @@
 
         # Vendor cargo dependencies with git dependency hashes
         cargoVendorDir = craneLib.vendorCargoDeps {
-          src = ./.;
+          inherit src;
           outputHashes = {
             "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
             "voicevox_core-0.0.0" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
@@ -94,12 +94,15 @@
               let
                 pkg = name: (lib.findFirst (p: p.name == name) null ps);
                 dir = p: "${p.name}-${p.version}";
+                ortPkg = pkg "voicevox-ort";
+                sysPkg = pkg "voicevox-ort-sys";
               in
+              assert ortPkg != null && sysPkg != null;
               drv.overrideAttrs {
                 installPhase =
                   let
-                    ort = dir (pkg "voicevox-ort");
-                    sys = dir (pkg "voicevox-ort-sys");
+                    ort = dir ortPkg;
+                    sys = dir sysPkg;
                   in
                   ''
                     mkdir -p $out
@@ -282,6 +285,7 @@
             commonArgs
             // {
               inherit cargoArtifacts;
+              doCheck = true;
             }
           );
         };

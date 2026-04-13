@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Tokyo",
+  "schedule": ["on the first day of the month"],
+  "prConcurrentLimit": 10,
+  "nix": {
+    "enabled": true
+  },
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "additionalBranchPrefix": "ci-",
+      "commitMessagePrefix": "ci(deps):",
+      "labels": ["dependencies", "github-actions"]
+    },
+    {
+      "matchManagers": ["cargo"],
+      "additionalBranchPrefix": "rust-",
+      "commitMessagePrefix": "deps(deps):",
+      "labels": ["dependencies", "rust"],
+      "groupName": "minor-updates",
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "matchManagers": ["nix"],
+      "additionalBranchPrefix": "nix-",
+      "commitMessagePrefix": "deps(deps):",
+      "labels": ["dependencies", "nix"]
+    }
+  ]
+}

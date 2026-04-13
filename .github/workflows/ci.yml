@@ -19,8 +19,38 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.filter.outputs.build }}
+      modeling: ${{ steps.filter.outputs.modeling }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Check for path changes
+        id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            build:
+              - 'src/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'flake.nix'
+              - 'flake.lock'
+              - '.github/workflows/ci.yml'
+            modeling:
+              - 'modeling/**'
+
   build-and-test:
     name: Build & Test (Apple Silicon)
+    needs: changes
+    if: >-
+      needs.changes.outputs.build == 'true' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
 
     steps:
@@ -86,6 +116,11 @@ jobs:
 
   tla-model-check:
     name: TLA+ Model Checking
+    needs: changes
+    if: >-
+      needs.changes.outputs.modeling == 'true' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
 
     steps:

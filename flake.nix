@@ -82,20 +82,20 @@
           inherit src;
           outputHashes = {
             "git+https://github.com/VOICEVOX/open_jtalk-rs.git?rev=7c87b4227bb005b439a3ad473b48ce8975829576#7c87b4227bb005b439a3ad473b48ce8975829576" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-            "git+https://github.com/VOICEVOX/voicevox_core.git?rev=89f1e942ce6b239e1cead4aede0d101f2956043a#89f1e942ce6b239e1cead4aede0d101f2956043a" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
-            "git+https://github.com/VOICEVOX/ort.git?rev=6d69dbd1ddfae713081d844c456be5b8d097e17e#6d69dbd1ddfae713081d844c456be5b8d097e17e" = "sha256-BsgE3v8eir+IkrPw2rYrhen/s63GHnI4Na0N2c2lHVg=";
+            "git+https://github.com/VOICEVOX/voicevox_core.git?rev=0d7d72d50d05ac9248885f21f937c3355a196d42#0d7d72d50d05ac9248885f21f937c3355a196d42" = "sha256-/xJb0FQ3W3F5ye9qkBajD0cQI5K8I5GM6C0667xSyS0=";
+            "git+https://github.com/pykeio/ort.git?rev=94417081c47f47f5a7d6a92ce94bb38fda10019f#94417081c47f47f5a7d6a92ce94bb38fda10019f" = "sha256-jQM+azVYisxjeTJrheFuo47nLGSW7v9RM3UCq4A7twk=";
           };
           overrideVendorGitCheckout =
             ps: drv:
             # VOICEVOX/ort is a workspace with excluded members (backends,
             # examples, tests) whose Cargo.toml files confuse crane's
             # package discovery. Vendor the two needed crates manually.
-            if lib.any (p: p.name == "voicevox-ort") ps then
+            if lib.any (p: p.name == "ort") ps then
               let
                 pkg = name: (lib.findFirst (p: p.name == name) null ps);
                 dir = p: "${p.name}-${p.version}";
-                ortPkg = pkg "voicevox-ort";
-                sysPkg = pkg "voicevox-ort-sys";
+                ortPkg = pkg "ort";
+                sysPkg = pkg "ort-sys";
               in
               assert ortPkg != null && sysPkg != null;
               drv.overrideAttrs {

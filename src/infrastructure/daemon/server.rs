@@ -61,13 +61,11 @@ fn remove_socket_if_exists(socket_path: &Path) -> Result<()> {
 }
 
 fn decode_request_frame(data: &[u8]) -> Result<DaemonRequest> {
-    bincode::serde::decode_from_slice::<DaemonRequest, _>(data, bincode::config::standard())
-        .map(|(request, _)| request)
-        .map_err(Into::into)
+    postcard::from_bytes(data).map_err(Into::into)
 }
 
 fn encode_response_frame(response: &OwnedResponse) -> Result<Vec<u8>> {
-    bincode::serde::encode_to_vec(response, bincode::config::standard()).map_err(Into::into)
+    postcard::to_allocvec(response).map_err(Into::into)
 }
 
 fn log_client_error(context: &str, error: &dyn std::fmt::Display) {

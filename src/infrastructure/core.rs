@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use std::path::Path;
 use voicevox_core::{
-    AccelerationMode, StyleId,
+    AccelerationMode, OnExistingVoiceModelId, StyleId,
     blocking::{OpenJtalk, Synthesizer},
 };
 
@@ -129,11 +129,11 @@ impl VoicevoxCore {
     pub fn load_specific_model(&self, model_id: u32) -> Result<()> {
         let model = open_voice_model_file_by_id(model_id)?;
 
-        match self.synthesizer.load_voice_model(&model) {
-            Ok(()) => Ok(()),
-            Err(error) if is_already_loaded_error(&error.to_string()) => Ok(()),
-            Err(error) => Err(anyhow!("Failed to load model {model_id}: {error}")),
-        }
+        self.synthesizer
+            .load_voice_model(&model)
+            .on_existing(OnExistingVoiceModelId::Skip)
+            .perform()
+            .map_err(|e| anyhow!("Failed to load model {model_id}: {e}"))
     }
 
     /// Unloads a voice model by file path.
@@ -149,9 +149,4 @@ impl VoicevoxCore {
             .unload_voice_model(voice_model_id)
             .map_err(|e| anyhow!("Failed to unload model: {e}"))
     }
-}
-
-fn is_already_loaded_error(message: &str) -> bool {
-    message.contains("既に読み込まれています")
-        || message.to_ascii_lowercase().contains("already loaded")
 }

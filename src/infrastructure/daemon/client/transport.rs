@@ -16,14 +16,11 @@ pub(crate) const DAEMON_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const DAEMON_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn encode_request_frame(request: &OwnedRequest) -> Result<Vec<u8>> {
-    bincode::serde::encode_to_vec(request, bincode::config::standard())
-        .map_err(|e| anyhow!("Failed to serialize request: {e}"))
+    postcard::to_allocvec(request).map_err(|e| anyhow!("Failed to serialize request: {e}"))
 }
 
 fn decode_response_frame(frame: &[u8]) -> Result<OwnedResponse> {
-    bincode::serde::decode_from_slice(frame, bincode::config::standard())
-        .map(|(response, _)| response)
-        .map_err(|e| anyhow!("Failed to deserialize response: {e}"))
+    postcard::from_bytes(frame).map_err(|e| anyhow!("Failed to deserialize response: {e}"))
 }
 
 fn current_uid() -> u32 {

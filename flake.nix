@@ -81,9 +81,9 @@
         cargoVendorDir = craneLib.vendorCargoDeps {
           inherit src;
           outputHashes = {
-            "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-            "voicevox_core-0.0.0" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
-            "voicevox-ort-2.0.0-rc.10" = "sha256-BsgE3v8eir+IkrPw2rYrhen/s63GHnI4Na0N2c2lHVg=";
+            "git+https://github.com/VOICEVOX/open_jtalk-rs.git?rev=7c87b4227bb005b439a3ad473b48ce8975829576#7c87b4227bb005b439a3ad473b48ce8975829576" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
+            "git+https://github.com/VOICEVOX/voicevox_core.git?rev=89f1e942ce6b239e1cead4aede0d101f2956043a#89f1e942ce6b239e1cead4aede0d101f2956043a" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
+            "git+https://github.com/VOICEVOX/ort.git?rev=6d69dbd1ddfae713081d844c456be5b8d097e17e#6d69dbd1ddfae713081d844c456be5b8d097e17e" = "sha256-BsgE3v8eir+IkrPw2rYrhen/s63GHnI4Na0N2c2lHVg=";
           };
           overrideVendorGitCheckout =
             ps: drv:

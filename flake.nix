@@ -77,25 +77,20 @@
           mkdir -p $out/lib
         '';
 
-        # Vendor cargo dependencies with git dependency hashes
+        # Vendor cargo dependencies (git deps fetched at eval time)
         cargoVendorDir = craneLib.vendorCargoDeps {
           inherit src;
-          outputHashes = {
-            "open_jtalk-0.1.25" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-            "voicevox_core-0.0.0" = "sha256-tQ1NQm1e+boCG6SAu1Qr7PeCqJFOU0wIG2VtWQVwUA0=";
-            "voicevox-ort-2.0.0-rc.10" = "sha256-BsgE3v8eir+IkrPw2rYrhen/s63GHnI4Na0N2c2lHVg=";
-          };
           overrideVendorGitCheckout =
             ps: drv:
             # VOICEVOX/ort is a workspace with excluded members (backends,
             # examples, tests) whose Cargo.toml files confuse crane's
             # package discovery. Vendor the two needed crates manually.
-            if lib.any (p: p.name == "voicevox-ort") ps then
+            if lib.any (p: p.name == "ort") ps then
               let
                 pkg = name: (lib.findFirst (p: p.name == name) null ps);
                 dir = p: "${p.name}-${p.version}";
-                ortPkg = pkg "voicevox-ort";
-                sysPkg = pkg "voicevox-ort-sys";
+                ortPkg = pkg "ort";
+                sysPkg = pkg "ort-sys";
               in
               assert ortPkg != null && sysPkg != null;
               drv.overrideAttrs {

@@ -77,14 +77,9 @@
           mkdir -p $out/lib
         '';
 
-        # Vendor cargo dependencies with git dependency hashes
+        # Vendor cargo dependencies (git deps fetched at eval time)
         cargoVendorDir = craneLib.vendorCargoDeps {
           inherit src;
-          outputHashes = {
-            "git+https://github.com/VOICEVOX/open_jtalk-rs.git?rev=7c87b4227bb005b439a3ad473b48ce8975829576#7c87b4227bb005b439a3ad473b48ce8975829576" = "sha256-sdUWHHY+eY3bWMGSPu/+0jGz1f4HMHq3D17Tzbwt0Nc=";
-            "git+https://github.com/VOICEVOX/voicevox_core.git?rev=0d7d72d50d05ac9248885f21f937c3355a196d42#0d7d72d50d05ac9248885f21f937c3355a196d42" = "sha256-/xJb0FQ3W3F5ye9qkBajD0cQI5K8I5GM6C0667xSyS0=";
-            "git+https://github.com/pykeio/ort.git?rev=94417081c47f47f5a7d6a92ce94bb38fda10019f#94417081c47f47f5a7d6a92ce94bb38fda10019f" = "sha256-jQM+azVYisxjeTJrheFuo47nLGSW7v9RM3UCq4A7twk=";
-          };
           overrideVendorGitCheckout =
             ps: drv:
             # VOICEVOX/ort is a workspace with excluded members (backends,

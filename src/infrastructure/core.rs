@@ -142,11 +142,13 @@ impl VoicevoxCore {
     ///
     /// Returns an error if the model file cannot be opened or the core fails to unload it.
     pub fn unload_voice_model_by_path(&self, model_path: &Path) -> Result<()> {
-        let model = open_voice_model_file(model_path)?;
-        let voice_model_id = model.id();
+        let voice_model_id = open_voice_model_file(model_path)?.id();
 
         self.synthesizer
             .unload_voice_model(voice_model_id)
-            .map_err(|e| anyhow!("Failed to unload model: {e}"))
+            .map_err(|e| anyhow!("Failed to unload model: {e}"))?;
+
+        crate::infrastructure::memory::release_unused_allocator_memory();
+        Ok(())
     }
 }

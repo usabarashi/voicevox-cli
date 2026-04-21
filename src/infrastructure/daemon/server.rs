@@ -8,10 +8,12 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::infrastructure::daemon::state::DaemonState;
-use crate::infrastructure::ipc::{DaemonRequest, MAX_DAEMON_REQUEST_FRAME_BYTES, OwnedResponse};
+use crate::infrastructure::ipc::{
+    DaemonRequest, MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES, OwnedResponse,
+};
 
 const SOCKET_DIR_MODE: u32 = 0o700;
 const SOCKET_FILE_MODE: u32 = 0o600;
@@ -115,12 +117,17 @@ async fn handle_client_with_limit(
     state: Arc<DaemonState>,
     permits: Arc<Semaphore>,
 ) -> Result<()> {
-    let codec = LengthDelimitedCodec::builder()
+    let request_codec = LengthDelimitedCodec::builder()
         .max_frame_length(MAX_DAEMON_REQUEST_FRAME_BYTES)
         .new_codec();
-    let mut framed = Framed::new(stream, codec);
+    let response_codec = LengthDelimitedCodec::builder()
+        .max_frame_length(MAX_DAEMON_RESPONSE_FRAME_BYTES)
+        .new_codec();
+    let (reader, writer) = stream.into_split();
+    let mut framed_read = FramedRead::new(reader, request_codec);
+    let mut framed_write = FramedWrite::new(writer, response_codec);
 
-    while let Some(frame) = timeout(CLIENT_IDLE_TIMEOUT, framed.next())
+    while let Some(frame) = timeout(CLIENT_IDLE_TIMEOUT, framed_read.next())
         .await
         .map_err(|_| anyhow!("Client idle timeout"))?
     {
@@ -148,7 +155,7 @@ async fn handle_client_with_limit(
             break;
         };
 
-        if let Err(error) = framed.send(response_data.into()).await {
+        if let Err(error) = framed_write.send(response_data.into()).await {
             log_client_error("Client stream write error", &error);
             break;
         }

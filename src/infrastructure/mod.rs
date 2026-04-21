@@ -4,6 +4,7 @@ pub mod download;
 pub mod ipc;
 pub mod logging;
 pub mod mcp_instructions;
+pub mod memory;
 pub mod onnxruntime;
 pub mod openjtalk;
 pub mod paths;

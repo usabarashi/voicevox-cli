@@ -26,7 +26,7 @@ impl SerializedSynthesisPolicy {
         requested_id: u32,
         rate: f32,
     ) -> Result<DaemonServiceResult, DaemonServiceError> {
-        let executor = self.executor.lock().await;
+        let mut executor = self.executor.lock().await;
         executor.synthesize(catalog, text, requested_id, rate)
     }
 }

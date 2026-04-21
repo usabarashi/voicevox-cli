@@ -52,9 +52,12 @@ impl DaemonState {
     /// Returns an error if VOICEVOX core initialization fails, model discovery fails,
     /// or the style-to-model mapping cannot be constructed.
     pub fn new() -> Result<Self> {
-        let core = crate::infrastructure::core::VoicevoxCore::new()?;
-        let catalog = ModelCatalog::new(&core)?;
-        let synthesis_executor = DaemonSynthesisExecutor::new(core);
+        let catalog_core = crate::infrastructure::core::VoicevoxCore::new()?;
+        let catalog = ModelCatalog::new(&catalog_core)?;
+        drop(catalog_core);
+        crate::infrastructure::memory::release_unused_allocator_memory();
+
+        let synthesis_executor = DaemonSynthesisExecutor::new();
         let synthesis_policy = SerializedSynthesisPolicy::new(synthesis_executor);
 
         Ok(Self {

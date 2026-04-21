@@ -6,7 +6,7 @@ use super::catalog::{ModelCatalog, TargetResolution};
 use super::result::{DaemonServiceError, DaemonServiceErrorKind, DaemonServiceResult};
 
 pub(super) struct DaemonSynthesisExecutor {
-    core: VoicevoxCore,
+    core: Option<VoicevoxCore>,
 }
 
 /// RAII guard that unloads a voice model on drop.
@@ -40,12 +40,30 @@ impl Drop for ModelUnloadGuard<'_> {
 }
 
 impl DaemonSynthesisExecutor {
-    pub(super) fn new(core: VoicevoxCore) -> Self {
-        Self { core }
+    pub(super) fn new() -> Self {
+        Self { core: None }
+    }
+
+    fn ensure_core(&mut self) -> Result<(), DaemonServiceError> {
+        if self.core.is_none() {
+            self.core = Some(VoicevoxCore::new().map_err(|error| {
+                DaemonServiceError::new(
+                    DaemonServiceErrorKind::ModelLoadFailed,
+                    format!("Failed to initialize VOICEVOX core for synthesis: {error}"),
+                )
+            })?);
+        }
+
+        Ok(())
+    }
+
+    fn release_core(&mut self) {
+        self.core = None;
+        crate::infrastructure::memory::release_unused_allocator_memory();
     }
 
     pub(super) fn synthesize(
-        &self,
+        &mut self,
         catalog: &ModelCatalog,
         text: String,
         requested_id: u32,
@@ -62,26 +80,38 @@ impl DaemonSynthesisExecutor {
         };
         let model_path = catalog.get_model_path(model_id);
 
-        if let Err(error) = self.core.load_specific_model(model_id) {
+        self.ensure_core()?;
+
+        let core = self
+            .core
+            .as_ref()
+            .expect("core must be initialized by ensure_core");
+
+        if let Err(error) = core.load_specific_model(model_id) {
             crate::infrastructure::logging::error(&format!(
                 "Failed to load model {model_id}: {error}"
             ));
+            self.release_core();
             return Err(DaemonServiceError::new(
                 DaemonServiceErrorKind::ModelLoadFailed,
                 format!("Failed to load model {model_id} for synthesis: {error}"),
             ));
         }
 
-        // RAII guard ensures the model is always unloaded, even on panic or
-        // task cancellation. Matches DaemonRequestHandling.tla ClientDisconnect:
-        //   mutex_holder = c => model_loaded' = FALSE
-        let _model_guard = ModelUnloadGuard {
-            core: &self.core,
-            model_id,
-            model_path,
+        let synthesis_result = {
+            // RAII guard ensures the model is always unloaded, even on panic or
+            // task cancellation. Matches DaemonRequestHandling.tla ClientDisconnect:
+            //   mutex_holder = c => model_loaded' = FALSE
+            let _model_guard = ModelUnloadGuard {
+                core,
+                model_id,
+                model_path,
+            };
+
+            core.synthesize_with_rate(&text, style_id, rate)
         };
 
-        let synthesis_result = self.core.synthesize_with_rate(&text, style_id, rate);
+        self.release_core();
 
         match synthesis_result {
             Ok(wav_data) => Ok(DaemonServiceResult::SynthesizeResult { wav_data }),

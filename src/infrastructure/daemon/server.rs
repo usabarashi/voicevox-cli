@@ -11,7 +11,9 @@ use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::infrastructure::daemon::state::DaemonState;
-use crate::infrastructure::ipc::{DaemonRequest, MAX_DAEMON_REQUEST_FRAME_BYTES, OwnedResponse};
+use crate::infrastructure::ipc::{
+    DaemonRequest, MAX_DAEMON_REQUEST_FRAME_BYTES, MAX_DAEMON_RESPONSE_FRAME_BYTES, OwnedResponse,
+};
 
 const SOCKET_DIR_MODE: u32 = 0o700;
 const SOCKET_FILE_MODE: u32 = 0o600;
@@ -116,7 +118,7 @@ async fn handle_client_with_limit(
     permits: Arc<Semaphore>,
 ) -> Result<()> {
     let codec = LengthDelimitedCodec::builder()
-        .max_frame_length(MAX_DAEMON_REQUEST_FRAME_BYTES)
+        .max_frame_length(MAX_DAEMON_REQUEST_FRAME_BYTES.max(MAX_DAEMON_RESPONSE_FRAME_BYTES))
         .new_codec();
     let mut framed = Framed::new(stream, codec);
 

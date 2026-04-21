@@ -5,9 +5,7 @@ use crate::infrastructure::core::VoicevoxCore;
 use super::catalog::{ModelCatalog, TargetResolution};
 use super::result::{DaemonServiceError, DaemonServiceErrorKind, DaemonServiceResult};
 
-pub(super) struct DaemonSynthesisExecutor {
-    core: Option<VoicevoxCore>,
-}
+pub(super) struct DaemonSynthesisExecutor;
 
 /// RAII guard that unloads a voice model on drop.
 ///
@@ -18,6 +16,14 @@ struct ModelUnloadGuard<'a> {
     core: &'a VoicevoxCore,
     model_id: u32,
     model_path: Option<&'a Path>,
+}
+
+struct AllocatorReliefGuard;
+
+impl Drop for AllocatorReliefGuard {
+    fn drop(&mut self) {
+        crate::infrastructure::memory::release_unused_allocator_memory();
+    }
 }
 
 impl Drop for ModelUnloadGuard<'_> {
@@ -41,25 +47,7 @@ impl Drop for ModelUnloadGuard<'_> {
 
 impl DaemonSynthesisExecutor {
     pub(super) fn new() -> Self {
-        Self { core: None }
-    }
-
-    fn ensure_core(&mut self) -> Result<(), DaemonServiceError> {
-        if self.core.is_none() {
-            self.core = Some(VoicevoxCore::new().map_err(|error| {
-                DaemonServiceError::new(
-                    DaemonServiceErrorKind::ModelLoadFailed,
-                    format!("Failed to initialize VOICEVOX core for synthesis: {error}"),
-                )
-            })?);
-        }
-
-        Ok(())
-    }
-
-    fn release_core(&mut self) {
-        self.core = None;
-        crate::infrastructure::memory::release_unused_allocator_memory();
+        Self
     }
 
     pub(super) fn synthesize(
@@ -80,18 +68,18 @@ impl DaemonSynthesisExecutor {
         };
         let model_path = catalog.get_model_path(model_id);
 
-        self.ensure_core()?;
-
-        let core = self
-            .core
-            .as_ref()
-            .expect("core must be initialized by ensure_core");
+        let _allocator_relief = AllocatorReliefGuard;
+        let core = VoicevoxCore::new().map_err(|error| {
+            DaemonServiceError::new(
+                DaemonServiceErrorKind::ModelLoadFailed,
+                format!("Failed to initialize VOICEVOX core for synthesis: {error}"),
+            )
+        })?;
 
         if let Err(error) = core.load_specific_model(model_id) {
             crate::infrastructure::logging::error(&format!(
                 "Failed to load model {model_id}: {error}"
             ));
-            self.release_core();
             return Err(DaemonServiceError::new(
                 DaemonServiceErrorKind::ModelLoadFailed,
                 format!("Failed to load model {model_id} for synthesis: {error}"),
@@ -103,15 +91,13 @@ impl DaemonSynthesisExecutor {
             // task cancellation. Matches DaemonRequestHandling.tla ClientDisconnect:
             //   mutex_holder = c => model_loaded' = FALSE
             let _model_guard = ModelUnloadGuard {
-                core,
+                core: &core,
                 model_id,
                 model_path,
             };
 
             core.synthesize_with_rate(&text, style_id, rate)
         };
-
-        self.release_core();
 
         match synthesis_result {
             Ok(wav_data) => Ok(DaemonServiceResult::SynthesizeResult { wav_data }),

@@ -59,4 +59,45 @@ module DaemonSynthesize {
   }
 
   val synthesizedRequiresCatalog = synthesized implies catalogRead
+
+  // ---- Fixed scenario: always exercises a real synthesis ------------------
+  //
+  // Random exploration may never pick `synthesize`. This deterministic
+  // scenario forces connect -> listSpeakers -> synthesize, so the MBT test
+  // fails if synthesis is broken or the catalog is empty.
+
+  action scenarioConnect = all {
+    connected' = true,
+    catalogRead' = false,
+    synthesized' = false,
+  }
+
+  action scenarioList = all {
+    connected,
+    not(catalogRead),
+    connected' = connected,
+    catalogRead' = true,
+    synthesized' = synthesized,
+  }
+
+  action scenarioSynthesize = all {
+    connected,
+    catalogRead,
+    not(synthesized),
+    connected' = connected,
+    catalogRead' = catalogRead,
+    synthesized' = true,
+  }
+
+  action scenarioStutter = all {
+    connected' = connected,
+    catalogRead' = catalogRead,
+    synthesized' = synthesized,
+  }
+
+  action scenarioStep = any {
+    scenarioList,
+    scenarioSynthesize,
+    scenarioStutter,
+  }
 }

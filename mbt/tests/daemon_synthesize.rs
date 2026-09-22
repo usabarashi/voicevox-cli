@@ -215,6 +215,11 @@ impl Driver for DaemonSynthesizeDriver {
             listSpeakers => self.do_list_speakers()?,
             synthesize => self.do_synthesize()?,
             disconnect => self.reset(),
+            // Fixed scenario actions.
+            scenarioConnect => self.do_connect()?,
+            scenarioList => self.do_list_speakers()?,
+            scenarioSynthesize => self.do_synthesize()?,
+            scenarioStutter => (),
             _ => (),
         })
     }
@@ -228,5 +233,19 @@ impl Driver for DaemonSynthesizeDriver {
 )]
 #[ignore = "requires installed VOICEVOX resources; run with -- --ignored"]
 fn daemon_synthesize_simulation() -> impl Driver {
+    DaemonSynthesizeDriver::default()
+}
+
+/// Fixed scenario: connect -> listSpeakers -> synthesize. This always exercises
+/// a real synthesis, unlike the random simulation which may skip it.
+#[quint_run(
+    spec = "../modeling/quint/DaemonSynthesize.qnt",
+    init = "scenarioConnect",
+    step = "scenarioStep",
+    max_samples = 1,
+    max_steps = 4
+)]
+#[ignore = "requires installed VOICEVOX resources; run with -- --ignored"]
+fn daemon_synthesize_fixed_scenario() -> impl Driver {
     DaemonSynthesizeDriver::default()
 }

@@ -28,6 +28,8 @@ See also:
 | Say command flow | `Say.qnt` | validate → synthesize → emit with daemon + playback | `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError`, `playbackFailureOnlyInPlayMode`, `playingRequiresAudio`, `emittingUsesPlayMode` |
 | Integrated end-to-end | `System.qnt` | startup resources + daemon + client + refined synthesis with view sync | `viewsAligned`, `clientConnectedImpliesDaemonReady`, `synthRunningImpliesDaemonReady`, `typeOK` |
 | Target resolution (MBT) | `TargetResolution.qnt` | style/model/unknown resolution | `mbt/tests/target_resolution.rs` (Quint Connect) |
+| Real-daemon IPC (MBT) | `DaemonIpc.qnt` | client connect / catalog read over the socket | `mbt/tests/daemon_ipc.rs` (Quint Connect, `#[ignore]`; CI job `quint-mbt-daemon`) |
+| Real-daemon synthesize (MBT) | `DaemonSynthesize.qnt` | connect → listSpeakers → synthesize | `mbt/tests/daemon_synthesize.rs` (Quint Connect, `#[ignore]`; CI job `quint-mbt-daemon-synthesize`) |
 
 ## Cross-module synchronization
 

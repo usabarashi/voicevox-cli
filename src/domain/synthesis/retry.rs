@@ -134,7 +134,10 @@ mod tests {
         let initial = Duration::from_millis(100);
         let max = Duration::from_millis(400);
         assert_eq!(policy.backoff_delay(0, initial, max), initial);
-        assert_eq!(policy.backoff_delay(1, initial, max), Duration::from_millis(200));
+        assert_eq!(
+            policy.backoff_delay(1, initial, max),
+            Duration::from_millis(200)
+        );
         assert_eq!(policy.backoff_delay(2, initial, max), max);
         assert_eq!(policy.backoff_delay(5, initial, max), max);
     }

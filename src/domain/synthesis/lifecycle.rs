@@ -70,10 +70,7 @@ mod tests {
 
     #[test]
     fn happy_path_reaches_done() {
-        let state = SynthesisLifecycleState::Idle
-            .queue()
-            .start()
-            .succeed();
+        let state = SynthesisLifecycleState::Idle.queue().start().succeed();
         assert_eq!(state, SynthesisLifecycleState::Done);
     }
 

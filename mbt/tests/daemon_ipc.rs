@@ -215,6 +215,10 @@ impl Driver for DaemonIpcDriver {
             listSpeakers => self.do_list_speakers()?,
             listModels => self.do_list_models()?,
             disconnect => self.reset(),
+            // Fixed scenario actions.
+            scenarioConnect => self.do_connect()?,
+            scenarioList => self.do_list_speakers()?,
+            scenarioStutter => (),
             _ => (),
         })
     }
@@ -228,5 +232,19 @@ impl Driver for DaemonIpcDriver {
 )]
 #[ignore = "spawns a real voicevox-daemon; run with -- --ignored"]
 fn daemon_ipc_simulation() -> impl Driver {
+    DaemonIpcDriver::default()
+}
+
+/// Fixed scenario: connect then read the catalog. This always exercises a real
+/// list request, unlike the random simulation which may skip it.
+#[quint_run(
+    spec = "../modeling/quint/DaemonIpc.qnt",
+    init = "scenarioConnect",
+    step = "scenarioStep",
+    max_samples = 1,
+    max_steps = 3
+)]
+#[ignore = "spawns a real voicevox-daemon; run with -- --ignored"]
+fn daemon_ipc_fixed_scenario() -> impl Driver {
     DaemonIpcDriver::default()
 }

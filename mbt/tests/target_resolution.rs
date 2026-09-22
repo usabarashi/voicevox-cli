@@ -94,17 +94,17 @@ impl TargetResolutionDriver {
         let model_default_style = model_default_style_map();
         let models = available_models();
 
-        self.outcome = match resolve_target(&style_to_model, &model_default_style, &models, requested)
-        {
-            TargetResolution::Exists { style_id, model_id } => {
-                if style_to_model.contains_key(&requested) {
-                    Outcome::style(style_id, model_id)
-                } else {
-                    Outcome::model(model_id, style_id)
+        self.outcome =
+            match resolve_target(&style_to_model, &model_default_style, &models, requested) {
+                TargetResolution::Exists { style_id, model_id } => {
+                    if style_to_model.contains_key(&requested) {
+                        Outcome::style(style_id, model_id)
+                    } else {
+                        Outcome::model(model_id, style_id)
+                    }
                 }
-            }
-            TargetResolution::Missing { .. } => Outcome::Missing,
-        };
+                TargetResolution::Missing { .. } => Outcome::Missing,
+            };
     }
 }
 

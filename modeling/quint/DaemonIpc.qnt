@@ -53,4 +53,31 @@ module DaemonIpc {
   }
 
   val catalogRequiresConnection = catalogRead implies connected
+
+  // ---- Fixed scenario: always reads the catalog ---------------------------
+  //
+  // Random exploration may never pick a list action. This deterministic
+  // scenario forces connect -> listSpeakers.
+
+  action scenarioConnect = all {
+    connected' = true,
+    catalogRead' = false,
+  }
+
+  action scenarioList = all {
+    connected,
+    not(catalogRead),
+    connected' = connected,
+    catalogRead' = true,
+  }
+
+  action scenarioStutter = all {
+    connected' = connected,
+    catalogRead' = catalogRead,
+  }
+
+  action scenarioStep = any {
+    scenarioList,
+    scenarioStutter,
+  }
 }

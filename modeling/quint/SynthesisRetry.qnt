@@ -60,7 +60,10 @@ module SynthesisRetry {
     backoffs' = backoffs + 1,
   }
 
-  // Cancellation is accepted at any checkpoint and wins over progress.
+  // Cancellation is modelled as an enabled action from a pending state. The
+  // model deliberately has no "cancel requested" state, so it does not assert
+  // that cancellation wins over progress; that priority is an orchestration
+  // concern enforced by the implementation's checkpoints (see CONTRACT.md).
   action cancel = all {
     outcome == Running or outcome == Backoff,
     outcome' = Canceled,

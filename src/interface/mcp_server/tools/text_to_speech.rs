@@ -328,7 +328,9 @@ impl SynthesisAttempt for RealSynthesisAttempt {
         cancel_rx: Option<&mut oneshot::Receiver<String>>,
     ) -> AttemptCallOutcome {
         match synthesize_bytes_via_daemon_cancellable(request, &NoopAppOutput, cancel_rx).await {
-            Ok(SynthesisFlowOutcome::Completed(wav_data)) => AttemptCallOutcome::Completed(wav_data),
+            Ok(SynthesisFlowOutcome::Completed(wav_data)) => {
+                AttemptCallOutcome::Completed(wav_data)
+            }
             Ok(SynthesisFlowOutcome::Canceled(reason)) => AttemptCallOutcome::Cancelled(reason),
             Err(error) => AttemptCallOutcome::Failed(error),
         }

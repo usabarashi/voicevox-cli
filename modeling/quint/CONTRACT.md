@@ -8,7 +8,8 @@ reworked, so that every intentional change of meaning is recorded.
 Phase 1 was a **feasibility gate**, not the full migration. It proved that the
 Quint toolchain (verification + model-based testing) can carry the existing
 guarantees and detect intended faults in production code. The full migration is
-now complete: every TLA+ module has a verified Quint equivalent and the
+now complete: the preserved properties of every TLA+ module have a verified
+Quint equivalent (see `PORTING.md` for retracted/unported properties), and the
 handwritten TLA+/cfg artifacts, the `tla-model-check` job, and `tlaplus` have
 been removed (see "Removal plan").
 
@@ -299,3 +300,22 @@ run in the `quint-mbt-daemon-synthesize` CI job, which provisions resources with
 Note: the (B) spec verifies with TLC and the driver compiles, but it was **not**
 executed in the development environment (no resources available); the CI job is
 the first end-to-end validation point.
+
+### Known modelling limitations
+
+- `SynthesisRetry.qnt` counts `backoffs` when a backoff *completes*
+  (`backoffDone`), while the production loop's `backoffs_started` counts when a
+  backoff *starts*. Align these before wiring the model to a retry-loop MBT.
+- Cancellation priority (cancel over progress) is an orchestration concern; the
+  model has no "cancel requested" state and does not assert it. The production
+  backoff wait enforces it with `biased;`; the in-flight wait inside
+  `synthesize_bytes_via_daemon_cancellable` (`flow.rs`) is still an unbiased
+  `select!`, so the CONTRACT's in-flight cancel-priority claim is not yet
+  guaranteed end to end.
+- `System.qnt` encodes the four startup resources as an indexed map, so the
+  socket resource is not gated on `daemonState == Starting` (unlike
+  `StartupResources.tla`'s `SocketStep`). This adds conservative transitions for
+  the safety checks, but it is not a strict 1:1 port.
+- `System.qnt` has no action that moves the daemon from `DaemonReady` back to a
+  non-ready state, so the "cancel an in-flight synthesis on daemon loss" branch
+  is unreachable; it is not an added guarantee.

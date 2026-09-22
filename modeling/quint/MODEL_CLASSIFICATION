@@ -25,12 +25,14 @@ DaemonSerialization mbt
 ModelLifecycle mbt
 Download mbt
 MCPServer mbt
+Playback mbt
 StreamingSynthesis mbt
 Daemon verified-only
+DaemonServer verified-only
 StartupResources verified-only
 ONNXRuntime verified-only
 Dictionary verified-only
 Socket verified-only
-Playback verified-only
+McpRequestLifecycle verified-only
 Say verified-only
 System verified-only

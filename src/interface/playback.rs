@@ -19,26 +19,73 @@ pub struct PlaybackRequest<'a> {
     pub cancel_rx: Option<oneshot::Receiver<String>>,
 }
 
+/// Audio backend used after the emit decisions (file write, `play` flag) are
+/// made.
+///
+/// The real implementation selects rodio (low-latency) or an external player;
+/// the model-based test `mbt/tests/playback.rs` substitutes a scripted fake to
+/// check the dispatch contract (`modeling/quint/Playback.qnt`). The backends
+/// themselves are host-dependent and out of scope (see STATE_TRACEABILITY.md).
+#[doc(hidden)]
+#[allow(async_fn_in_trait)]
+pub trait AudioPlayback {
+    async fn play(
+        &mut self,
+        wav_data: &[u8],
+        cancel_rx: Option<&mut oneshot::Receiver<String>>,
+    ) -> Result<PlaybackOutcome>;
+}
+
+struct RealAudioPlayback;
+
+impl AudioPlayback for RealAudioPlayback {
+    #[allow(clippy::future_not_send)]
+    async fn play(
+        &mut self,
+        wav_data: &[u8],
+        cancel_rx: Option<&mut oneshot::Receiver<String>>,
+    ) -> Result<PlaybackOutcome> {
+        if let Some(cancel_rx) = cancel_rx {
+            if env::var(crate::config::ENV_VOICEVOX_LOW_LATENCY).is_ok() {
+                play_low_latency_with_cancel(wav_data.to_vec(), cancel_rx).await
+            } else {
+                play_system_player_with_cancel(wav_data, cancel_rx).await
+            }
+        } else {
+            play_audio_from_memory(wav_data).context("Failed to play audio")?;
+            Ok(PlaybackOutcome::Completed)
+        }
+    }
+}
+
 #[allow(clippy::future_not_send)]
 pub async fn emit_and_play(request: PlaybackRequest<'_>) -> Result<PlaybackOutcome> {
-    if let Some(output_file) = request.output_file {
-        tokio::fs::write(output_file, request.wav_data).await?;
+    emit_and_play_with_backend(request, &mut RealAudioPlayback).await
+}
+
+/// Emit (optional file write) and play through an injected backend.
+#[doc(hidden)]
+#[allow(clippy::future_not_send)]
+pub async fn emit_and_play_with_backend<B: AudioPlayback>(
+    request: PlaybackRequest<'_>,
+    backend: &mut B,
+) -> Result<PlaybackOutcome> {
+    let PlaybackRequest {
+        wav_data,
+        output_file,
+        play,
+        mut cancel_rx,
+    } = request;
+
+    if let Some(output_file) = output_file {
+        tokio::fs::write(output_file, wav_data).await?;
     }
 
-    if !request.play {
+    if !play {
         return Ok(PlaybackOutcome::Completed);
     }
 
-    if let Some(mut cancel_rx) = request.cancel_rx {
-        if env::var(crate::config::ENV_VOICEVOX_LOW_LATENCY).is_ok() {
-            play_low_latency_with_cancel(request.wav_data.to_vec(), &mut cancel_rx).await
-        } else {
-            play_system_player_with_cancel(request.wav_data, &mut cancel_rx).await
-        }
-    } else {
-        play_audio_from_memory(request.wav_data).context("Failed to play audio")?;
-        Ok(PlaybackOutcome::Completed)
-    }
+    backend.play(wav_data, cancel_rx.as_mut()).await
 }
 
 #[allow(clippy::future_not_send)]

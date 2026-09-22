@@ -25,8 +25,10 @@ See also:
 | Synthesis retry/cancel loop (non-streaming) | `SynthesisRetry.qnt` | `Running/Attempting/Backoff/Done/Failed/Canceled`, `attempts` (started), `backoffs` (started) | `attemptsBounded`, `backoffsBounded`, `backoffAfterAttempt`, `eventuallyTerminal`, `cancelIsTerminal` |
 | Streaming synthesis (default MCP path) | `StreamingSynthesis.qnt` | connect (or connect failure) → split → per-segment synthesis → concatenate → play; cancel before/after connect and at any point before playback; fail | `segmentsBounded`, `playbackRequiresAllSegments`, `canceledImpliesNoPlayback` |
 | Daemon synthesis serialization (MBT) | `DaemonSerialization.qnt` | one worker (mutex), queued jobs, no cancel, no daemon-side retry | `atMostOneSynthesizing`, `workerMatchesSynthesis`, `eventuallyLeavesBusyWorker`; `mbt/tests/daemon_serialization.rs` (two concurrent real-daemon requests) |
+| Daemon IPC server | `DaemonServer.qnt` | per-client accept/handle/finish, shared `MAX_IN_FLIGHT = 32` permits, idle-timeout / decode-fail close | `typeOK`, `inFlightMatchesHandling`, `handling{0,1,2}Terminates` (temporal) |
+| MCP request lifecycle | `McpRequestLifecycle.qnt` | admit/complete/cancel, `MAX_CONCURRENT = 4` slots, busy rejection, `cancelAll` on disconnect | `typeOK`, `activeMatchesRunning`, `allRequestsTerminate` (temporal) |
 | IPC transport contract | `IPC.qnt` | request/response with encode/write/corrupt/mismatch/timeout/EOF/frame-limit/protocol-error | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError`, `eventuallyLeavesInFlight` |
-| Playback | `Playback.qnt` | launch/playing/stop/cancel/fail | `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` (about the `Canceled` error) |
+| Playback (MBT) | `Playback.qnt` | launch/playing/stop/cancel/fail | `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` (about the `Canceled` error); emit/play dispatch via `mbt/tests/playback.rs` (fake backend) |
 | Say command flow | `Say.qnt` | validate → synthesize → emit with daemon + playback; `Play/WriteFile/Silent` output, early failures | `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError`, `playbackFailureOnlyInPlayMode`, `outputFailureOnlyInFileMode`, `playingRequiresAudio`, `emittingUsesPlayMode` |
 | Download/install (MBT) | `Download.qnt` | preparation failure, downloader invocations with cleanup, give-up (`MAX_ATTEMPTS = 3`) | `attemptsBounded`, `failedHasReason`, `exhaustedImpliesAttempts`, `preparationFailureMeansNoAttempts`, `terminates` (temporal); retry loop via `mbt/tests/download.rs` |
 | Daemon model load/unload (MBT) | `ModelLifecycle.qnt` | load → synthesize → guard unload, incl. failure paths | `loadedImpliesPhase`, `eventuallyUnloaded` (temporal); `mbt/tests/model_lifecycle.rs` (production executor + recording fake runtime) |
@@ -89,6 +91,7 @@ production code count as refinement evidence:
 | `mbt/tests/model_lifecycle.rs` | `DaemonSynthesisExecutor` + `SerializedSynthesisPolicy` with a recording fake `ModelRuntime` |
 | `mbt/tests/download.rs` | `install_with_retries` + `DownloadTracker` with a scripted fake `ResourceInstaller` |
 | `mbt/tests/mcp_connect.rs` | `retry_with_final` (behind `connect_with_retry`) with a counting fake `ConnectAttempt` |
+| `mbt/tests/playback.rs` | `emit_and_play_with_backend` with a scripted fake `AudioPlayback` |
 | `mbt/tests/daemon_ipc.rs` | `DaemonClient` over a real daemon |
 | `mbt/tests/daemon_synthesize.rs` | `DaemonClient::synthesize` over a real daemon |
 | `mbt/tests/daemon_serialization.rs` | two concurrent `DaemonClient::synthesize` over a real daemon |
@@ -107,9 +110,10 @@ pre-connect-cancel paths daemon-free through the MCP entry point; the remaining
 streaming failure/cancel interleavings are verified in `StreamingSynthesis.qnt`
 but have no executable driver.
 
-The remaining Lifecycle models (`Daemon`, `StartupResources`, `ONNXRuntime`,
-`Dictionary`, `Socket`, `Playback`, `Say`, `System`) are verified exhaustively
-but are **not** executable
+The remaining Lifecycle models (`Daemon`, `DaemonServer`,
+`McpRequestLifecycle`, `StartupResources`, `ONNXRuntime`, `Dictionary`,
+`Socket`, `Say`, `System`) are verified exhaustively but are
+**not** executable
 refinements; their correspondence is the prose above plus ordinary tests.
 
 ## Modelling boundary (not modelled)
@@ -121,7 +125,9 @@ Explicitly out of scope, with the reason:
   the host; `Playback.qnt` models only the abstract lifecycle.
 - **MCP line framing / response correlation** (`server/stdio.rs`): the 256 KiB
   line limit and the 64-entry response queue are transport concerns; request and
-  notification *parsing* are modelled and MBT-checked.
+  notification *parsing* are modelled and MBT-checked, and the concurrency /
+  cancellation / termination lifecycle is modelled in `McpRequestLifecycle.qnt`
+  (duplicate-request-ID double-response is not modelled).
 - **IPC timeout** (`IPC.qnt` `ResponseTimeout`): the 30 s response timeout has no
   driver because a test cannot wait it out; the other IPC fault classes are
   MBT-checked in `ipc_transport.rs`.

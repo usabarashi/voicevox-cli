@@ -373,6 +373,7 @@ WAV header check).
 | `mbt/tests/daemon_serialization.rs` | `DaemonSerialization.qnt` | two concurrent real-daemon syntheses |
 | `mbt/tests/download.rs` | `Download.qnt` | `install_with_retries` with a scripted fake `ResourceInstaller` |
 | `mbt/tests/mcp_connect.rs` | `MCPServer.qnt` | `retry_with_final` with a counting fake `ConnectAttempt` |
+| `mbt/tests/playback.rs` | `Playback.qnt` | `emit_and_play_with_backend` with a scripted fake `AudioPlayback` |
 | `mbt/tests/target_resolution.rs` | `TargetResolution.qnt` | `resolve_target` + `build_model_default_style_map` |
 | `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesis.qnt` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` (real daemon) |
 

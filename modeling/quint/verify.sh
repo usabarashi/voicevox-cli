@@ -176,6 +176,24 @@ run_ok "ModelLifecycle safety" \
 run_ok "ModelLifecycle liveness" \
   --temporal=eventuallyUnloaded \
   modeling/quint/ModelLifecycle.qnt
+run_ok "McpRequestLifecycle safety" \
+  --invariant=typeOK,activeMatchesRunning \
+  modeling/quint/McpRequestLifecycle.qnt
+run_ok "McpRequestLifecycle liveness" \
+  --temporal=allRequestsTerminate \
+  modeling/quint/McpRequestLifecycle.qnt
+run_ok "DaemonServer safety" \
+  --invariant=typeOK,inFlightMatchesHandling \
+  modeling/quint/DaemonServer.qnt
+run_ok "DaemonServer liveness (client 0)" \
+  --temporal=handling0Terminates \
+  modeling/quint/DaemonServer.qnt
+run_ok "DaemonServer liveness (client 1)" \
+  --temporal=handling1Terminates \
+  modeling/quint/DaemonServer.qnt
+run_ok "DaemonServer liveness (client 2)" \
+  --temporal=handling2Terminates \
+  modeling/quint/DaemonServer.qnt
 run_ok "DaemonIpc safety" \
   --invariant=catalogRequiresConnection \
   modeling/quint/DaemonIpc.qnt

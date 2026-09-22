@@ -2,7 +2,7 @@ use crate::infrastructure::ipc::{
     DaemonErrorCode, IpcModel, IpcSpeaker, IpcStyle, OwnedRequest, OwnedResponse,
 };
 
-mod catalog;
+pub mod catalog;
 mod executor;
 mod policy;
 mod result;

@@ -2,7 +2,9 @@ use anyhow::{Result, anyhow};
 use std::path::Path;
 use tokio::sync::oneshot;
 
-use crate::domain::synthesis::{TextSynthesisRequest, validate_basic_request};
+use crate::domain::synthesis::{
+    SynthesisLifecycleState, TextSynthesisRequest, validate_basic_request,
+};
 use crate::infrastructure::daemon::client::DaemonClient;
 use crate::interface::AppOutput;
 use crate::interface::cli::download::{ensure_models_available, missing_startup_resources};
@@ -16,61 +18,8 @@ enum SynthesisPhase {
     Synthesize,
 }
 
-// This lifecycle mirrors modeling/tla/Synthesis.tla at the same abstraction level:
-// Idle -> Queued -> Synthesizing -> Done / Failed / Canceled.
-// Rust currently has no explicit cancellation path in this flow, but we keep the
-// state for model alignment and future cancellation integration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SynthesisLifecycleState {
-    Idle,
-    Queued,
-    Synthesizing,
-    Done,
-    Failed,
-    Canceled,
-}
-
-impl SynthesisLifecycleState {
-    #[must_use]
-    const fn queue(self) -> Self {
-        match self {
-            Self::Idle => Self::Queued,
-            _ => self,
-        }
-    }
-
-    #[must_use]
-    const fn start(self) -> Self {
-        match self {
-            Self::Queued => Self::Synthesizing,
-            _ => self,
-        }
-    }
-
-    #[must_use]
-    const fn succeed(self) -> Self {
-        match self {
-            Self::Synthesizing => Self::Done,
-            _ => self,
-        }
-    }
-
-    #[must_use]
-    const fn fail(self) -> Self {
-        match self {
-            Self::Idle | Self::Queued | Self::Synthesizing => Self::Failed,
-            _ => self,
-        }
-    }
-
-    #[must_use]
-    const fn cancel(self) -> Self {
-        match self {
-            Self::Queued | Self::Synthesizing => Self::Canceled,
-            _ => self,
-        }
-    }
-}
+// The lifecycle is defined in `domain::synthesis::lifecycle`; this flow uses it
+// for model alignment (see `modeling/quint/SynthesisRetry.qnt`).
 
 #[derive(Default, Clone, Copy)]
 pub struct NoopAppOutput;

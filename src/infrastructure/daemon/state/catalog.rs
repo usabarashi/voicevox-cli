@@ -4,9 +4,55 @@ use std::path::Path;
 
 use crate::infrastructure::core::VoicevoxCore;
 
-pub(super) enum TargetResolution {
+pub enum TargetResolution {
     Exists { style_id: u32, model_id: u32 },
     Missing { message: String },
+}
+
+/// Resolves a requested style/model ID against a catalog snapshot.
+///
+/// This is the pure decision logic behind [`ModelCatalog::resolve_synthesis_target`];
+/// the method is a thin wrapper so that production and model-based tests exercise
+/// the exact same function.
+///
+/// Resolution order:
+/// 1. a style ID always wins (style IDs take precedence over model IDs),
+/// 2. otherwise a known model ID resolves to its smallest matching style ID,
+/// 3. otherwise the target is missing.
+#[must_use]
+pub fn resolve_target(
+    style_to_model_map: &HashMap<u32, u32>,
+    model_default_style_map: &HashMap<u32, u32>,
+    available_models: &[crate::infrastructure::voicevox::AvailableModel],
+    requested_id: u32,
+) -> TargetResolution {
+    if let Some(model_id) = style_to_model_map.get(&requested_id).copied() {
+        return TargetResolution::Exists {
+            style_id: requested_id,
+            model_id,
+        };
+    }
+
+    if available_models
+        .iter()
+        .any(|model| model.model_id == requested_id)
+    {
+        let Some(style_id) = model_default_style_map.get(&requested_id).copied() else {
+            return TargetResolution::Missing {
+                message: format!("Model {requested_id} has no resolvable style IDs"),
+            };
+        };
+        return TargetResolution::Exists {
+            style_id,
+            model_id: requested_id,
+        };
+    }
+
+    TargetResolution::Missing {
+        message: format!(
+            "Unknown style/model ID {requested_id}. Use --list-speakers or --list-models to inspect available IDs."
+        ),
+    }
 }
 
 pub(super) struct ModelCatalog {
@@ -58,34 +104,12 @@ impl ModelCatalog {
     }
 
     pub(super) fn resolve_synthesis_target(&self, requested_id: u32) -> TargetResolution {
-        if let Some(model_id) = self.style_to_model_map.get(&requested_id).copied() {
-            return TargetResolution::Exists {
-                style_id: requested_id,
-                model_id,
-            };
-        }
-
-        if self
-            .available_models
-            .iter()
-            .any(|model| model.model_id == requested_id)
-        {
-            let Some(style_id) = self.model_default_style_map.get(&requested_id).copied() else {
-                return TargetResolution::Missing {
-                    message: format!("Model {requested_id} has no resolvable style IDs"),
-                };
-            };
-            return TargetResolution::Exists {
-                style_id,
-                model_id: requested_id,
-            };
-        }
-
-        TargetResolution::Missing {
-            message: format!(
-                "Unknown style/model ID {requested_id}. Use --list-speakers or --list-models to inspect available IDs."
-            ),
-        }
+        resolve_target(
+            &self.style_to_model_map,
+            &self.model_default_style_map,
+            &self.available_models,
+            requested_id,
+        )
     }
 
     pub(super) fn get_model_path(&self, model_id: u32) -> Option<&Path> {

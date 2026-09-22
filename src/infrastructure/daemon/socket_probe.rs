@@ -42,6 +42,7 @@ where
         }
     }
 
-    // Final connect check without additional sleep, mirroring ClientConnection.tla FinalConnect.
+    // Final connect check without additional sleep, mirroring the MCP connect
+    // flow in modeling/quint/MCPServer.qnt.
     tokio::net::UnixStream::connect(socket_path).await.is_ok()
 }

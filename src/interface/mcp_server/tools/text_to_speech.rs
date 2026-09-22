@@ -7,7 +7,9 @@ use tokio::sync::oneshot;
 
 use super::types::{ToolCallResult, success_result, text_result};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
-use crate::domain::synthesis::{TextSynthesisRequest, validate_basic_request};
+use crate::domain::synthesis::{
+    AttemptOutcome, RetryDecision, RetryPolicy, TextSynthesisRequest, validate_basic_request,
+};
 use crate::domain::text_to_speech::{
     SynthesizeParams, default_rate, default_streaming, validate_style_id,
 };
@@ -24,13 +26,6 @@ use crate::interface::synthesis::mode::{SynthesisMode, select_synthesis_mode_wit
 
 const MCP_DAEMON_MAX_RETRIES: u32 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum McpTtsPhase {
-    Attempt,
-    Backoff,
-    Finish,
-}
-
 #[derive(Debug, Deserialize)]
 struct TextToSpeechToolInput {
     text: String,
@@ -41,23 +36,48 @@ struct TextToSpeechToolInput {
     streaming: bool,
 }
 
-enum DaemonRetryStep {
-    Next(McpTtsPhase),
-    Finish,
-    Return(ToolCallResult),
+/// Result of one client-side synthesis attempt, as seen by the retry loop.
+enum AttemptCallOutcome {
+    Completed(Vec<u8>),
+    Cancelled(String),
+    Failed(anyhow::Error),
 }
 
-struct DaemonRetryContext<'a> {
-    text: &'a str,
-    style_id: u32,
-    rate: f32,
-    socket_path: &'a std::path::Path,
-    output: &'a NoopAppOutput,
-    attempt: &'a mut u32,
-    retry_delay: &'a mut Duration,
-    last_error: &'a mut Option<anyhow::Error>,
-    wav_data: &'a mut Option<Vec<u8>>,
-    cancel_rx: &'a mut Option<oneshot::Receiver<String>>,
+/// Result of waiting for a backoff.
+enum WaitOutcome {
+    Elapsed,
+    Cancelled(String),
+}
+
+/// One client-side synthesis attempt (the environment boundary of the loop).
+///
+/// The daemon is an environment: an attempt either produces bytes, is canceled,
+/// or fails with an error whose retryability is classified outside this trait.
+trait SynthesisAttempt {
+    async fn run(
+        &mut self,
+        request: &DaemonSynthesisBytesRequest<'_>,
+        cancel_rx: Option<&mut oneshot::Receiver<String>>,
+    ) -> AttemptCallOutcome;
+}
+
+/// Waits for a backoff delay. Cancellation has priority when both are ready.
+trait BackoffWaiter {
+    async fn wait(
+        &mut self,
+        delay: Duration,
+        cancel_rx: Option<&mut oneshot::Receiver<String>>,
+    ) -> WaitOutcome;
+}
+
+/// Outcome of the retry loop, including the observed attempt/backoff counts.
+#[derive(Default)]
+struct RetryLoopResult {
+    wav_data: Option<Vec<u8>>,
+    last_error: Option<anyhow::Error>,
+    cancellation: Option<String>,
+    attempts_started: u32,
+    backoffs_started: u32,
 }
 
 /// Executes the `text_to_speech` tool without external cancellation.
@@ -185,37 +205,34 @@ async fn handle_daemon_synthesis(
     } = params;
 
     let socket_path = crate::infrastructure::paths::get_socket_path();
-    let output = NoopAppOutput;
-    let mut retry_delay = startup::initial_retry_delay();
-    let mut last_error = None;
-    let mut wav_data = None;
-    let mut cancel_rx = cancel_rx;
-
-    let mut attempt: u32 = 0;
-    let mut phase = McpTtsPhase::Attempt;
-    let mut ctx = DaemonRetryContext {
+    let request = DaemonSynthesisBytesRequest {
         text: &text,
         style_id,
         rate,
         socket_path: &socket_path,
-        output: &output,
-        attempt: &mut attempt,
-        retry_delay: &mut retry_delay,
-        last_error: &mut last_error,
-        wav_data: &mut wav_data,
-        cancel_rx: &mut cancel_rx,
+        ensure_models_if_missing: false,
+        quiet_setup_messages: true,
     };
 
-    loop {
-        match run_daemon_retry_phase(phase, &mut ctx).await? {
-            DaemonRetryStep::Next(next) => phase = next,
-            DaemonRetryStep::Finish => break,
-            DaemonRetryStep::Return(result) => return Ok(result),
-        }
+    let policy = RetryPolicy::new(MCP_DAEMON_MAX_RETRIES);
+    let mut cancel_rx = cancel_rx;
+    let result = run_retry_loop(
+        policy,
+        &mut RealSynthesisAttempt,
+        &mut RealBackoffWaiter,
+        &request,
+        &mut cancel_rx,
+    )
+    .await;
+
+    if let Some(reason) = result.cancellation {
+        return Ok(cancellation_result(reason));
     }
 
-    let Some(wav_data) = wav_data else {
-        let error = last_error.expect("last error should exist when synthesis failed");
+    let Some(wav_data) = result.wav_data else {
+        let error = result
+            .last_error
+            .expect("last error should exist when synthesis failed");
         return Ok(text_result(
             format_daemon_client_error_for_mcp(&error),
             true,
@@ -229,71 +246,125 @@ async fn handle_daemon_synthesis(
     Ok(success_result())
 }
 
+/// Drives the client-side synthesis retry loop.
+///
+/// The retry/backoff decision comes from `domain::synthesis::retry`; this loop
+/// only orchestrates. Cancellation is evaluated before every attempt and has
+/// priority while waiting for a backoff. Attempts and backoffs are counted so
+/// the observed behavior can be asserted.
 #[allow(clippy::future_not_send)]
-async fn run_daemon_retry_phase(
-    phase: McpTtsPhase,
-    ctx: &mut DaemonRetryContext<'_>,
-) -> Result<DaemonRetryStep> {
-    match phase {
-        McpTtsPhase::Attempt => {
-            if let Some(cancel_rx) = ctx.cancel_rx.as_mut()
-                && let Some(reason) = try_take_cancellation(cancel_rx)
-            {
-                return Ok(DaemonRetryStep::Return(cancellation_result(reason)));
+async fn run_retry_loop<A, W>(
+    policy: RetryPolicy,
+    attempt: &mut A,
+    waiter: &mut W,
+    request: &DaemonSynthesisBytesRequest<'_>,
+    cancel_rx: &mut Option<oneshot::Receiver<String>>,
+) -> RetryLoopResult
+where
+    A: SynthesisAttempt,
+    W: BackoffWaiter,
+{
+    let mut result = RetryLoopResult::default();
+    let mut retry_index: u32 = 0;
+
+    loop {
+        if let Some(reason) = take_cancellation(cancel_rx) {
+            result.cancellation = Some(reason);
+            return result;
+        }
+
+        result.attempts_started += 1;
+        match attempt.run(request, cancel_rx.as_mut()).await {
+            AttemptCallOutcome::Completed(wav_data) => {
+                result.wav_data = Some(wav_data);
+                return result;
             }
-
-            let synth_request = DaemonSynthesisBytesRequest {
-                text: ctx.text,
-                style_id: ctx.style_id,
-                rate: ctx.rate,
-                socket_path: ctx.socket_path,
-                ensure_models_if_missing: false,
-                quiet_setup_messages: true,
-            };
-
-            match synthesize_bytes_via_daemon_cancellable(
-                &synth_request,
-                ctx.output,
-                ctx.cancel_rx.as_mut(),
-            )
-            .await
-            {
-                Ok(SynthesisFlowOutcome::Completed(result)) => {
-                    *ctx.wav_data = Some(result);
-                    Ok(DaemonRetryStep::Next(McpTtsPhase::Finish))
+            AttemptCallOutcome::Cancelled(reason) => {
+                result.cancellation = Some(reason);
+                return result;
+            }
+            AttemptCallOutcome::Failed(error) => {
+                let retryable = is_retryable_daemon_synthesis_error(&error);
+                result.last_error = Some(error);
+                let outcome = if retryable {
+                    AttemptOutcome::RetryableFailure
+                } else {
+                    AttemptOutcome::FatalFailure
+                };
+                if policy.after_attempt(result.attempts_started, outcome) == RetryDecision::Finish {
+                    return result;
                 }
-                Ok(SynthesisFlowOutcome::Canceled(reason)) => {
-                    Ok(DaemonRetryStep::Return(cancellation_result(reason)))
-                }
-                Err(error) => {
-                    let retryable = is_retryable_daemon_synthesis_error(&error);
-                    *ctx.last_error = Some(error);
-                    if !retryable || *ctx.attempt >= MCP_DAEMON_MAX_RETRIES {
-                        Ok(DaemonRetryStep::Next(McpTtsPhase::Finish))
-                    } else {
-                        Ok(DaemonRetryStep::Next(McpTtsPhase::Backoff))
+
+                result.backoffs_started += 1;
+                let delay = policy.backoff_delay(
+                    retry_index,
+                    startup::initial_retry_delay(),
+                    startup::max_retry_delay(),
+                );
+                retry_index += 1;
+                match waiter.wait(delay, cancel_rx.as_mut()).await {
+                    WaitOutcome::Elapsed => {}
+                    WaitOutcome::Cancelled(reason) => {
+                        result.cancellation = Some(reason);
+                        return result;
                     }
                 }
             }
         }
-        McpTtsPhase::Backoff => {
-            if let Some(cancel_rx) = ctx.cancel_rx.as_mut() {
+    }
+}
+
+fn take_cancellation(cancel_rx: &mut Option<oneshot::Receiver<String>>) -> Option<String> {
+    cancel_rx.as_mut().and_then(try_take_cancellation)
+}
+
+/// Production synthesis attempt: delegates to the daemon client.
+struct RealSynthesisAttempt;
+
+impl SynthesisAttempt for RealSynthesisAttempt {
+    async fn run(
+        &mut self,
+        request: &DaemonSynthesisBytesRequest<'_>,
+        cancel_rx: Option<&mut oneshot::Receiver<String>>,
+    ) -> AttemptCallOutcome {
+        match synthesize_bytes_via_daemon_cancellable(request, &NoopAppOutput, cancel_rx).await {
+            Ok(SynthesisFlowOutcome::Completed(wav_data)) => {
+                AttemptCallOutcome::Completed(wav_data)
+            }
+            Ok(SynthesisFlowOutcome::Canceled(reason)) => AttemptCallOutcome::Cancelled(reason),
+            Err(error) => AttemptCallOutcome::Failed(error),
+        }
+    }
+}
+
+/// Production backoff wait: real timer, cancellation first (`biased`).
+struct RealBackoffWaiter;
+
+impl BackoffWaiter for RealBackoffWaiter {
+    async fn wait(
+        &mut self,
+        delay: Duration,
+        cancel_rx: Option<&mut oneshot::Receiver<String>>,
+    ) -> WaitOutcome {
+        match cancel_rx {
+            Some(receiver) => {
+                // A cancellation that is already delivered short-circuits the
+                // wait. Cancellation arriving while waiting is preferred via the
+                // biased select below.
+                if let Some(reason) = try_take_cancellation(receiver) {
+                    return WaitOutcome::Cancelled(reason);
+                }
                 tokio::select! {
-                    reason = cancel_rx => {
-                        return Ok(DaemonRetryStep::Return(
-                            cancellation_result(reason.unwrap_or_default())
-                        ));
-                    }
-                    _ = tokio::time::sleep(*ctx.retry_delay) => {}
+                    biased;
+                    reason = receiver => WaitOutcome::Cancelled(reason.unwrap_or_default()),
+                    () = tokio::time::sleep(delay) => WaitOutcome::Elapsed,
                 }
-            } else {
-                tokio::time::sleep(*ctx.retry_delay).await;
             }
-            *ctx.attempt += 1;
-            *ctx.retry_delay = (*ctx.retry_delay * 2).min(startup::max_retry_delay());
-            Ok(DaemonRetryStep::Next(McpTtsPhase::Attempt))
+            None => {
+                tokio::time::sleep(delay).await;
+                WaitOutcome::Elapsed
+            }
         }
-        McpTtsPhase::Finish => Ok(DaemonRetryStep::Finish),
     }
 }
 
@@ -382,5 +453,204 @@ mod tests {
         };
         assert!(text.contains("cancelled"));
         assert!(text.contains("ESC pressed"));
+    }
+
+    // ---- Retry-loop orchestration tests ---------------------------------
+
+    fn retryable_error() -> anyhow::Error {
+        daemon_response_error("ctx", DaemonErrorCode::SynthesisFailed, "temporary failure")
+    }
+
+    fn fatal_error() -> anyhow::Error {
+        daemon_response_error("ctx", DaemonErrorCode::InvalidTargetId, "bad id")
+    }
+
+    fn test_request(socket_path: &std::path::Path) -> DaemonSynthesisBytesRequest<'_> {
+        DaemonSynthesisBytesRequest {
+            text: "test",
+            style_id: 3,
+            rate: 1.0,
+            socket_path,
+            ensure_models_if_missing: false,
+            quiet_setup_messages: true,
+        }
+    }
+
+    /// Scripted synthesis attempt. Counts how many attempts the production loop
+    /// actually started.
+    #[derive(Default)]
+    struct FakeAttempt {
+        script: std::collections::VecDeque<AttemptCallOutcome>,
+        calls: u32,
+    }
+
+    impl FakeAttempt {
+        fn new(script: Vec<AttemptCallOutcome>) -> Self {
+            Self {
+                script: script.into(),
+                calls: 0,
+            }
+        }
+    }
+
+    impl SynthesisAttempt for FakeAttempt {
+        async fn run(
+            &mut self,
+            _request: &DaemonSynthesisBytesRequest<'_>,
+            _cancel_rx: Option<&mut oneshot::Receiver<String>>,
+        ) -> AttemptCallOutcome {
+            self.calls += 1;
+            self.script.pop_front().unwrap_or_else(|| {
+                AttemptCallOutcome::Failed(anyhow::anyhow!("unexpected attempt"))
+            })
+        }
+    }
+
+    /// Controllable wait seam. Returning `Cancelled` models cancellation
+    /// arriving while the timer is still pending, without relying on wall-clock
+    /// or auto-advancing time.
+    #[derive(Default)]
+    struct FakeWaiter {
+        script: std::collections::VecDeque<WaitOutcome>,
+        waits: u32,
+    }
+
+    impl FakeWaiter {
+        fn new(script: Vec<WaitOutcome>) -> Self {
+            Self {
+                script: script.into(),
+                waits: 0,
+            }
+        }
+    }
+
+    impl BackoffWaiter for FakeWaiter {
+        async fn wait(
+            &mut self,
+            _delay: Duration,
+            _cancel_rx: Option<&mut oneshot::Receiver<String>>,
+        ) -> WaitOutcome {
+            self.waits += 1;
+            self.script.pop_front().unwrap_or(WaitOutcome::Elapsed)
+        }
+    }
+
+    #[tokio::test]
+    async fn retry_loop_exhausts_retryable_failures() {
+        let policy = RetryPolicy::new(2);
+        let mut attempt = FakeAttempt::new(vec![
+            AttemptCallOutcome::Failed(retryable_error()),
+            AttemptCallOutcome::Failed(retryable_error()),
+            AttemptCallOutcome::Failed(retryable_error()),
+        ]);
+        let mut waiter = FakeWaiter::new(vec![]);
+        let socket = std::path::Path::new("/tmp/does-not-exist.sock");
+        let request = test_request(socket);
+        let mut cancel_rx = None;
+
+        let result =
+            run_retry_loop(policy, &mut attempt, &mut waiter, &request, &mut cancel_rx).await;
+
+        assert_eq!(result.attempts_started, 3);
+        assert_eq!(result.backoffs_started, 2);
+        assert_eq!(attempt.calls, 3);
+        assert_eq!(waiter.waits, 2);
+        assert!(result.wav_data.is_none());
+        assert!(result.last_error.is_some());
+        assert!(result.cancellation.is_none());
+    }
+
+    #[tokio::test]
+    async fn retry_loop_succeeds_after_one_retry() {
+        let policy = RetryPolicy::new(2);
+        let mut attempt = FakeAttempt::new(vec![
+            AttemptCallOutcome::Failed(retryable_error()),
+            AttemptCallOutcome::Completed(vec![1, 2, 3]),
+        ]);
+        let mut waiter = FakeWaiter::new(vec![]);
+        let socket = std::path::Path::new("/tmp/does-not-exist.sock");
+        let request = test_request(socket);
+        let mut cancel_rx = None;
+
+        let result =
+            run_retry_loop(policy, &mut attempt, &mut waiter, &request, &mut cancel_rx).await;
+
+        assert_eq!(result.attempts_started, 2);
+        assert_eq!(result.backoffs_started, 1);
+        assert_eq!(attempt.calls, 2);
+        assert_eq!(result.wav_data, Some(vec![1, 2, 3]));
+        assert!(result.cancellation.is_none());
+    }
+
+    #[tokio::test]
+    async fn retry_loop_stops_immediately_on_fatal_error() {
+        let policy = RetryPolicy::new(2);
+        let mut attempt = FakeAttempt::new(vec![AttemptCallOutcome::Failed(fatal_error())]);
+        let mut waiter = FakeWaiter::new(vec![]);
+        let socket = std::path::Path::new("/tmp/does-not-exist.sock");
+        let request = test_request(socket);
+        let mut cancel_rx = None;
+
+        let result =
+            run_retry_loop(policy, &mut attempt, &mut waiter, &request, &mut cancel_rx).await;
+
+        assert_eq!(result.attempts_started, 1);
+        assert_eq!(result.backoffs_started, 0);
+        assert_eq!(attempt.calls, 1);
+        assert_eq!(waiter.waits, 0);
+        assert!(result.last_error.is_some());
+    }
+
+    #[tokio::test]
+    async fn retry_loop_cancel_during_backoff_prevents_next_attempt() {
+        let policy = RetryPolicy::new(2);
+        let mut attempt = FakeAttempt::new(vec![AttemptCallOutcome::Failed(retryable_error())]);
+        let mut waiter = FakeWaiter::new(vec![WaitOutcome::Cancelled("ESC pressed".to_string())]);
+        let socket = std::path::Path::new("/tmp/does-not-exist.sock");
+        let request = test_request(socket);
+        let mut cancel_rx = None;
+
+        let result =
+            run_retry_loop(policy, &mut attempt, &mut waiter, &request, &mut cancel_rx).await;
+
+        assert_eq!(result.attempts_started, 1);
+        assert_eq!(result.backoffs_started, 1);
+        assert_eq!(attempt.calls, 1, "no attempt may start after cancellation");
+        assert_eq!(result.cancellation.as_deref(), Some("ESC pressed"));
+        assert!(result.wav_data.is_none());
+    }
+
+    #[tokio::test]
+    async fn retry_loop_cancel_before_first_attempt_starts_nothing() {
+        let policy = RetryPolicy::new(2);
+        let mut attempt = FakeAttempt::new(vec![]);
+        let mut waiter = FakeWaiter::new(vec![]);
+        let socket = std::path::Path::new("/tmp/does-not-exist.sock");
+        let request = test_request(socket);
+        let (cancel_tx, cancel_rx) = oneshot::channel::<String>();
+        let _ = cancel_tx.send("ESC pressed".to_string());
+        let mut cancel_rx = Some(cancel_rx);
+
+        let result =
+            run_retry_loop(policy, &mut attempt, &mut waiter, &request, &mut cancel_rx).await;
+
+        assert_eq!(result.attempts_started, 0);
+        assert_eq!(attempt.calls, 0);
+        assert_eq!(result.cancellation.as_deref(), Some("ESC pressed"));
+    }
+
+    #[tokio::test]
+    async fn real_waiter_returns_delivered_cancellation_without_waiting() {
+        // A cancellation delivered before the wait is returned immediately,
+        // without waiting out the (long) timer.
+        let (cancel_tx, cancel_rx) = oneshot::channel::<String>();
+        let _ = cancel_tx.send("ESC pressed".to_string());
+        let mut cancel_rx = Some(cancel_rx);
+
+        let outcome = RealBackoffWaiter
+            .wait(Duration::from_secs(3600), cancel_rx.as_mut())
+            .await;
+
+        assert!(matches!(outcome, WaitOutcome::Cancelled(_)));
     }
 }

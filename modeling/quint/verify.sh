@@ -37,6 +37,19 @@ run_ok() {
   echo "::endgroup::"
 }
 
+# Every spec must at least parse and typecheck.
+check_typecheck() {
+  local spec="$1"
+  echo "::group::typecheck ${spec}"
+  if quint typecheck "${spec}"; then
+    echo "ok: typecheck ${spec}"
+  else
+    echo "FAIL: typecheck failed: ${spec}" >&2
+    failures=$((failures + 1))
+  fi
+  echo "::endgroup::"
+}
+
 # Expect verification to fail with a counterexample ("violation").
 run_expect_violation() {
   local desc="$1"
@@ -59,6 +72,11 @@ run_expect_violation() {
   fi
   echo "::endgroup::"
 }
+
+# All specs must parse and typecheck.
+for spec in modeling/quint/*.qnt modeling/quint/negative/*.qnt; do
+  check_typecheck "${spec}"
+done
 
 # Real model: safety and liveness must hold.
 run_ok "SynthesisRetry safety" \

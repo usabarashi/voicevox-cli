@@ -46,7 +46,7 @@ Phase 1 targets the Synthesis retry/cancel loop first (the walking skeleton for
 | Termination (liveness) | `Synthesis.tla` `EventuallyLeavesSynthesizing` under `WF_vars` (`ProgressSpec`) | `eventuallyTerminal` under `weakFair` | strengthened (see contract changes) |
 | Cancel attribution | `Synthesis.tla` `CanceledHasSource` / `NonCanceledHasNoSource` (`cancelSource` 4-value enum) | not modeled in Phase 1 | deferred (code has no enum; see contract changes) |
 | Daemon readiness gating | `Synthesis.tla` `SynthesisNeedsDaemon` (`daemonReady`) | not modeled | dropped (code auto-starts; see contract changes) |
-| Target resolution | `VoicevoxModel.tla` `SetTargetExists`/`SetTargetMissing`, accept/reject | pending (`VoicevoxModel` walking skeleton) | pending Phase 1 |
+| Target resolution | `VoicevoxModel.tla` `SetTargetExists`/`SetTargetMissing`, accept/reject | `quint/TargetResolution.qnt` + `mbt/tests/target_resolution.rs` | done (Phase 1 walking skeleton) |
 | Download lifecycle / retries | `VoicevoxModel.tla` `StartDownload`/`DownloadOk`/`DownloadFail`, `retryCount` | not modeled | **pending relocation** (belongs to `infrastructure/download`, not the catalog) |
 | Integrated system | `System.tla` INSTANCE wiring of `StartupResources`/`MCPServer`/`Synthesis` | not modeled | Phase 2 |
 
@@ -136,6 +136,56 @@ contracts above*, not verbatim porting.
 - `negative/LivenessViolation.qnt`: an always-enabled `skip` with no fairness →
   `eventuallyTerminal` violated by an infinite stall, not by a deadlock
   (liveness detection, including the stuttering counterexample).
+
+## Phase 1 walking skeleton: target resolution (MBT)
+
+The first end-to-end MBT path connects the real target-resolution logic to
+Quint:
+
+- Spec: `modeling/quint/TargetResolution.qnt`
+- Driver: `mbt/tests/target_resolution.rs`
+- Run: `nix develop --accept-flake-config --command cargo test --locked --manifest-path mbt/Cargo.toml`
+
+The driver calls the **production** function
+`voicevox_cli::infrastructure::daemon::state::catalog::resolve_target` (the same
+function `ModelCatalog::resolve_synthesis_target` delegates to) with the fixture
+catalog modelled by the spec, and records the observed result. The observed
+state is never copied from the spec, satisfying the observation contract.
+
+`mbt` is a standalone Cargo workspace (own `Cargo.lock`, `[workspace]` in
+`mbt/Cargo.toml`), so it is excluded from the root build and from
+`nix flake check` / the crane sandbox, which have no `quint`.
+
+### Toolchain limitation: `#[quint_test]` is unusable with quint 0.32.0
+
+`#[quint_test]` generates traces with `quint test ... --out-itf`, and quint
+0.32.0's `quint test` has **no `--mbt` flag** and emits no `mbt::actionTaken`
+metadata, so quint-connect 0.1.2 fails with `Missing mbt::actionTaken variable
+in the trace`. All tests therefore use `#[quint_run]`, which passes `--mbt` to
+`quint run`. Fixed regression scenarios are expressed as scenario-specific
+`init`/`step` action pairs (e.g. `initCollision` + `hold`) selected via
+`#[quint_run(init = ..., step = ...)]`. This matches the planned "scenario
+variants as separate init/step" approach. Revisit `#[quint_test]` when quint's
+`quint test` supports `--mbt`.
+
+### Mutation acceptance
+
+The acceptance criterion for this skeleton is that breaking the production
+decision order is detected through the production path:
+
+- Mutation: resolve a known model ID before checking the style map (model
+  priority instead of style priority).
+- Result: `target_resolution_id_collision` fails with `Specification and
+  implementation states diverge` (reproducible via the printed `QUINT_SEED`).
+
+### Known devShell quirk
+
+In this devShell, the fenix stable toolchain aborts (`SIGABRT`, `fatal runtime
+error: failed to initiate panic`) on **any** test panic — an isolated empty
+crate reproduces it. It is not caused by this crate. Failing MBT tests still
+exit non-zero, so CI detection works; debugging a failure requires running the
+test with `--nocapture`, because the harness cannot print captured output
+before the abort.
 
 ## Removal plan (not in this change)
 

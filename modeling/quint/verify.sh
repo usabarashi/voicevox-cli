@@ -191,7 +191,7 @@ run_ok "Say safety" \
   --invariant=typeOK,synthesizingImpliesBusyReq,busyReqOwnedBySay,doneHasNoError,playbackFailureOnlyInPlayMode,playingRequiresAudio,emittingUsesPlayMode,outputFailureOnlyInFileMode \
   modeling/quint/Say.qnt
 run_ok "System integration" \
-  --invariant=typeOK,viewsAligned,clientConnectedImpliesDaemonReady \
+  --invariant=typeOK,viewsAligned,clientConnectedImpliesDaemonReady,daemonStartingRequiresResources,daemonReadyRequiresResources,daemonReadyRequiresSocket \
   modeling/quint/System.qnt
 run_ok "StreamingSynthesis safety" \
   --invariant=segmentsBounded,playbackRequiresAllSegments,canceledImpliesNoPlayback \

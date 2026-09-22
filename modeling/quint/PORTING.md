@@ -112,7 +112,7 @@ production constants they abstract (see "Post-migration revisions").
 | StartupResources | `MAX_RETRY=3` | `typeOK`, `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket` |
 | MCPServer | `MAX_ATTEMPTS=10` | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio` |
 | Say | `MAX_RETRY=10` | `typeOK`, `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError`, `playbackFailureOnlyInPlayMode`, `outputFailureOnlyInFileMode`, `playingRequiresAudio`, `emittingUsesPlayMode` |
-| System | resource retries 3, synth retries 2, connect attempts 10 | `typeOK`, `viewsAligned`, `clientConnectedImpliesDaemonReady` |
+| System | resource retries 3, synth retries 2, connect attempts 10 | `typeOK`, `viewsAligned`, `clientConnectedImpliesDaemonReady`, `daemonStartingRequiresResources`, `daemonReadyRequiresResources`, `daemonReadyRequiresSocket` |
 | StreamingSynthesis | — | `segmentsBounded`, `playbackRequiresAllSegments`, `canceledImpliesNoPlayback` |
 | Download | `MAX_ATTEMPTS=3` | `attemptsBounded`, `failedHasReason`, `exhaustedImpliesAttempts`, `preparationFailureMeansNoAttempts` + temporal `terminates` |
 | ModelLifecycle | — | `loadedImpliesPhase` + temporal `eventuallyUnloaded` |

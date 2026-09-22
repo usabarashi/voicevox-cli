@@ -388,4 +388,21 @@ module System {
   // so a connected client implies a ready daemon.
   val clientConnectedImpliesDaemonReady =
     clientState == Connected implies daemonState == DaemonReady
+
+  // ---- Cross-layer startup guarantees ------------------------------------
+  //
+  // These couple the daemon/startup layer to the resource layer (no single
+  // per-concern spec checks them at the integration point).
+
+  // The daemon is only started once the resources it needs are ready.
+  val daemonStartingRequiresResources =
+    daemonState == DaemonStarting implies resourceReady
+
+  // A ready daemon implies the resources are ready and the socket is bound
+  // (resources are never unloaded once ready).
+  val daemonReadyRequiresResources =
+    daemonState == DaemonReady implies resourceReady
+
+  val daemonReadyRequiresSocket =
+    daemonState == DaemonReady implies resources.get(2) == Ready
 }

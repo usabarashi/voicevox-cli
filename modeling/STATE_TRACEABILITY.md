@@ -1,5 +1,9 @@
 # TLA+ State Traceability
 
+> Migration in progress: TLA+ is being replaced by Quint. Phase 1 artifacts and
+> the migration contract live in [`quint/CONTRACT.md`](quint/CONTRACT.md). This
+> document still describes the TLA+ artifacts and will be rewritten in Phase 2.
+
 This document is scoped to TLA+ artifacts only.
 It maps state ownership, cross-module synchronization, and scenario coverage across `modeling/tla` and `modeling/cfg`.
 

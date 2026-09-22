@@ -228,6 +228,39 @@ there is no bookkeeping-only state machine.
 These confirm the tests are wired to the production path, not to a copy of the
 expected behavior.
 
+### Exploration configuration & reproduction
+
+- `#[quint_run]` uses a random seed unless `QUINT_SEED` is set. quint-connect
+  reads `QUINT_SEED` at **compile time** (`option_env!`), so changing it requires
+  recompiling the `mbt` crate.
+- CI sets `QUINT_SEED=0x5eed` (see `.github/workflows/ci.yml`) for deterministic
+  traces; leave it unset locally for broader exploration.
+- On failure, quint-connect prints the seed (`Reproduce this error with
+  QUINT_SEED=...`) and, with `QUINT_VERBOSE=1|2`, the trace. quint-connect 0.1.2
+  does not persist traces to disk, so reproduction is seed-based:
+  `QUINT_SEED=<printed> cargo test --locked --manifest-path mbt/Cargo.toml -- --nocapture`.
+- `max_samples` / `max_steps` are set explicitly in the test attributes
+  (200 / 6 for the simulation, 1 / 1 for the fixed scenarios), because supplying
+  a seed also changes quint's default sample count.
+
+## Phase 1 status
+
+Phase 1 was defined as a feasibility gate with these success criteria: preserve
+the existing guarantees, detect intended production faults, and keep the
+maintenance cost acceptable.
+
+| Criterion | Evidence |
+|---|---|
+| Quint can carry the verification role | `verify.sh`: `SynthesisRetry` safety + liveness pass; negative controls detected (safety violation, infinite stall). `quint verify --backend=tlc` needs no external Java/TLA+. |
+| Specs connect to production code | `mbt/tests/target_resolution.rs` calls the real `resolve_target` (the same function `ModelCatalog::resolve_synthesis_target` delegates to); 4 tests pass. |
+| Intended faults are detected through the production path | style/model precedence flip, retry-bound off-by-one, and ignored wait-cancellation all fail their tests. |
+| Existing abstract TLA+ kept during migration | the `tla-model-check` job and `modeling/tla` / `modeling/cfg` are untouched. |
+| Maintenance cost acceptable | verification gate and MBT both run in seconds and need no model downloads. |
+
+Not yet done (Phase 2+): port the remaining TLA+ modules, preserve their
+properties with `quint verify`, retire the handwritten TLA+/cfg/direct job, and
+decide Phase 3 (process/socket MBT).
+
 ## Removal plan (not in this change)
 
 Handwritten `modeling/tla` and `modeling/cfg` plus the direct `tlc` CI job are

@@ -236,5 +236,8 @@ jobs:
 
       - name: Run model-based tests
         run: |
-          nix develop --accept-flake-config --command \
-            cargo test --locked --manifest-path mbt/Cargo.toml -- --test-threads=1
+          # QUINT_SEED is read by quint-connect at compile time (option_env!),
+          # so a fixed seed makes the generated traces deterministic in CI.
+          # Omit or change it locally to explore different traces.
+          nix develop --accept-flake-config --command bash -c \
+            'QUINT_SEED=0x5eed cargo test --locked --manifest-path mbt/Cargo.toml -- --test-threads=1'

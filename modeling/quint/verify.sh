@@ -80,13 +80,14 @@ run_expect_violation() {
 check_constant_consistency() {
   local file="modeling/quint/EXPECTED_CONSTANTS"
   echo "::group::constant consistency"
+  local before="${failures}"
   local kind a b c
   while IFS='|' read -r kind a b c; do
     case "${kind}" in
       ""|\#*) continue ;;
       spec)
-        # spec|<Spec>|<Const>|<Value>
-        if ! grep -qE "pure val ${b} = ${c}([^0-9]|$)" "modeling/quint/${a}.qnt"; then
+        # spec|<Spec>|<Const>|<Value>; anchored so `= 10 + 1` cannot pass `= 10`.
+        if ! grep -qE "^[[:space:]]*pure val[[:space:]]+${b}[[:space:]]*=[[:space:]]*${c}[[:space:]]*(//.*)?$" "modeling/quint/${a}.qnt"; then
           echo "FAIL: ${a}.qnt does not declare 'pure val ${b} = ${c}'" >&2
           failures=$((failures + 1))
         fi
@@ -104,13 +105,16 @@ check_constant_consistency() {
         ;;
     esac
   done < "${file}"
-  echo "ok: constant consistency"
+  if [ "${failures}" -eq "${before}" ]; then
+    echo "ok: constant consistency"
+  fi
   echo "::endgroup::"
 }
 
 check_model_classification() {
   local class_file="modeling/quint/MODEL_CLASSIFICATION"
   echo "::group::model classification"
+  local before="${failures}"
   local spec name tier
   for spec in modeling/quint/*.qnt; do
     name="$(basename "${spec}" .qnt)"
@@ -125,7 +129,9 @@ check_model_classification() {
       ""|\#*) continue ;;
     esac
     if [ "${tier}" = "mbt" ]; then
-      if ! grep -rq "modeling/quint/${name}.qnt" mbt/tests; then
+      # Require the actual `#[quint_run(... spec = "...")]` argument, not any
+      # text that merely mentions the spec path.
+      if ! grep -rqF "spec = \"../modeling/quint/${name}.qnt\"" mbt/tests; then
         echo "FAIL: ${name} is classified 'mbt' but no driver references it" >&2
         failures=$((failures + 1))
       fi
@@ -134,7 +140,9 @@ check_model_classification() {
       failures=$((failures + 1))
     fi
   done < "${class_file}"
-  echo "ok: model classification"
+  if [ "${failures}" -eq "${before}" ]; then
+    echo "ok: model classification"
+  fi
   echo "::endgroup::"
 }
 

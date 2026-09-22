@@ -180,6 +180,14 @@ impl IpcDriver {
             let _guard = self.runtime.enter();
             UnixListener::bind(&socket).expect("bind fake daemon socket")
         };
+        // `bind` applies the process umask, so with umask 000 the socket could
+        // be world-writable and `DaemonClient::new_at`'s validation would
+        // reject it. Pin the mode so the test is umask-independent.
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))
+                .expect("chmod 0600 on the fake socket");
+        }
         let server = self.runtime.spawn(serve_once(listener, fault.payload()));
 
         let mut client = self

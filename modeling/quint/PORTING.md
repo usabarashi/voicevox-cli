@@ -101,7 +101,7 @@ production constants they abstract (see "Post-migration revisions").
 | DaemonSerialization | — | `atMostOneSynthesizing`, `workerMatchesSynthesis` + temporal `eventuallyLeavesBusyWorker` |
 | DaemonServer | `PRODUCTION_MAX_IN_FLIGHT=32`, verify scale `MAX_IN_FLIGHT=2` | `typeOK`, `inFlightMatchesHandling` + temporal `handling{0,1,2}Terminates` |
 | DaemonSynthesisPath | `PRODUCTION_MAX_IN_FLIGHT=32`, verify scale `MAX_IN_FLIGHT=2` | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing` + temporal `workerEventuallyIdle` |
-| StartupSafety | resources × socket scenarios | `readyRequiresResources`, `readyRequiresSocketReady`, `startedImpliesNoLive`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure` + temporal `terminates` |
+| StartupSafety | resources × socket scenarios | `readyRequiresResources`, `readyRequiresStartableSocket`, `startedImpliesNoLive`, `liveNeverRemoved`, `liveNeverStarted`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure` + temporal `terminates` |
 | McpRequestLifecycle | `PRODUCTION_MAX_CONCURRENT=4`, verify scale `MAX_CONCURRENT=2` | `typeOK`, `activeMatchesHolding` + temporal `allRequestsTerminate` |
 | McpStartup | — | `doneHasOutcome`, `recoveryOnlyAfterAlreadyRunning` + temporal `terminates` |
 | StartupResources | `MAX_RETRY=3` | `typeOK`, `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket` + temporals `bindingTerminates`, `permissionDeniedIsTerminal` |

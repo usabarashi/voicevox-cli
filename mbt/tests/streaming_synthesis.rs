@@ -163,6 +163,11 @@ impl StreamingDriver {
         if self.child.is_some() {
             return Ok(());
         }
+        // Reading the environment races with the failure tests' `set_var` when
+        // tests run in parallel, so take the same lock they use.
+        let _env_guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let socket = socket_path(self);
         let _ = std::fs::remove_file(&socket);
         let mut command = Command::new(daemon_binary());

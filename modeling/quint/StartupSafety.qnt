@@ -72,6 +72,8 @@ module StartupSafety {
   action removeStale = all {
     phase == Init or phase == Preparing,
     socket == StalePresent,
+    // One-shot: a stale socket is removed once.
+    not(staleRemoved),
     staleRemoved' = true,
     socket' = socket,
     resourcesReady' = resourcesReady,

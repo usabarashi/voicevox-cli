@@ -109,6 +109,9 @@ run_ok "SynthesisParallel progress" \
 run_ok "StartupResources safety" \
   --invariant=typeOK,daemonReadyRequiresDownloads,daemonStartRequiresDownloads,daemonReadyRequiresSocket \
   modeling/quint/StartupResources.qnt
+run_ok "MCPServer safety" \
+  --invariant=typeOK,connectedImpliesDaemonReady,degradedImpliesNotConnected,playingRequiresAudio \
+  modeling/quint/MCPServer.qnt
 
 # Real model: safety and liveness must hold.
 run_ok "SynthesisRetry safety" \

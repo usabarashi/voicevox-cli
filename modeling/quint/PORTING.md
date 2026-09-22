@@ -37,7 +37,7 @@ different property.
 | `Daemon` | `RecoveryPathExists` | retract | not checked by any cfg; does not hold under weak fairness (`daemonFail` can exhaust `retryCount` before `recover` is taken) |
 | `SynthesisParallel` | `TypeOK`, `AtMostOneSynthesizing`, `WorkerMatchesSynthesis`, `EventuallyLeavesBusyWorker` | preserve | `SynthesisParallel.qnt` (done) |
 | `StartupResources` | `TypeOK`, `DaemonReadyRequiresDownloads`, `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket` | preserve | `StartupResources.qnt` (done, flattened) |
-| `MCPServer` | `TypeOK`, `ConnectedImpliesDaemonReady`, `DegradedImpliesNotConnected`, `PlayingRequiresAudio` | preserve | `MCPServer.qnt` |
+| `MCPServer` | `TypeOK`, `ConnectedImpliesDaemonReady`, `DegradedImpliesNotConnected`, `PlayingRequiresAudio` | preserve | `MCPServer.qnt` (done, flattened) |
 | `Say` | `TypeOK`, `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`, `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode` | preserve (adapt to refined Synthesis) | `Say.qnt` |
 | `System` | `TypeOK`, `ViewsAligned`, `ClientConnectedImpliesDaemonReady`, `SynthesisRunningImpliesDaemonReady` | preserve (adapt INSTANCE to `SynthesisRetry`) | `System.qnt` |
 | `Synthesis` | `TypeOK` | replace | `SynthesisRetry.qnt` (Phase 1) |
@@ -104,10 +104,14 @@ properties. In Quint these become `init`/`step` plus `--invariant` /
   `SynthesisRetry.qnt`.
 - Composition is **flattened** rather than using Quint module instances: the TLC
   verification backend cannot assign constants through `import M(N = 3) as M`
-  (it reports "constant parameter N is not assigned a value"). Each ported
-  module therefore carries concrete `pure val` constants and inlines the
-  composed state/actions. Properties are preserved; the INSTANCE structure is
+  (it reports "constant parameter N is not assigned a value"), and
+  `--tlc-config` only accepts `maxHeap`/`stackSize`/`workers`, not constants.
+  Each ported module therefore carries concrete `pure val` constants and inlines
+  the composed state/actions. Properties are preserved; the INSTANCE structure is
   not.
+- Quint does **not** implicitly frame unmentioned variables: every action must
+  assign every state variable, or TLC reports "Successor state is not completely
+  specified". Flattened ports therefore assign all variables explicitly.
 - Fairness must stay per-component: `SynthesisParallel`'s `EventuallyLeavesBusyWorker`
   needs separate `weakFair` for the J1 and J2 progress sets. A single combined
   fairness set is satisfiable by progress on one job alone and does not hold.

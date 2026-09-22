@@ -11,6 +11,9 @@
 result
 result-*
 
+# Quint / Apalache verification output
+_apalache-out/
+
 # IDE
 .vscode/
 .idea/

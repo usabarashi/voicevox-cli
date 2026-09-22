@@ -21,6 +21,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
+    # Dedicated pin for the `quint` tool only. The main `nixpkgs` pin still
+    # ships quint 0.30.0, which has no TLC verification backend
+    # (`quint verify --backend=tlc`). Fold this input back into `nixpkgs`
+    # once the main pin is updated past the 0.32.0 release.
+    quintNixpkgs.url = "github:NixOS/nixpkgs/35e212742ceab4ae1dcfbfd9039a39215c816e8e";
   };
 
   outputs =
@@ -30,6 +35,7 @@
       flake-utils,
       fenix,
       crane,
+      quintNixpkgs,
     }:
     let
       systems = [ "aarch64-darwin" ];
@@ -37,7 +43,43 @@
     flake-utils.lib.eachSystem systems (
       system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        # crates.io's data-access policy rejects crate downloads sent with curl's
+        # default User-Agent (HTTP 403). crane's internal crane-utils is built via
+        # `rustPlatform.buildRustPackage`, whose scope-local `importCargoLock`
+        # fetches https://crates.io/api/v1/.../download without a User-Agent,
+        # breaking the build closure. `buildRustPackage` uses the `importCargoLock`
+        # defined inside the `rustPlatform` scope (see makeRustPlatform), not the
+        # top-level one, so rebuild it there with a `fetchurl` that sends an
+        # identifying User-Agent. crates.io then serves the 302 to static.crates.io.
+        cratesIoUserAgentOverlay = _final: prev: {
+          rustPlatform = prev.rustPlatform.overrideScope (
+            _rpFinal: _rpPrev: {
+              importCargoLock =
+                prev.buildPackages.callPackage "${nixpkgs}/pkgs/build-support/rust/import-cargo-lock.nix"
+                  {
+                    inherit (prev.rustPlatform) cargo;
+                    fetchurl =
+                      args:
+                      prev.fetchurl (
+                        args
+                        // {
+                          curlOptsList = (args.curlOptsList or [ ]) ++ [
+                            "--user-agent"
+                            "voicevox-cli (https://github.com/usabarashi/voicevox-cli)"
+                          ];
+                        }
+                      );
+                  };
+            }
+          );
+        };
+
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ cratesIoUserAgentOverlay ];
+        };
+        # `quint` comes from the dedicated pin (see the `quintNixpkgs` input).
+        quintPkgs = import quintNixpkgs { inherit system; };
         lib = pkgs.lib;
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         version = cargoToml.package.version;
@@ -309,6 +351,9 @@
 
             # TLC model checker for modeling/*.tla
             tlaplus
+
+            # Quint specification language + bundled TLC backend for modeling/quint
+            quintPkgs.quint
           ];
 
           shellHook = ''
@@ -333,6 +378,7 @@
             echo "  cargo test                         - Also works in this shell (FOR_BUILD SDK vars sanitized)"
             echo "  cargo kani                         - Run Kani proofs (install: cargo install --locked kani-verifier && cargo kani setup)"
             echo "  tlc -deadlock -config X.cfg X.tla  - Run TLC model checker (in modeling/)"
+            echo "  bash modeling/quint/verify.sh      - Run Quint verification gate (TLC backend)"
             echo ""
             echo "Dynamic voice detection system - no hardcoded voice names"
           '';

@@ -148,4 +148,52 @@ module SynthesisRetry {
   // Cancellation is terminal: no action is enabled from `Canceled`.
   temporal cancelIsTerminal =
     always(outcome == Canceled implies always(outcome == Canceled))
+
+  // ---- Fixed scenarios (production retry-loop MBT) ------------------------
+  //
+  // Terminal states that the production `run_retry_loop` must produce for the
+  // scripted attempt/waiter sequences used by
+  // `mbt/tests/synthesis_retry_loop.rs`. The driver runs the real loop with
+  // controllable seams and compares its observed counters against these states.
+
+  action hold = all {
+    outcome' = outcome,
+    attempts' = attempts,
+    backoffs' = backoffs,
+  }
+
+  // Three retryable failures: attempts exhausted, two backoffs started.
+  action scenarioExhaustRetryable = all {
+    outcome' = Failed,
+    attempts' = MAX_ATTEMPTS,
+    backoffs' = MAX_RETRIES,
+  }
+
+  // Retryable failure, backoff, then success.
+  action scenarioSuccessAfterRetry = all {
+    outcome' = Done,
+    attempts' = 2,
+    backoffs' = 1,
+  }
+
+  // Non-retryable failure on the first attempt.
+  action scenarioFatalFirst = all {
+    outcome' = Failed,
+    attempts' = 1,
+    backoffs' = 0,
+  }
+
+  // Cancellation delivered while waiting for the first backoff.
+  action scenarioCancelDuringBackoff = all {
+    outcome' = Canceled,
+    attempts' = 1,
+    backoffs' = 1,
+  }
+
+  // Cancellation during the third in-flight attempt.
+  action scenarioCancelInFlightThird = all {
+    outcome' = Canceled,
+    attempts' = MAX_ATTEMPTS,
+    backoffs' = MAX_RETRIES,
+  }
 }

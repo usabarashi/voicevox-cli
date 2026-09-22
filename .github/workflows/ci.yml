@@ -4,6 +4,10 @@ on:
   pull_request:
   push:
     branches: [ main ]
+  schedule:
+    # Nightly random-seed model-based test exploration (UTC). PR/push runs pin
+    # QUINT_SEED for determinism; this explores different traces.
+    - cron: '17 18 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -179,6 +183,33 @@ jobs:
           # Omit or change it locally to explore different traces.
           nix develop --accept-flake-config --command bash -c \
             'QUINT_SEED=0x5eed cargo test --locked --manifest-path mbt/Cargo.toml -- --test-threads=1'
+
+  # Broad exploration: the PR/push jobs pin QUINT_SEED for deterministic traces.
+  # This scheduled job leaves it unset (quint-connect picks a random seed), so
+  # each shard explores a different set of traces.
+  quint-mbt-explore:
+    name: Quint MBT (random seed exploration)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix with cache
+        uses: cachix/install-nix-action@616559265b40713947b9c190a8ff4b507b5df49b # v31.10.4
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run model-based tests (random seed)
+        run: |
+          nix develop --accept-flake-config --command bash -c \
+            'cargo test --locked --manifest-path mbt/Cargo.toml -- --test-threads=1'
 
   quint-mbt-daemon:
     name: Quint MBT (real daemon)

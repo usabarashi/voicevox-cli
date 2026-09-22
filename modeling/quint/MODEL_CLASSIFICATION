@@ -1,0 +1,35 @@
+# Model <-> implementation traceability classification.
+#
+# Format: <SpecName> <tier>
+#
+#   mbt           - has a Quint Connect driver in mbt/tests that calls production
+#                   code (executable refinement evidence).
+#   verified-only - exhaustively verified by verify.sh but has no executable
+#                   driver; correspondence is the prose in
+#                   modeling/STATE_TRACEABILITY.md plus ordinary Rust tests.
+#
+# `modeling/quint/verify.sh` checks that every spec is classified here and that
+# every `mbt` spec is referenced by at least one driver. Adding or renaming a
+# spec requires classifying it here.
+#
+# See modeling/STATE_TRACEABILITY.md ("Modelling boundary") for what is out of
+# scope entirely.
+TargetResolution mbt
+SynthesisRetry mbt
+McpRequestParsing mbt
+DaemonIpc mbt
+DaemonSynthesize mbt
+StreamingSynthesis mbt
+Daemon verified-only
+StartupResources verified-only
+ONNXRuntime verified-only
+Dictionary verified-only
+Socket verified-only
+MCPServer verified-only
+Playback verified-only
+IPC verified-only
+Say verified-only
+Download verified-only
+ModelLifecycle verified-only
+DaemonSerialization verified-only
+System verified-only

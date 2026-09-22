@@ -158,9 +158,15 @@ function `ModelCatalog::resolve_synthesis_target` delegates to) with the fixture
 catalog modelled by the spec, and records the observed result. The observed
 state is never copied from the spec, satisfying the observation contract.
 
-`mbt` is a standalone Cargo workspace (own `Cargo.lock`, `[workspace]` in
-`mbt/Cargo.toml`), so it is excluded from the root build and from
-`nix flake check` / the crane sandbox, which have no `quint`.
+`mbt` is a member of the root Cargo workspace (shared `Cargo.lock`, which keeps
+its dependency resolution identical to the shipped binaries) but is excluded
+from `default-members`, so the normal `cargo build`/`cargo test` and the
+`nix flake check` / crane sandbox never need `quint`. Run it explicitly:
+
+```bash
+nix develop --accept-flake-config --command bash -c \
+  'cargo test --locked --manifest-path mbt/Cargo.toml'
+```
 
 ### Toolchain limitation: `#[quint_test]` is unusable with quint 0.32.0
 
@@ -358,7 +364,8 @@ WAV header check).
 
 | Driver | Spec | Production entry point |
 |---|---|---|
-| `mbt/tests/synthesis_retry.rs` | `SynthesisRetry.qnt` | `RetryPolicy::after_attempt` + `MCP_DAEMON_MAX_RETRIES` |
+| `mbt/tests/synthesis_retry.rs` | `SynthesisRetry.qnt` | `RetryPolicy::after_attempt` + `MCP_DAEMON_MAX_RETRIES` (arithmetic) |
+| `mbt/tests/synthesis_retry_loop.rs` | `SynthesisRetry.qnt` | `run_retry_loop` scanned via scripted `SynthesisAttempt`/`BackoffWaiter` seams |
 | `mbt/tests/mcp_request_parsing.rs` | `McpRequestParsing.qnt` | `parse_request_message` |
 | `mbt/tests/target_resolution.rs` | `TargetResolution.qnt` | `resolve_target` + `build_model_default_style_map` |
 | `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesis.qnt` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` (real daemon) |
@@ -373,3 +380,10 @@ Mutation acceptance for the follow-up:
 - Removing `#[serde(tag = "tag", content = "value")]` from the streaming
   driver's `Phase` makes `decode_tests::state_decodes_from_itf_encoding` fail
   (guards the ignored, real-daemon streaming suite without a daemon).
+- Moving attempt counting after the await, or counting backoffs at completion,
+  in `run_retry_loop` makes `retry_loop_cancel_in_flight_third_attempt` /
+  `retry_loop_exhausts_retryable_failures` fail.
+
+The `quint-mbt-explore` CI job runs the non-daemon MBT with a random seed
+(`QUINT_SEED` unset) on a nightly schedule, because the PR/push jobs pin the
+seed for deterministic traces.

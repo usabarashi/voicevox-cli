@@ -73,10 +73,44 @@ run_expect_violation() {
   echo "::endgroup::"
 }
 
+# Every spec must be classified as MBT-backed or verified-only, and every
+# MBT-backed spec must have a driver that references it (see MODEL_CLASSIFICATION).
+check_model_classification() {
+  local class_file="modeling/quint/MODEL_CLASSIFICATION"
+  echo "::group::model classification"
+  local spec name tier
+  for spec in modeling/quint/*.qnt; do
+    name="$(basename "${spec}" .qnt)"
+    if ! grep -qE "^${name}[[:space:]]" "${class_file}"; then
+      echo "FAIL: spec ${name} is not classified in ${class_file}" >&2
+      failures=$((failures + 1))
+    fi
+  done
+
+  while read -r name tier; do
+    case "${name}" in
+      ""|\#*) continue ;;
+    esac
+    if [ "${tier}" = "mbt" ]; then
+      if ! grep -rq "modeling/quint/${name}.qnt" mbt/tests; then
+        echo "FAIL: ${name} is classified 'mbt' but no driver references it" >&2
+        failures=$((failures + 1))
+      fi
+    elif [ "${tier}" != "verified-only" ]; then
+      echo "FAIL: unknown tier '${tier}' for ${name} in ${class_file}" >&2
+      failures=$((failures + 1))
+    fi
+  done < "${class_file}"
+  echo "ok: model classification"
+  echo "::endgroup::"
+}
+
 # All specs must parse and typecheck.
 for spec in modeling/quint/*.qnt modeling/quint/negative/*.qnt; do
   check_typecheck "${spec}"
 done
+
+check_model_classification
 
 # Ported lifecycle models (Phase 2).
 run_ok "ONNXRuntime safety" \

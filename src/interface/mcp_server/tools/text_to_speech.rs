@@ -40,14 +40,16 @@ struct TextToSpeechToolInput {
 }
 
 /// Result of one client-side synthesis attempt, as seen by the retry loop.
-enum AttemptCallOutcome {
+#[doc(hidden)]
+pub enum AttemptCallOutcome {
     Completed(Vec<u8>),
     Cancelled(String),
     Failed(anyhow::Error),
 }
 
 /// Result of waiting for a backoff.
-enum WaitOutcome {
+#[doc(hidden)]
+pub enum WaitOutcome {
     Elapsed,
     Cancelled(String),
 }
@@ -56,7 +58,9 @@ enum WaitOutcome {
 ///
 /// The daemon is an environment: an attempt either produces bytes, is canceled,
 /// or fails with an error whose retryability is classified outside this trait.
-trait SynthesisAttempt {
+#[doc(hidden)]
+#[allow(async_fn_in_trait)]
+pub trait SynthesisAttempt {
     async fn run(
         &mut self,
         request: &DaemonSynthesisBytesRequest<'_>,
@@ -65,7 +69,9 @@ trait SynthesisAttempt {
 }
 
 /// Waits for a backoff delay. Cancellation has priority when both are ready.
-trait BackoffWaiter {
+#[doc(hidden)]
+#[allow(async_fn_in_trait)]
+pub trait BackoffWaiter {
     async fn wait(
         &mut self,
         delay: Duration,
@@ -74,13 +80,18 @@ trait BackoffWaiter {
 }
 
 /// Outcome of the retry loop, including the observed attempt/backoff counts.
+///
+/// Exposed (like the traits above) so the model-based test can drive the real
+/// `run_retry_loop` with controllable seams and compare the observed counters
+/// against `modeling/quint/SynthesisRetry.qnt`.
+#[doc(hidden)]
 #[derive(Default)]
-struct RetryLoopResult {
-    wav_data: Option<Vec<u8>>,
-    last_error: Option<anyhow::Error>,
-    cancellation: Option<String>,
-    attempts_started: u32,
-    backoffs_started: u32,
+pub struct RetryLoopResult {
+    pub wav_data: Option<Vec<u8>>,
+    pub last_error: Option<anyhow::Error>,
+    pub cancellation: Option<String>,
+    pub attempts_started: u32,
+    pub backoffs_started: u32,
 }
 
 /// Executes the `text_to_speech` tool without external cancellation.
@@ -255,8 +266,11 @@ async fn handle_daemon_synthesis(
 /// only orchestrates. Cancellation is evaluated before every attempt and has
 /// priority while waiting for a backoff. Attempts and backoffs are counted so
 /// the observed behavior can be asserted.
+/// Drives the client-side retry loop. Exposed (with the traits above) as the
+/// production seam for `mbt/tests/synthesis_retry_loop.rs`.
+#[doc(hidden)]
 #[allow(clippy::future_not_send)]
-async fn run_retry_loop<A, W>(
+pub async fn run_retry_loop<A, W>(
     policy: RetryPolicy,
     attempt: &mut A,
     waiter: &mut W,

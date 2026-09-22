@@ -34,6 +34,8 @@ See also:
 | Target resolution (MBT) | `TargetResolution.qnt` | style/model/no-style/unknown resolution, collision | `mbt/tests/target_resolution.rs` (Quint Connect) |
 | Retry arithmetic (MBT) | `SynthesisRetry.qnt` | attempt/backoff/cancel transitions | `mbt/tests/synthesis_retry.rs` (Quint Connect) |
 | MCP request parsing (MBT) | `McpRequestParsing.qnt` | initialize/tools-list/tools-call/invalid/unknown | `mbt/tests/mcp_request_parsing.rs` (Quint Connect) |
+| MCP notification parsing (MBT) | `McpNotificationParsing.qnt` | initialized/cancelled/unknown | `mbt/tests/mcp_notification_parsing.rs` (Quint Connect) |
+| IPC transport (MBT) | `IPC.qnt` | valid / corrupt / mismatch / EOF / protocol-error responses via a fake server | `mbt/tests/ipc_transport.rs` (Quint Connect) |
 | Real-daemon IPC (MBT) | `DaemonIpc.qnt` | client connect / catalog read over the socket | `mbt/tests/daemon_ipc.rs` (Quint Connect, `#[ignore]`; CI job `quint-mbt-daemon`) |
 | Real-daemon synthesize (MBT) | `DaemonSynthesize.qnt` | connect → listSpeakers → synthesize | `mbt/tests/daemon_synthesize.rs` (Quint Connect, `#[ignore]`) |
 | Real-daemon streaming (MBT) | `StreamingSynthesis.qnt` | connect → split → segment synthesis → concatenate | `mbt/tests/streaming_synthesis.rs` (Quint Connect, `#[ignore]`) |
@@ -82,6 +84,8 @@ production code count as refinement evidence:
 | `mbt/tests/synthesis_retry.rs` | `domain::synthesis::retry::RetryTracker` (production retry state machine), one step per spec action |
 | `mbt/tests/synthesis_retry_loop.rs` | `run_retry_loop` with scripted attempt/waiter seams (orchestration + counters) |
 | `mbt/tests/mcp_request_parsing.rs` | `mcp_server::protocol::parse_request_message` |
+| `mbt/tests/mcp_notification_parsing.rs` | `mcp_server::protocol::parse_notification_message` |
+| `mbt/tests/ipc_transport.rs` | `DaemonClient` against a fake Unix-socket server (no daemon) |
 | `mbt/tests/daemon_ipc.rs` | `DaemonClient` over a real daemon |
 | `mbt/tests/daemon_synthesize.rs` | `DaemonClient::synthesize` over a real daemon |
 | `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` over a real daemon; plus daemon-free `handle_text_to_speech_cancellable` connect-failure/cancel scenarios (dead `VOICEVOX_SOCKET_PATH`) |
@@ -112,8 +116,11 @@ Explicitly out of scope, with the reason:
   external player fallback, rodio output, and child-process cleanup depend on
   the host; `Playback.qnt` models only the abstract lifecycle.
 - **MCP line framing / response correlation** (`server/stdio.rs`): the 256 KiB
-  line limit, the 64-entry response queue, and cancellation routing are
-  transport concerns; only request *parsing* is modelled and MBT-checked.
+  line limit and the 64-entry response queue are transport concerns; request and
+  notification *parsing* are modelled and MBT-checked.
+- **IPC timeout** (`IPC.qnt` `ResponseTimeout`): the 30 s response timeout has no
+  driver because a test cannot wait it out; the other IPC fault classes are
+  MBT-checked in `ipc_transport.rs`.
 - **Daemon-side retry**: the daemon returns an error; retries belong to the
   client (`SynthesisRetry.qnt`).
 - **Clock/time**: timeout values (30 s response, backoff delays) are modelled as

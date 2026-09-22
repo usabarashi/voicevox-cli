@@ -225,4 +225,54 @@ module IPC {
   temporal eventuallyLeavesInFlight =
     weakFair(respond, vars) implies
       always(reqState == InFlight implies eventually(reqState != InFlight))
+
+  // ---- Fixed scenarios (daemon-free transport MBT) ------------------------
+  //
+  // Terminal states that the production client transport must reach for a fake
+  // server's injected response, used by `mbt/tests/ipc_transport.rs`. A valid
+  // response must yield `Done`; every injected fault must yield `Failed` with a
+  // non-`NoError` error (the driver injects the response class and observes the
+  // request state).
+
+  action hold = all {
+    connState' = connState,
+    reqState' = reqState,
+    respState' = respState,
+    ipcError' = ipcError,
+  }
+
+  action scenarioValid = all {
+    connState' = Connected,
+    reqState' = Done,
+    respState' = Valid,
+    ipcError' = NoError,
+  }
+
+  action scenarioCorrupt = all {
+    connState' = Connected,
+    reqState' = Failed,
+    respState' = Corrupt,
+    ipcError' = CorruptFrame,
+  }
+
+  action scenarioMismatch = all {
+    connState' = Connected,
+    reqState' = Failed,
+    respState' = Mismatched,
+    ipcError' = ResponseMismatch,
+  }
+
+  action scenarioNoResponse = all {
+    connState' = Connected,
+    reqState' = Failed,
+    respState' = Absent,
+    ipcError' = NoResponseReceived,
+  }
+
+  action scenarioProtocolError = all {
+    connState' = Connected,
+    reqState' = Failed,
+    respState' = ProtocolError,
+    ipcError' = ErrorResponse,
+  }
 }

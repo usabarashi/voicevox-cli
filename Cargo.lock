@@ -2850,6 +2850,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "itf",
+ "postcard",
  "quint-connect",
  "serde",
  "serde_json",

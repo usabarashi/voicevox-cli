@@ -367,6 +367,8 @@ WAV header check).
 | `mbt/tests/synthesis_retry.rs` | `SynthesisRetry.qnt` | `RetryTracker` (production state machine), one step per spec action |
 | `mbt/tests/synthesis_retry_loop.rs` | `SynthesisRetry.qnt` | `run_retry_loop` scanned via scripted `SynthesisAttempt`/`BackoffWaiter` seams (6 fixed scenarios) |
 | `mbt/tests/mcp_request_parsing.rs` | `McpRequestParsing.qnt` | `parse_request_message` |
+| `mbt/tests/mcp_notification_parsing.rs` | `McpNotificationParsing.qnt` | `parse_notification_message` |
+| `mbt/tests/ipc_transport.rs` | `IPC.qnt` | `DaemonClient` against a fake Unix-socket server |
 | `mbt/tests/target_resolution.rs` | `TargetResolution.qnt` | `resolve_target` + `build_model_default_style_map` |
 | `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesis.qnt` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` (real daemon) |
 
@@ -387,6 +389,9 @@ Mutation acceptance for the follow-up:
   `end_backoff`) makes `synthesis_retry_simulation` fail.
 - Pointing `VOICEVOX_SOCKET_PATH` at a live socket makes
   `streaming_connect_failure` fail (it expects the connect to fail).
+- Serving a valid frame in the `ipc_corrupt_frame` scenario, or treating a
+  mismatched/`Error` response as success, makes the corresponding
+  `ipc_*` test fail.
 
 The `quint-mbt-explore` CI job runs the non-daemon MBT with a random seed
 (`QUINT_SEED` unset) on a nightly schedule, because the PR/push jobs pin the

@@ -121,6 +121,9 @@ run_ok "System integration" \
 run_ok "DaemonIpc safety" \
   --invariant=catalogRequiresConnection \
   modeling/quint/DaemonIpc.qnt
+run_ok "DaemonSynthesize safety" \
+  --invariant=synthesizedRequiresCatalog \
+  modeling/quint/DaemonSynthesize.qnt
 
 # Real model: safety and liveness must hold.
 run_ok "SynthesisRetry safety" \

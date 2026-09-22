@@ -285,5 +285,17 @@ lifecycle with the spec. Catalog integrity is asserted in the driver.
 - `VOICEVOX_MBT_MODELS_DIR` (optional) points at real models; `VOICEVOX_DAEMON_BIN`
   overrides the daemon binary path. The test is `#[ignore]`d and run with
   `-- --ignored`.
-- Deferred: synthesize-level MBT (Phase 3 (B)) needs models + ONNX/OpenJTalk in
-  CI and a model cache; the daemon MBT job runs on an empty catalog for now.
+- Deferred to (B): synthesize-level MBT (below).
+
+### Phase 3 (B): synthesize
+
+`modeling/quint/DaemonSynthesize.qnt` + `mbt/tests/daemon_synthesize.rs` request
+synthesis from the real daemon (after reading the catalog to pick a valid style)
+and validate the returned WAV bytes. This needs the full VOICEVOX resource set
+(models + ONNX Runtime + OpenJTalk dictionary), so the test is `#[ignore]`d and
+run in the `quint-mbt-daemon-synthesize` CI job, which provisions resources with
+`voicevox-setup` into the default XDG location and caches them.
+
+Note: the (B) spec verifies with TLC and the driver compiles, but it was **not**
+executed in the development environment (no resources available); the CI job is
+the first end-to-end validation point.

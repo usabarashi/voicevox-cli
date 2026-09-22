@@ -209,3 +209,47 @@ jobs:
             cargo test --locked --manifest-path mbt/Cargo.toml --test daemon_ipc \
               -- --ignored --test-threads=1
           '
+
+  quint-mbt-daemon-synthesize:
+    name: Quint MBT (real daemon synthesize)
+    needs: changes
+    if: >-
+      needs.changes.outputs.mbt == 'true' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix with cache
+        uses: cachix/install-nix-action@616559265b40713947b9c190a8ff4b507b5df49b # v31.10.4
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Cache VOICEVOX resources in the default XDG location so the app finds
+      # them without extra environment variables.
+      - name: Cache VOICEVOX resources
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/voicevox
+          key: voicevox-resources-v1
+
+      - name: Provision VOICEVOX resources
+        run: |
+          nix build --accept-flake-config
+          if [ ! -d "$HOME/.local/share/voicevox/models" ]; then
+            echo "Downloading VOICEVOX resources (models + ONNX Runtime + dictionary)..."
+            echo y | ./result/bin/voicevox-setup
+          fi
+
+      - name: Run synthesize MBT
+        run: |
+          nix develop --accept-flake-config --command bash -c '
+            set -euo pipefail
+            cargo build --locked --bin voicevox-daemon
+            cargo test --locked --manifest-path mbt/Cargo.toml --test daemon_synthesize \
+              -- --ignored --test-threads=1
+          '

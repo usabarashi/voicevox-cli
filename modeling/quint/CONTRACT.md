@@ -371,6 +371,8 @@ WAV header check).
 | `mbt/tests/ipc_transport.rs` | `IPC.qnt` | `DaemonClient` against a fake Unix-socket server |
 | `mbt/tests/model_lifecycle.rs` | `ModelLifecycle.qnt` | `DaemonSynthesisExecutor` with a recording fake `ModelRuntime` |
 | `mbt/tests/daemon_serialization.rs` | `DaemonSerialization.qnt` | two concurrent real-daemon syntheses |
+| `mbt/tests/download.rs` | `Download.qnt` | `install_with_retries` with a scripted fake `ResourceInstaller` |
+| `mbt/tests/mcp_connect.rs` | `MCPServer.qnt` | `retry_with_final` with a counting fake `ConnectAttempt` |
 | `mbt/tests/target_resolution.rs` | `TargetResolution.qnt` | `resolve_target` + `build_model_default_style_map` |
 | `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesis.qnt` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` (real daemon) |
 
@@ -398,6 +400,11 @@ Mutation acceptance for the follow-up:
   `model_lifecycle_success` / `model_lifecycle_synth_failure` fail on `loaded`.
 - Breaking daemon-side serialization (deadlock or a dropped concurrent request)
   makes `daemon_serialization_concurrent` fail.
+- Changing the installer invocation budget (e.g. counting retries instead of
+  total invocations) makes `download_succeeds_third_attempt` /
+  `download_exhausts_attempts` fail.
+- Dropping the final connect, or changing the connect attempt budget, makes
+  `mcp_connect_budget_exhausted` fail.
 
 The `quint-mbt-explore` CI job runs the non-daemon MBT with a random seed
 (`QUINT_SEED` unset) on a nightly schedule, because the PR/push jobs pin the

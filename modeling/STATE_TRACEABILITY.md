@@ -21,14 +21,14 @@ See also:
 | ONNX runtime resource | `ONNXRuntime.qnt` | load/retry/fail transitions | `typeOK`, `loadTerminates` (temporal) |
 | Dictionary resource | `Dictionary.qnt` | load/retry/fail transitions | `typeOK`, `loadedStaysReady` (temporal) |
 | Socket binding/readiness | `Socket.qnt` | bind, ready, permission-denied, retry | `typeOK`, `bindingTerminates` (temporal) |
-| MCP client connect/playback | `MCPServer.qnt` | `startConnect`, `connectOk`, `connectRetry`, `finalConnectOk/Fail`, `connectFailed` (`MAX_ATTEMPTS = 10`), playback | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio` |
+| MCP client connect/playback | `MCPServer.qnt` | `startConnect`, `connectOk`, `connectRetry`, `finalConnectOk/Fail`, `connectFailed` (`MAX_ATTEMPTS = 10`), playback | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio`; connect budget via `mbt/tests/mcp_connect.rs` |
 | Synthesis retry/cancel loop (non-streaming) | `SynthesisRetry.qnt` | `Running/Attempting/Backoff/Done/Failed/Canceled`, `attempts` (started), `backoffs` (started) | `attemptsBounded`, `backoffsBounded`, `backoffAfterAttempt`, `eventuallyTerminal`, `cancelIsTerminal` |
 | Streaming synthesis (default MCP path) | `StreamingSynthesis.qnt` | connect (or connect failure) → split → per-segment synthesis → concatenate → play; cancel before/after connect and at any point before playback; fail | `segmentsBounded`, `playbackRequiresAllSegments`, `canceledImpliesNoPlayback` |
 | Daemon synthesis serialization (MBT) | `DaemonSerialization.qnt` | one worker (mutex), queued jobs, no cancel, no daemon-side retry | `atMostOneSynthesizing`, `workerMatchesSynthesis`, `eventuallyLeavesBusyWorker`; `mbt/tests/daemon_serialization.rs` (two concurrent real-daemon requests) |
 | IPC transport contract | `IPC.qnt` | request/response with encode/write/corrupt/mismatch/timeout/EOF/frame-limit/protocol-error | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError`, `eventuallyLeavesInFlight` |
 | Playback | `Playback.qnt` | launch/playing/stop/cancel/fail | `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` (about the `Canceled` error) |
 | Say command flow | `Say.qnt` | validate → synthesize → emit with daemon + playback; `Play/WriteFile/Silent` output, early failures | `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError`, `playbackFailureOnlyInPlayMode`, `outputFailureOnlyInFileMode`, `playingRequiresAudio`, `emittingUsesPlayMode` |
-| Download/install | `Download.qnt` | preparation failure, downloader invocations with cleanup, give-up (`MAX_ATTEMPTS = 3`) | `attemptsBounded`, `failedHasReason`, `exhaustedImpliesAttempts`, `preparationFailureMeansNoAttempts`, `terminates` (temporal) |
+| Download/install (MBT) | `Download.qnt` | preparation failure, downloader invocations with cleanup, give-up (`MAX_ATTEMPTS = 3`) | `attemptsBounded`, `failedHasReason`, `exhaustedImpliesAttempts`, `preparationFailureMeansNoAttempts`, `terminates` (temporal); retry loop via `mbt/tests/download.rs` |
 | Daemon model load/unload (MBT) | `ModelLifecycle.qnt` | load → synthesize → guard unload, incl. failure paths | `loadedImpliesPhase`, `eventuallyUnloaded` (temporal); `mbt/tests/model_lifecycle.rs` (production executor + recording fake runtime) |
 | Integrated end-to-end | `System.qnt` | startup resources + daemon (incl. loss) + client view/connect budget + environment-driven synthesis | `viewsAligned`, `clientConnectedImpliesDaemonReady`, `typeOK` |
 | Target resolution (MBT) | `TargetResolution.qnt` | style/model/no-style/unknown resolution, collision | `mbt/tests/target_resolution.rs` (Quint Connect) |
@@ -87,6 +87,8 @@ production code count as refinement evidence:
 | `mbt/tests/mcp_notification_parsing.rs` | `mcp_server::protocol::parse_notification_message` |
 | `mbt/tests/ipc_transport.rs` | `DaemonClient` against a fake Unix-socket server (no daemon) |
 | `mbt/tests/model_lifecycle.rs` | `DaemonSynthesisExecutor` + `SerializedSynthesisPolicy` with a recording fake `ModelRuntime` |
+| `mbt/tests/download.rs` | `install_with_retries` + `DownloadTracker` with a scripted fake `ResourceInstaller` |
+| `mbt/tests/mcp_connect.rs` | `retry_with_final` (behind `connect_with_retry`) with a counting fake `ConnectAttempt` |
 | `mbt/tests/daemon_ipc.rs` | `DaemonClient` over a real daemon |
 | `mbt/tests/daemon_synthesize.rs` | `DaemonClient::synthesize` over a real daemon |
 | `mbt/tests/daemon_serialization.rs` | two concurrent `DaemonClient::synthesize` over a real daemon |
@@ -106,8 +108,8 @@ streaming failure/cancel interleavings are verified in `StreamingSynthesis.qnt`
 but have no executable driver.
 
 The remaining Lifecycle models (`Daemon`, `StartupResources`, `ONNXRuntime`,
-`Dictionary`, `Socket`, `MCPServer`, `Say`, `System`, `Playback`, `Download`)
-are verified exhaustively but are **not** executable
+`Dictionary`, `Socket`, `Playback`, `Say`, `System`) are verified exhaustively
+but are **not** executable
 refinements; their correspondence is the prose above plus ordinary tests.
 
 ## Modelling boundary (not modelled)

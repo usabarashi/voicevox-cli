@@ -101,4 +101,34 @@ module Download {
 
   temporal terminates =
     weakFair(advance, vars) implies eventually(state == Done or state == Failed)
+
+  // ---- Fixed scenarios (installer MBT) ------------------------------------
+  //
+  // Terminal states of `install_with_retries`, used by
+  // `mbt/tests/download.rs`. The driver runs the production retry loop with a
+  // scripted fake installer and observes `(state, attempts, failure)`.
+
+  action hold = all {
+    state' = state,
+    attempts' = attempts,
+    failure' = failure,
+  }
+
+  action scenarioDoneFirst = all {
+    state' = Done,
+    attempts' = 1,
+    failure' = NoFailure,
+  }
+
+  action scenarioDoneThird = all {
+    state' = Done,
+    attempts' = MAX_ATTEMPTS,
+    failure' = NoFailure,
+  }
+
+  action scenarioExhausted = all {
+    state' = Failed,
+    attempts' = MAX_ATTEMPTS,
+    failure' = Exhausted,
+  }
 }

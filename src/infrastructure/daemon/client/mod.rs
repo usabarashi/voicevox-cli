@@ -1,7 +1,8 @@
 pub mod error;
 mod launcher;
 pub mod policy;
-mod transport;
+#[doc(hidden)]
+pub mod transport;
 
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;

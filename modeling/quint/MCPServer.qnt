@@ -281,4 +281,50 @@ module MCPServer {
   val connectedImpliesDaemonReady = clientState == Connected implies daemonState == DaemonReady
 
   val playingRequiresAudio = playbackState == Playing implies playbackAudioReady
+
+  // ---- Fixed scenarios (connect-budget MBT) -------------------------------
+  //
+  // Terminal connect states of `retry_with_final`, used by
+  // `mbt/tests/mcp_connect.rs`. The driver runs the production retry loop with a
+  // counting fake connector and maps the number of attempts made.
+
+  action hold = all {
+    daemonState' = daemonState,
+    clientState' = clientState,
+    attempt' = attempt,
+    playbackAudioReady' = playbackAudioReady,
+    playbackState' = playbackState,
+    playbackCancelRequested' = playbackCancelRequested,
+    playbackErrorKind' = playbackErrorKind,
+  }
+
+  action scenarioConnectedFirst = all {
+    daemonState' = DaemonReady,
+    clientState' = Connected,
+    attempt' = 0,
+    playbackAudioReady' = false,
+    playbackState' = PlaybackIdle,
+    playbackCancelRequested' = false,
+    playbackErrorKind' = NoPlaybackError,
+  }
+
+  action scenarioConnectedAfterRetries = all {
+    daemonState' = DaemonReady,
+    clientState' = Connected,
+    attempt' = 3,
+    playbackAudioReady' = false,
+    playbackState' = PlaybackIdle,
+    playbackCancelRequested' = false,
+    playbackErrorKind' = NoPlaybackError,
+  }
+
+  action scenarioConnectFailed = all {
+    daemonState' = DaemonDown,
+    clientState' = ConnectFailed,
+    attempt' = MAX_ATTEMPTS,
+    playbackAudioReady' = false,
+    playbackState' = PlaybackIdle,
+    playbackCancelRequested' = false,
+    playbackErrorKind' = NoPlaybackError,
+  }
 }

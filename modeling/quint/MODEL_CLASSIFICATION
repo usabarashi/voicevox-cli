@@ -23,14 +23,14 @@ DaemonIpc mbt
 DaemonSynthesize mbt
 DaemonSerialization mbt
 ModelLifecycle mbt
+Download mbt
+MCPServer mbt
 StreamingSynthesis mbt
 Daemon verified-only
 StartupResources verified-only
 ONNXRuntime verified-only
 Dictionary verified-only
 Socket verified-only
-MCPServer verified-only
 Playback verified-only
 Say verified-only
-Download verified-only
 System verified-only

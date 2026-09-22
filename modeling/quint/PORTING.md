@@ -39,7 +39,7 @@ different property.
 | `StartupResources` | `TypeOK`, `DaemonReadyRequiresDownloads`, `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket` | preserve | `StartupResources.qnt` (done, flattened) |
 | `MCPServer` | `TypeOK`, `ConnectedImpliesDaemonReady`, `DegradedImpliesNotConnected`, `PlayingRequiresAudio` | preserve | `MCPServer.qnt` (done, flattened) |
 | `Say` | `TypeOK`, `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`, `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode` (+ `PlayingRequiresAudio`, `EmittingUsesPlayMode`) | preserve (flattened) | `Say.qnt` (done) |
-| `System` | `TypeOK`, `ViewsAligned`, `ClientConnectedImpliesDaemonReady`, `SynthesisRunningImpliesDaemonReady` | preserve (adapt INSTANCE to `SynthesisRetry`) | `System.qnt` (pending; see "System adaptation") |
+| `System` | `TypeOK`, `ViewsAligned`, `ClientConnectedImpliesDaemonReady`, `SynthesisRunningImpliesDaemonReady` | preserve (adapt INSTANCE to `SynthesisRetry`) | `System.qnt` (done) |
 | `Synthesis` | `TypeOK` | replace | `SynthesisRetry.qnt` (Phase 1) |
 | `Synthesis` | `TerminalStates` (`retryCount ≤ MAX_RETRY`) | replace | `attemptsBounded` / `backoffsBounded` (Phase 1) |
 | `Synthesis` | `SynthesisNeedsDaemon` | retract | `daemonReady` gating dropped; daemon is environment (Phase 1 contract change 3) |
@@ -55,14 +55,30 @@ different property.
 `System.tla` INSTANCEs `Synthesis` with `synthState`, `retryCount`,
 `errorKind`, `cancelSource`, `daemonReady`. `SynthesisRetry.qnt` exposes
 `outcome`, `attempts`, `backoffs` and no daemon gating. The ported `System.qnt`
-must:
+does the following:
 
-- synchronize `clientDaemonState` / `synthDaemonReady` from `fsDaemonState`
-  (unchanged), and
-- drive `SynthesisRetry` without `daemonReady` gating; `SynthesisRunningImpliesDaemonReady`
-  becomes vacuous for the refined model and is replaced by "an attempt only
-  starts while the environment is ready", which is an environment assumption,
-  not an invariant. Record the change.
+- `viewsAligned` reduces to the client view (`clientDaemonState`) derived from
+  `daemonState`; the old `synthDaemonReady` view is gone.
+- `SynthesisRunningImpliesDaemonReady` becomes: an attempt only starts while the
+  daemon is ready (`enqueue`/`backoffDone` gated on the client daemon view), and
+  going not-ready cancels a `Running`/`Backoff` synthesis (`viewsForDaemon`).
+- The four startup resources are encoded as an indexed map
+  (`resources: int -> LoadState`, `retries: int -> int`, indices
+  0=runtime, 1=dictionary, 2=socket, 3=model) using `nondet` over the index. This
+  preserves `resourceReady` and `DaemonReadyRequiresSocket` while keeping the
+  module compact.
+- Playback transitions are omitted: they are verified in `MCPServer.qnt` and do
+  not affect the invariants checked by `System.integration.cfg`.
+
+`System.qnt` verification explores ~85k distinct states with the TLC backend.
+
+## Exit criteria for Phase 2
+
+Porting is complete: every preserved property has a Quint equivalent that
+verifies green with `quint verify --backend=tlc`. The remaining Phase 2 step is
+the removal of the handwritten `modeling/tla`, `modeling/cfg`, the
+`tla-model-check` job, and `tlaplus` from the devShell — to be done only after
+this is reviewed.
 
 ## Scenario mapping (cfg → Quint)
 

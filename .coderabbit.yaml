@@ -31,4 +31,4 @@ knowledge_base:
   code_guidelines:
     enabled: true
     filePatterns:
-      - "CLAUDE.md"
+      - "AGENTS.md"

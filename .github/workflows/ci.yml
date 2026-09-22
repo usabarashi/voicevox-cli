@@ -239,7 +239,8 @@ jobs:
           key: voicevox-resources-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'scripts/voicevox-setup.sh') }}
 
       # Run setup every time: the script reports which resources are missing and
-      # downloads only those, so it also self-heals a stale/partial cache.
+      # downloads only those, so it re-checks the cache (by directory existence
+      # and `.vvm` count) rather than trusting it blindly.
       - name: Provision VOICEVOX resources
         run: |
           nix build --accept-flake-config

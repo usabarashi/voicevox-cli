@@ -89,7 +89,10 @@ module DaemonSynthesize {
     synthesized' = true,
   }
 
+  // Stutter is only enabled once a synthesis has happened, so the scenario
+  // cannot terminate before reaching `synthesize`.
   action scenarioStutter = all {
+    synthesized,
     connected' = connected,
     catalogRead' = catalogRead,
     synthesized' = synthesized,

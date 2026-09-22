@@ -101,11 +101,17 @@ contracts above*, not verbatim porting.
 1. **Counting and simultaneity.**
    - At most 3 attempt *starts* (initial 1 + up to 2 retries); at most 2
      backoff *starts*; retries only for retryable errors.
-   - Cancellation is evaluated at checkpoints (before an attempt, during
-     backoff, during the in-flight wait) and **takes priority** when both a
-     cancel and a completion are ready at the same poll instant.
-   - Implementation: use a biased select with the cancel branch first; do not
-     apply a blanket bias to every `select!`.
+   - Cancellation is evaluated before each attempt and while waiting for a
+     backoff. During the backoff wait, a **delivered** cancellation takes
+     priority and returns without waiting out the timer.
+   - Scope clarification: cancellation priority is **not** guaranteed for the
+     in-flight synthesis wait inside `synthesize_bytes_via_daemon_cancellable`
+     (`flow.rs`), whose `select!` is unbiased; when cancellation and completion
+     are ready at the same instant, either outcome is allowed there. See "Known
+     modelling limitations".
+   - Implementation: the backoff wait checks an already-delivered cancellation
+     first, then races with a biased select (cancel branch first); do not apply a
+     blanket bias to every `select!`.
 2. **Injected inputs / observed outputs.**
    - Inject: cancel timing (before attempt / during backoff / during the
      in-flight wait); the attempt result sequence (Ok / retryable error /
@@ -308,10 +314,11 @@ the first end-to-end validation point.
   backoff *starts*. Align these before wiring the model to a retry-loop MBT.
 - Cancellation priority (cancel over progress) is an orchestration concern; the
   model has no "cancel requested" state and does not assert it. The production
-  backoff wait enforces it with `biased;`; the in-flight wait inside
-  `synthesize_bytes_via_daemon_cancellable` (`flow.rs`) is still an unbiased
-  `select!`, so the CONTRACT's in-flight cancel-priority claim is not yet
-  guaranteed end to end.
+  backoff wait checks an already-delivered cancellation first and then uses a
+  biased select, so backoff cancel priority is guaranteed; the in-flight wait
+  inside `synthesize_bytes_via_daemon_cancellable` (`flow.rs`) is still an
+  unbiased `select!`, so in-flight cancel priority is **not** guaranteed (see the
+  observation contract).
 - `System.qnt` encodes the four startup resources as an indexed map, so the
   socket resource is not gated on `daemonState == Starting` (unlike
   `StartupResources.tla`'s `SocketStep`). This adds conservative transitions for

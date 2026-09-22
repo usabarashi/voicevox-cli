@@ -8,7 +8,9 @@
 // Contract (see CONTRACT.md):
 //   - at most MAX_RETRIES retries after the initial attempt,
 //   - backoff is entered only between attempts,
-//   - cancellation is accepted at any checkpoint and takes priority,
+//   - cancellation is modelled as an enabled action from a pending state; this
+//     model does not assert that it wins over progress (priority is enforced by
+//     the orchestration, see CONTRACT.md),
 //   - under weak fairness of the progress actions, the loop terminates.
 //
 // The previous TLA+ model is `modeling/tla/Synthesis.tla`. Differences that
@@ -27,7 +29,7 @@ module SynthesisRetry {
   // Number of synthesis attempts started.
   var attempts: int
 
-  // Number of backoffs entered.
+  // Number of backoffs completed (incremented when a backoff finishes).
   var backoffs: int
 
   action init = all {

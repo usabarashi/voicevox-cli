@@ -71,7 +71,10 @@ module DaemonIpc {
     catalogRead' = true,
   }
 
+  // Stutter is only enabled once the catalog has been read, so the scenario
+  // cannot terminate before reaching `listSpeakers`.
   action scenarioStutter = all {
+    catalogRead,
     connected' = connected,
     catalogRead' = catalogRead,
   }

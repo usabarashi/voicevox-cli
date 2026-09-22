@@ -348,6 +348,12 @@ impl BackoffWaiter for RealBackoffWaiter {
     ) -> WaitOutcome {
         match cancel_rx {
             Some(receiver) => {
+                // A cancellation that is already delivered short-circuits the
+                // wait. Cancellation arriving while waiting is preferred via the
+                // biased select below.
+                if let Some(reason) = try_take_cancellation(receiver) {
+                    return WaitOutcome::Cancelled(reason);
+                }
                 tokio::select! {
                     biased;
                     reason = receiver => WaitOutcome::Cancelled(reason.unwrap_or_default()),
@@ -634,7 +640,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn real_waiter_prefers_cancellation_over_the_timer() {
+    async fn real_waiter_returns_delivered_cancellation_without_waiting() {
+        // A cancellation delivered before the wait is returned immediately,
+        // without waiting out the (long) timer.
         let (cancel_tx, cancel_rx) = oneshot::channel::<String>();
         let _ = cancel_tx.send("ESC pressed".to_string());
         let mut cancel_rx = Some(cancel_rx);

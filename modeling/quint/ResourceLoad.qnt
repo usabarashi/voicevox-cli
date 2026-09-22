@@ -55,7 +55,7 @@ module ResourceLoad {
     loadFail,
   }
 
-  val vars = (state, state)
+  val vars = state
 
   temporal loadTerminates =
     weakFair(advance, vars) implies eventually(state == Ready or state == Failed)

@@ -80,13 +80,21 @@ run_expect_violation() {
 check_constant_consistency() {
   local file="modeling/quint/EXPECTED_CONSTANTS"
   echo "::group::constant consistency"
-  local kind spec name value
-  while read -r kind spec name value; do
+  local kind a b c
+  while IFS='|' read -r kind a b c; do
     case "${kind}" in
       ""|\#*) continue ;;
       spec)
-        if ! grep -qE "pure val ${name} = ${value}([^0-9]|$)" "modeling/quint/${spec}.qnt"; then
-          echo "FAIL: ${spec}.qnt does not declare 'pure val ${name} = ${value}'" >&2
+        # spec|<Spec>|<Const>|<Value>
+        if ! grep -qE "pure val ${b} = ${c}([^0-9]|$)" "modeling/quint/${a}.qnt"; then
+          echo "FAIL: ${a}.qnt does not declare 'pure val ${b} = ${c}'" >&2
+          failures=$((failures + 1))
+        fi
+        ;;
+      prod)
+        # prod|<path>|<exact substring>
+        if ! grep -qF "${b}" "${a}"; then
+          echo "FAIL: ${a} does not contain '${b}'" >&2
           failures=$((failures + 1))
         fi
         ;;

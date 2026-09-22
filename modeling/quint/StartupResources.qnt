@@ -215,6 +215,22 @@ module StartupResources {
     daemonState' = daemonState,
   }
 
+  // The socket file is removed when the daemon is not running (recovered from
+  // the retired `Socket.qnt`). Guarding on a non-ready daemon keeps
+  // `daemonReadyRequiresSocket` true.
+  action socketDrop = all {
+    daemonState == Down or daemonState == DaemonFailed,
+    socketState == SocketReady,
+    socketState' = SocketAbsent,
+    runtimeState' = runtimeState,
+    runtimeRetry' = runtimeRetry,
+    dictState' = dictState,
+    dictRetry' = dictRetry,
+    modelState' = modelState,
+    modelRetry' = modelRetry,
+    daemonState' = daemonState,
+  }
+
   // ---- Model download ----------------------------------------------------
 
   action startModelDownload = all {
@@ -348,6 +364,7 @@ module StartupResources {
     startBind,
     bindOk,
     bindPermissionDenied,
+    socketDrop,
     startModelDownload,
     modelDownloadOk,
     modelDownloadFail,

@@ -17,7 +17,7 @@ See also:
 | Concern | Quint module | Core states/actions | Checked by |
 |---|---|---|---|
 | Daemon lifecycle | `Daemon.qnt` | `DaemonDown/Starting/AlreadyRunning/Ready/Recovering`, recovery transitions (`MAX_RETRY = 10`) | `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded`, `typeOK` |
-| Startup resources / socket | `StartupResources.qnt` | runtime/dictionary/socket/model readiness + one-shot socket bind + daemon bootstrap (`MAX_RETRY = 3`) | `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket`, `typeOK`, `bindingTerminates`, `permissionDeniedIsTerminal` (temporal) |
+| Startup resources / socket | `StartupResources.qnt` | runtime/dictionary/socket/model readiness + one-shot socket bind/drop + daemon bootstrap (`MAX_RETRY = 3`) | `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket`, `typeOK`, `bindingTerminates`, `permissionDeniedIsTerminal` (temporal) |
 | Startup safety (composed) | `StartupSafety.qnt` | resources readiness × socket scenario (absent/stale/live) × start ordering | `readyRequiresResources`, `readyRequiresSocketReady`, `startedImpliesNoLive`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure`, `terminates` (temporal) |
 | Startup resource load | `ResourceLoad.qnt` | one-shot load of ONNX Runtime / OpenJTalk dictionary (production has no load retry; the installer retries) | `loadTerminates`, `loadedStaysReady` (temporal) |
 | MCP client connect/playback | `MCPServer.qnt` | `startConnect`, `connectOk`, `connectRetry`, `finalConnectOk/Fail`, `connectFailed` (`MAX_ATTEMPTS = 10`), playback | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio`; connect budget via `mbt/tests/mcp_connect.rs` |
@@ -79,14 +79,15 @@ together; their integration is a reviewed contract, listed here.
 
 What *is* machine-checked:
 
-- **Shared constants** are asserted by `verify.sh` from
-  `modeling/quint/EXPECTED_CONSTANTS`, so a value changed in one spec but not the
-  others (e.g. the connect budget) fails the gate. That file also records the
-  production constant each value maps to.
-- **Attempt vs retry semantics** are not interchangeable: `MAX_RETRY` counts
-  retries (attempts = 1 + `MAX_RETRY`, e.g. the installer-side specs), while
-  `MAX_ATTEMPTS` counts total attempts (`Download.qnt`, `MCPServer.qnt`). Mixing
-  them is an off-by-one hazard; see the note in `EXPECTED_CONSTANTS`.
+- **Shared constants** are asserted on **both sides** by `verify.sh` from
+  `modeling/quint/EXPECTED_CONSTANTS`: each `spec|...` line checks the spec's
+  `pure val`, and each `prod|...` line checks the exact production declaration
+  substring. Drift on either side (a model constant or a production constant)
+  fails the gate.
+- **Attempt vs retry semantics** are not interchangeable: `SynthesisRetry`
+  `MAX_RETRIES` counts retries (attempts = 1 + `MAX_RETRIES`), while
+  `Download.MAX_ATTEMPTS` and `StartupResources.MAX_RETRY` bound total attempts.
+  Mixing them is an off-by-one hazard; see the note in `EXPECTED_CONSTANTS`.
 - **Every spec is classified** (`MODEL_CLASSIFICATION`) as `mbt` or
   `verified-only`; `verify.sh` rejects an unclassified spec or an `mbt` spec with
   no driver.

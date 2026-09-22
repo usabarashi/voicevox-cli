@@ -184,12 +184,6 @@ Explicitly out of scope, with the reason:
   MBT-checked in `ipc_transport.rs`.
 - **Daemon-side retry**: the daemon returns an error; retries belong to the
   client (`SynthesisRetry.qnt`).
-- **Daemon startup rejection without models**
-  (`daemon_cli::ensure_startup_preconditions`): the guard returns
-  `NoModelsAvailable` (exit code 4) when `has_available_models` is false. Its
-  predicate is the `ModelPresence.qnt` state and is MBT-checked there; the
-  guard's control flow and exit-code mapping (including the detached-parent
-  propagation) have no executable driver.
 - **Clock/time**: timeout values (30 s response, backoff delays) are modelled as
   inputs, not as real time.
 - **Kani**: numeric proofs (rate bounds, style-id bounds, WAV chunk arithmetic)

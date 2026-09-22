@@ -311,22 +311,65 @@ The (B) spec verifies with TLC, and the synthesize MBT was validated locally
 against provisioned resources (real daemon -> `listSpeakers` -> `synthesize` ->
 WAV header check).
 
-### Known modelling limitations
+### Remaining modelling limitations
 
-- `SynthesisRetry.qnt` counts `backoffs` when a backoff *completes*
-  (`backoffDone`), while the production loop's `backoffs_started` counts when a
-  backoff *starts*. Align these before wiring the model to a retry-loop MBT.
 - Cancellation priority (cancel over progress) is an orchestration concern; the
-  model has no "cancel requested" state and does not assert it. The production
-  backoff wait checks an already-delivered cancellation first and then uses a
-  biased select, so backoff cancel priority is guaranteed; the in-flight wait
-  inside `synthesize_bytes_via_daemon_cancellable` (`flow.rs`) is still an
+  model has no "cancel requested" state and does not assert priority. The
+  production backoff wait checks an already-delivered cancellation first and then
+  uses a biased select, so backoff cancel priority is guaranteed; the in-flight
+  wait inside `synthesize_bytes_via_daemon_cancellable` (`flow.rs`) is still an
   unbiased `select!`, so in-flight cancel priority is **not** guaranteed (see the
-  observation contract).
+  observation contract). The model does assert `cancelIsTerminal` (cancellation
+  is a terminal outcome) and counts an in-flight attempt.
 - `System.qnt` encodes the four startup resources as an indexed map, so the
   socket resource is not gated on `daemonState == Starting` (unlike
-  `StartupResources.tla`'s `SocketStep`). This adds conservative transitions for
-  the safety checks, but it is not a strict 1:1 port.
-- `System.qnt` has no action that moves the daemon from `DaemonReady` back to a
-  non-ready state, so the "cancel an in-flight synthesis on daemon loss" branch
-  is unreachable; it is not an added guarantee.
+  `StartupResources.tla`'s `SocketStep`). This is a deliberate conservative
+  abstraction for the safety checks, not a strict 1:1 port.
+- Playback backends and MCP line framing are outside every model; see the
+  "Modelling boundary" section in `STATE_TRACEABILITY.md`.
+
+### Resolved since the first draft (see PORTING.md "Post-migration revisions")
+
+- `backoffs` counting now matches `backoffs_started` (counted at backoff start)
+  in both `SynthesisRetry.qnt` and `System.qnt`.
+- `SynthesisRetry.qnt` has an in-flight `Attempting` state, a `cancelIsTerminal`
+  temporal property, and a retry-arithmetic MBT (`mbt/tests/synthesis_retry.rs`)
+  that uses the production `RetryPolicy` and `MCP_DAEMON_MAX_RETRIES`. The
+  orchestration loop itself remains covered by the in-file fake-seam tests.
+- `System.qnt` has `daemonLost` and `synthFatalFail`, and **retracts** its
+  synthesis-readiness gating (`synthRunningImpliesDaemonReady` /
+  `synthBackoffImpliesDaemonReady`): production auto-starts the daemon, so
+  synthesis is environment-driven and daemon loss is not a cancellation.
+  `daemonLost` resets only the client view and the connect budget.
+- Losing a connection resets the connect budget in `MCPServer.qnt` and
+  `System.qnt` (a new `connect_with_retry` episode starts at 0).
+- The default streaming path is modelled in `StreamingSynthesis.qnt` (including
+  connect failure and cancellation before connection) and the successful
+  pipeline is MBT-checked against a real daemon.
+- `SynthesisParallel.qnt` (cancel releases the worker, daemon-side retry) was
+  replaced by `DaemonSerialization.qnt`, matching the serialized daemon mutex.
+- `MCPServer.qnt` tracks the production connect budget (10 + final connect) and
+  no longer models a persistent `Degraded` state.
+- `Download.qnt` models preparation failure separately from retry exhaustion and
+  counts downloader invocations; `Daemon.qnt` recovery failures are
+  budget-guarded so the retry bound is operational.
+
+## Additional MBT (follow-up)
+
+| Driver | Spec | Production entry point |
+|---|---|---|
+| `mbt/tests/synthesis_retry.rs` | `SynthesisRetry.qnt` | `RetryPolicy::after_attempt` + `MCP_DAEMON_MAX_RETRIES` |
+| `mbt/tests/mcp_request_parsing.rs` | `McpRequestParsing.qnt` | `parse_request_message` |
+| `mbt/tests/target_resolution.rs` | `TargetResolution.qnt` | `resolve_target` + `build_model_default_style_map` |
+| `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesis.qnt` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` (real daemon) |
+
+Mutation acceptance for the follow-up:
+
+- `MCP_DAEMON_MAX_RETRIES` 2 → 1 makes `synthesis_retry_simulation` fail.
+- `.min` → `.max` in `build_model_default_style_map` makes
+  `target_resolution_model_default_style` fail.
+- A wrong `tools/call` argument rule makes `mcp_request_parsing_bad_arguments`
+  fail.
+- Removing `#[serde(tag = "tag", content = "value")]` from the streaming
+  driver's `Phase` makes `decode_tests::state_decodes_from_itf_encoding` fail
+  (guards the ignored, real-daemon streaming suite without a daemon).

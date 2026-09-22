@@ -1,7 +1,11 @@
-// Ported from `modeling/tla/Socket.tla` (Phase 2).
+// Ported from `modeling/tla/Socket.tla` (Phase 2), revised.
 //
-// Minimal socket lifecycle for the daemon IPC endpoint.
-// Preserved properties: type bounds and `ReadyIsBounded`.
+// Minimal socket lifecycle for the daemon IPC endpoint. Re-binding after a
+// permission denial is only possible through the budget-guarded `retryBind`.
+//
+// The historical `readyIsBounded` invariant was equivalent to `typeOK`; it is
+// replaced by the temporal property `bindingTerminates` (a bind attempt does
+// not get stuck in `Binding`).
 
 module Socket {
   pure val MAX_RETRY = 3
@@ -17,7 +21,7 @@ module Socket {
   }
 
   action startBind = all {
-    state == SocketAbsent or state == PermissionDenied,
+    state == SocketAbsent,
     state' = Binding,
     retryCount' = retryCount,
   }
@@ -62,5 +66,16 @@ module Socket {
   }
 
   val typeOK = retryCount >= 0 and retryCount <= MAX_RETRY
-  val readyIsBounded = state == SocketReady implies retryCount <= MAX_RETRY
+
+  action advance = any {
+    bindOk,
+    bindPermissionDenied,
+  }
+
+  val vars = (state, retryCount)
+
+  // A bind attempt always leaves `Binding` under weak fairness.
+  temporal bindingTerminates =
+    weakFair(advance, vars) implies
+      always(state == Binding implies eventually(state != Binding))
 }

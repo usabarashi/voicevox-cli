@@ -5,12 +5,14 @@
 //
 // The TLA+ module uses `INSTANCE` composition with a shared `MAX_RETRY`. The
 // TLC verification backend cannot assign constants through instances, so this
-// port is flattened with a concrete `pure val MAX_RETRY` (the cfg value 2).
+// port is flattened with a concrete `pure val MAX_RETRY`. The value mirrors the
+// production resource installer `download_missing_resources` (`max_retries = 3`
+// in `src/infrastructure/download/install.rs`).
 // Preserved properties: `DaemonReadyRequiresDownloads`,
 // `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket`.
 
 module StartupResources {
-  pure val MAX_RETRY = 2
+  pure val MAX_RETRY = 3
 
   type LoadState = Missing | Loading | Ready | Failed
   type SocketPhase = SocketAbsent | Binding | SocketReady | PermissionDenied
@@ -44,7 +46,9 @@ module StartupResources {
   // ---- ONNX Runtime ------------------------------------------------------
 
   action beginLoadRuntime = all {
-    runtimeState == Missing or runtimeState == Failed,
+    // First load only; re-entry after failure goes through `retryLoadRuntime`,
+    // which enforces the retry budget.
+    runtimeState == Missing,
     runtimeState' = Loading,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -113,7 +117,8 @@ module StartupResources {
   // ---- Dictionary --------------------------------------------------------
 
   action beginLoadDict = all {
-    dictState == Missing or dictState == Failed,
+    // First load only; re-entry after failure goes through `retryLoadDict`.
+    dictState == Missing,
     dictState' = Loading,
     dictRetry' = dictRetry,
     runtimeState' = runtimeState,
@@ -183,7 +188,8 @@ module StartupResources {
 
   action startBind = all {
     daemonState == DaemonStarting,
-    socketState == SocketAbsent or socketState == PermissionDenied,
+    // First bind only; re-entry after permission denial goes through `retryBind`.
+    socketState == SocketAbsent,
     socketState' = Binding,
     socketRetry' = socketRetry,
     runtimeState' = runtimeState,
@@ -241,7 +247,9 @@ module StartupResources {
   // ---- Model download ----------------------------------------------------
 
   action startModelDownload = all {
-    modelState == Missing or modelState == Failed,
+    // First download only; re-entry after failure is not modelled as a retry
+    // path here (production retries the whole installer, modelled by MAX_RETRY).
+    modelState == Missing,
     modelState' = Loading,
     modelRetry' = modelRetry,
     runtimeState' = runtimeState,
@@ -270,6 +278,20 @@ module StartupResources {
     modelState == Loading,
     modelState' = Failed,
     modelRetry' = if (modelRetry < MAX_RETRY) modelRetry + 1 else modelRetry,
+    runtimeState' = runtimeState,
+    runtimeRetry' = runtimeRetry,
+    dictState' = dictState,
+    dictRetry' = dictRetry,
+    socketState' = socketState,
+    socketRetry' = socketRetry,
+    daemonState' = daemonState,
+  }
+
+  action retryModelDownload = all {
+    modelState == Failed,
+    modelRetry < MAX_RETRY,
+    modelState' = Loading,
+    modelRetry' = modelRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -365,6 +387,7 @@ module StartupResources {
     startModelDownload,
     modelDownloadOk,
     modelDownloadFail,
+    retryModelDownload,
     startDaemon,
     daemonBootOk,
     daemonBootFail,

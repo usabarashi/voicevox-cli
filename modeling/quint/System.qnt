@@ -1,30 +1,40 @@
-// Ported from `modeling/tla/System.tla` (Phase 2).
+// Ported from `modeling/tla/System.tla` (Phase 2), revised.
 //
 // Top-level integrated model: startup resources + daemon + client + refined
 // Synthesis, with the cross-view synchronization.
 //
 // Adaptations (see PORTING.md):
 // - `Synthesis` is the refined `SynthesisRetry` contract: `synthOutcome`
-//   (Idle/Running/Backoff/Done/Failed/Canceled), `synthAttempts`, `synthBackoffs`,
-//   and no `daemonReady`/`cancelSource`/`errorKind`.
-// - `SynthesisRunningImpliesDaemonReady` becomes: an attempt only starts while
-//   the daemon is ready, and going not-ready cancels a Running/Backoff synthesis.
+//   (Idle/Running/Backoff/Done/Failed/Canceled), `synthAttempts`, `synthBackoffs`.
+// - **Synthesis does not require a ready daemon.** Production auto-starts the
+//   daemon (`connect_daemon_client_auto_start`) and treats a not-ready daemon as
+//   a retryable attempt failure, not as a cancellation. The old
+//   `SynthesisRunningImpliesDaemonReady` / `SynthesisNeedsDaemon` gating is
+//   therefore **retracted** (consistent with the Phase 1 contract change 3); a
+//   daemon-loss transition no longer cancels a `Running`/`Backoff` synthesis.
+// - A non-retryable (`fatal`) attempt outcome fails immediately from any attempt
+//   (`synthFatalFail`).
+// - `synthBackoffs` is counted when a backoff **starts** (`synthFailRetry`),
+//   matching production `backoffs_started` and `SynthesisRetry.qnt`.
 // - The four startup resources are encoded as a map indexed 0..3
-//   (0=runtime, 1=dictionary, 2=socket, 3=model) with the same lifecycle; this
-//   preserves `resourceReady` and the readiness-implies-socket invariant while
-//   keeping the module compact.
-// - Playback transitions are omitted: they are verified in `MCPServer.qnt` and
-//   do not affect the invariants checked by `System.integration.cfg`.
+//   (0=runtime, 1=dictionary, 2=socket, 3=model). A resource that exhausts its
+//   retry budget is terminal (re-entry is only through the budget-guarded
+//   `retryLoad`).
+// - Connect uses the production budget `MAX_CONNECT_ATTEMPTS` (10) plus one
+//   final connect, and has no persistent "degraded" service mode. Losing a
+//   connection ends the episode, so the budget resets for the next one.
+// - Playback transitions are omitted: they are verified in `MCPServer.qnt`.
 
 module System {
-  pure val MAX_RETRY = 2
-  pure val MAX_ATTEMPTS = 3
+  pure val MAX_RESOURCE_RETRIES = 3
+  pure val MAX_SYNTH_RETRIES = 2
+  pure val MAX_SYNTH_ATTEMPTS = MAX_SYNTH_RETRIES + 1
+  pure val MAX_CONNECT_ATTEMPTS = 10
 
   type DaemonPhase = Down | DaemonStarting | DaemonReady | DaemonFailed
   type LoadState = Missing | Loading | Ready | Failed
   type ViewDaemon = ViewDaemonDown | ViewDaemonReady
-  type ClientState = ClientIdle | Connecting | Connected
-  type ServiceMode = Normal | Degraded
+  type ClientState = ClientIdle | Connecting | Connected | ClientFailed
   type SynthOutcome = SynthIdle | Running | Backoff | Done | SynthFailed | Canceled
 
   var daemonState: DaemonPhase
@@ -33,7 +43,6 @@ module System {
   var clientDaemonState: ViewDaemon
   var clientState: ClientState
   var clientAttempt: int
-  var clientServiceMode: ServiceMode
   var synthOutcome: SynthOutcome
   var synthAttempts: int
   var synthBackoffs: int
@@ -48,7 +57,6 @@ module System {
     clientDaemonState' = ViewDaemonDown,
     clientState' = ClientIdle,
     clientAttempt' = 0,
-    clientServiceMode' = Normal,
     synthOutcome' = SynthIdle,
     synthAttempts' = 0,
     synthBackoffs' = 0,
@@ -69,7 +77,6 @@ module System {
     clientDaemonState' = clientDaemonState,
     clientState' = clientState,
     clientAttempt' = clientAttempt,
-    clientServiceMode' = clientServiceMode,
   }
 
   action frameSynth = all {
@@ -78,15 +85,15 @@ module System {
     synthBackoffs' = synthBackoffs,
   }
 
-  /// Derives the client and synthesis views from a new daemon state. Follows
-  /// `SyncViewsAndDependentStates`: a non-ready daemon resets a connected
-  /// client to idle/degraded and cancels an in-flight synthesis.
+  /// Updates the client's view of daemon readiness. A connection lost while
+  /// connected resets the client to idle and **resets the connect budget**: the
+  /// next request calls `connect_with_retry` again from the start. Synthesis is
+  /// not affected (the daemon is an environment that the attempt auto-starts).
   action viewsForDaemon(newDaemon) = all {
     clientDaemonState' = if (newDaemon == DaemonReady) ViewDaemonReady else ViewDaemonDown,
     clientState' = if (newDaemon != DaemonReady and clientState == Connected) ClientIdle else clientState,
-    clientServiceMode' = if (newDaemon != DaemonReady and clientState == Connected) Degraded else clientServiceMode,
-    synthOutcome' = if (newDaemon != DaemonReady and (synthOutcome == Running or synthOutcome == Backoff)) Canceled else synthOutcome,
-    clientAttempt' = clientAttempt,
+    clientAttempt' = if (newDaemon != DaemonReady and clientState == Connected) 0 else clientAttempt,
+    synthOutcome' = synthOutcome,
     synthAttempts' = synthAttempts,
     synthBackoffs' = synthBackoffs,
   }
@@ -96,7 +103,9 @@ module System {
   action beginLoad = all {
     nondet i = Set(0, 1, 2, 3).oneOf()
     all {
-      resources.get(i) == Missing or resources.get(i) == Failed,
+      // First load only. Re-entry after a failure goes through `retryLoad`,
+      // which enforces the retry budget.
+      resources.get(i) == Missing,
       resources' = resources.set(i, Loading),
       retries' = retries,
       frameDaemon, frameClient, frameSynth,
@@ -118,7 +127,7 @@ module System {
     all {
       resources.get(i) == Loading,
       resources' = resources.set(i, Failed),
-      retries' = retries.set(i, if (retries.get(i) < MAX_RETRY) retries.get(i) + 1 else retries.get(i)),
+      retries' = retries.set(i, if (retries.get(i) < MAX_RESOURCE_RETRIES) retries.get(i) + 1 else retries.get(i)),
       frameDaemon, frameClient, frameSynth,
     },
   }
@@ -127,7 +136,7 @@ module System {
     nondet i = Set(0, 1, 2, 3).oneOf()
     all {
       resources.get(i) == Failed,
-      retries.get(i) < MAX_RETRY,
+      retries.get(i) < MAX_RESOURCE_RETRIES,
       resources' = resources.set(i, Loading),
       retries' = retries,
       frameDaemon, frameClient, frameSynth,
@@ -162,6 +171,16 @@ module System {
     viewsForDaemon(DaemonFailed),
   }
 
+  // The daemon is lost after having been ready. This resets the client view and
+  // the connect budget, but does not cancel an in-flight synthesis.
+  action daemonLost = all {
+    daemonState == DaemonReady,
+    daemonState' = DaemonFailed,
+    resources' = resources,
+    retries' = retries,
+    viewsForDaemon(DaemonFailed),
+  }
+
   action resetDaemon = all {
     daemonState == DaemonFailed,
     daemonState' = Down,
@@ -170,22 +189,25 @@ module System {
     viewsForDaemon(Down),
   }
 
-  // ---- Client connect / degraded -----------------------------------------
+  // ---- Client connect ----------------------------------------------------
+  //
+  // Mirrors `transport::connect_with_retry`: up to MAX_CONNECT_ATTEMPTS loop
+  // connects, then one final connect without backoff. A failed episode ends in
+  // `ClientFailed`; production stores no persistent degraded mode.
 
   action startConnect = all {
     clientState == ClientIdle,
     clientState' = Connecting,
     clientDaemonState' = clientDaemonState,
     clientAttempt' = clientAttempt,
-    clientServiceMode' = clientServiceMode,
     frameDaemon, frameResources, frameSynth,
   }
 
   action connectOk = all {
     clientState == Connecting,
     clientDaemonState == ViewDaemonReady,
+    clientAttempt < MAX_CONNECT_ATTEMPTS,
     clientState' = Connected,
-    clientServiceMode' = Normal,
     clientDaemonState' = clientDaemonState,
     clientAttempt' = clientAttempt,
     frameDaemon, frameResources, frameSynth,
@@ -194,40 +216,48 @@ module System {
   action connectRetry = all {
     clientState == Connecting,
     clientDaemonState == ViewDaemonDown,
-    clientAttempt < MAX_ATTEMPTS,
+    clientAttempt < MAX_CONNECT_ATTEMPTS,
     clientState' = ClientIdle,
     clientAttempt' = clientAttempt + 1,
     clientDaemonState' = clientDaemonState,
-    clientServiceMode' = clientServiceMode,
     frameDaemon, frameResources, frameSynth,
   }
 
-  action enterDegraded = all {
+  action finalConnectOk = all {
     clientState == Connecting,
-    clientDaemonState == ViewDaemonDown,
-    clientAttempt == MAX_ATTEMPTS,
-    clientState' = ClientIdle,
-    clientServiceMode' = Degraded,
+    clientDaemonState == ViewDaemonReady,
+    clientAttempt == MAX_CONNECT_ATTEMPTS,
+    clientState' = Connected,
     clientDaemonState' = clientDaemonState,
     clientAttempt' = clientAttempt,
     frameDaemon, frameResources, frameSynth,
   }
 
-  action leaveDegraded = all {
-    clientServiceMode == Degraded,
-    clientState == ClientIdle,
-    clientServiceMode' = Normal,
+  action finalConnectFail = all {
+    clientState == Connecting,
+    clientDaemonState == ViewDaemonDown,
+    clientAttempt == MAX_CONNECT_ATTEMPTS,
+    clientState' = ClientFailed,
+    clientDaemonState' = clientDaemonState,
+    clientAttempt' = clientAttempt,
+    frameDaemon, frameResources, frameSynth,
+  }
+
+  action resetClientFailed = all {
+    clientState == ClientFailed,
+    clientState' = ClientIdle,
     clientAttempt' = 0,
     clientDaemonState' = clientDaemonState,
-    clientState' = clientState,
     frameDaemon, frameResources, frameSynth,
   }
 
   // ---- Synthesis (refined contract) --------------------------------------
+  //
+  // The daemon is an environment: attempts may run while it is not ready and
+  // auto-start it.
 
   action enqueue = all {
     synthOutcome == SynthIdle,
-    clientDaemonState == ViewDaemonReady,
     synthOutcome' = Running,
     synthAttempts' = 1,
     synthBackoffs' = 0,
@@ -242,18 +272,28 @@ module System {
     frameDaemon, frameResources, frameClient,
   }
 
+  // A retryable failure starts a backoff (counted at start).
   action synthFailRetry = all {
     synthOutcome == Running,
-    synthAttempts < MAX_ATTEMPTS,
+    synthAttempts < MAX_SYNTH_ATTEMPTS,
     synthOutcome' = Backoff,
     synthAttempts' = synthAttempts,
-    synthBackoffs' = synthBackoffs,
+    synthBackoffs' = synthBackoffs + 1,
     frameDaemon, frameResources, frameClient,
   }
 
   action synthFailFinal = all {
     synthOutcome == Running,
-    synthAttempts == MAX_ATTEMPTS,
+    synthAttempts == MAX_SYNTH_ATTEMPTS,
+    synthOutcome' = SynthFailed,
+    synthAttempts' = synthAttempts,
+    synthBackoffs' = synthBackoffs,
+    frameDaemon, frameResources, frameClient,
+  }
+
+  // A non-retryable failure stops immediately, from any attempt.
+  action synthFatalFail = all {
+    synthOutcome == Running,
     synthOutcome' = SynthFailed,
     synthAttempts' = synthAttempts,
     synthBackoffs' = synthBackoffs,
@@ -262,10 +302,9 @@ module System {
 
   action backoffDone = all {
     synthOutcome == Backoff,
-    clientDaemonState == ViewDaemonReady,
     synthOutcome' = Running,
     synthAttempts' = synthAttempts + 1,
-    synthBackoffs' = synthBackoffs + 1,
+    synthBackoffs' = synthBackoffs,
     frameDaemon, frameResources, frameClient,
   }
 
@@ -298,6 +337,7 @@ module System {
     startDaemon,
     daemonBootOk,
     daemonBootFail,
+    daemonLost,
     resetDaemon,
   }
 
@@ -305,8 +345,9 @@ module System {
     startConnect,
     connectOk,
     connectRetry,
-    enterDegraded,
-    leaveDegraded,
+    finalConnectOk,
+    finalConnectFail,
+    resetClientFailed,
   }
 
   action synthStep = any {
@@ -314,6 +355,7 @@ module System {
     synthOk,
     synthFailRetry,
     synthFailFinal,
+    synthFatalFail,
     backoffDone,
     cancelSynth,
     resetSynth,
@@ -334,16 +376,16 @@ module System {
   // ---- Properties --------------------------------------------------------
 
   val typeOK =
-    retries.keys().forall(i => retries.get(i) >= 0 and retries.get(i) <= MAX_RETRY) and
-    clientAttempt >= 0 and clientAttempt <= MAX_ATTEMPTS and
-    synthAttempts >= 0 and synthAttempts <= MAX_ATTEMPTS
+    retries.keys().forall(i => retries.get(i) >= 0 and retries.get(i) <= MAX_RESOURCE_RETRIES) and
+    clientAttempt >= 0 and clientAttempt <= MAX_CONNECT_ATTEMPTS and
+    synthAttempts >= 0 and synthAttempts <= MAX_SYNTH_ATTEMPTS and
+    synthBackoffs >= 0 and synthBackoffs <= MAX_SYNTH_RETRIES
 
   val viewsAligned =
     clientDaemonState == (if (daemonState == DaemonReady) ViewDaemonReady else ViewDaemonDown)
 
+  // The daemon binds its socket only after its state (catalog) is initialized,
+  // so a connected client implies a ready daemon.
   val clientConnectedImpliesDaemonReady =
     clientState == Connected implies daemonState == DaemonReady
-
-  val synthRunningImpliesDaemonReady =
-    synthOutcome == Running implies daemonState == DaemonReady
 }

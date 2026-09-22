@@ -24,7 +24,10 @@ use crate::interface::synthesis::flow::{
 };
 use crate::interface::synthesis::mode::{SynthesisMode, select_synthesis_mode_with_config};
 
-const MCP_DAEMON_MAX_RETRIES: u32 = 2;
+/// Number of retries for the non-streaming daemon synthesis path. Mirrors
+/// `MAX_RETRIES` in `modeling/quint/SynthesisRetry.qnt`; the model-based test
+/// drives `RetryPolicy::new(MCP_DAEMON_MAX_RETRIES)` against that spec.
+pub const MCP_DAEMON_MAX_RETRIES: u32 = 2;
 
 #[derive(Debug, Deserialize)]
 struct TextToSpeechToolInput {

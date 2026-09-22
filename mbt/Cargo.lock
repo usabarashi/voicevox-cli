@@ -2918,8 +2918,10 @@ name = "voicevox-cli-mbt"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "itf",
  "quint-connect",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "voicevox-cli",

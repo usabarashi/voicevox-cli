@@ -6,12 +6,12 @@
 // `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode`, `PlayingRequiresAudio`,
 // `EmittingUsesPlayMode`.
 //
-// `MAX_RETRY` uses the `Say.daemon` cfg value (2). The `Say.standard` scenario
-// (MAX_RETRY=0) differs only in the retry bound, which none of the preserved
-// invariants depend on.
+// `MAX_RETRY` is the daemon startup/connect budget and mirrors the production
+// constant `daemon::startup::MAX_CONNECT_ATTEMPTS` (10). The previous value (2)
+// came from the historical `Say.daemon` cfg and had no production counterpart.
 
 module Say {
-  pure val MAX_RETRY = 2
+  pure val MAX_RETRY = 10
 
   type DaemonState = DaemonDown | Starting | AlreadyRunning | Ready | Recovering
   type SocketState = SocketAbsent | SocketReady
@@ -20,8 +20,10 @@ module Say {
   type PlaybackError = NoPlaybackError | LaunchFailed | DeviceError | Canceled
   type TextState = Unknown | Valid | Invalid
   type SayState = SayIdle | Validated | Synthesizing | Synthesized | Emitting | SayDone | SayFailed
-  type OutputMode = Play | WriteFile
-  type SayError = NoError | Validation | Synthesis | Playback
+  // `Silent` is the production `quiet && output_file.is_none()` case: the WAV is
+  // produced but neither played nor written.
+  type OutputMode = Play | WriteFile | Silent
+  type SayError = NoError | Validation | Synthesis | Playback | Output
 
   var dDaemonState: DaemonState
   var dSocketState: SocketState
@@ -129,6 +131,14 @@ module Say {
     textState' = textState, sayState' = sayState, errorKind' = errorKind,
   }
 
+  action chooseSilentOutput = all {
+    sayState == SayIdle,
+    outputMode' = Silent,
+    dDaemonState' = dDaemonState, dSocketState' = dSocketState, dReqState' = dReqState, dRetryCount' = dRetryCount,
+    pAudioReady' = pAudioReady, pPlaybackState' = pPlaybackState, pCancelRequested' = pCancelRequested, pPlaybackError' = pPlaybackError,
+    textState' = textState, sayState' = sayState, errorKind' = errorKind,
+  }
+
   action validateOk = all {
     sayState == SayIdle, textState == Valid,
     sayState' = Validated, errorKind' = NoError,
@@ -181,10 +191,39 @@ module Say {
     textState' = textState, outputMode' = outputMode,
   }
 
+  // A synthesis failure while the daemon stays ready (e.g. invalid target,
+  // model load failure, or a synthesis error). The request is released.
+  action synthesizeFail = all {
+    sayState == Synthesizing, dReqState == Busy,
+    sayState' = SayFailed, errorKind' = Synthesis,
+    dReqState' = ReqIdle,
+    dDaemonState' = dDaemonState, dSocketState' = dSocketState, dRetryCount' = dRetryCount,
+    pAudioReady' = pAudioReady, pPlaybackState' = pPlaybackState, pCancelRequested' = pCancelRequested, pPlaybackError' = pPlaybackError,
+    textState' = textState, outputMode' = outputMode,
+  }
+
   // ---- Emit ---------------------------------------------------------------
 
   action emitToFile = all {
     sayState == Synthesized, outputMode == WriteFile,
+    sayState' = SayDone, errorKind' = NoError,
+    dDaemonState' = dDaemonState, dSocketState' = dSocketState, dReqState' = dReqState, dRetryCount' = dRetryCount,
+    pAudioReady' = pAudioReady, pPlaybackState' = pPlaybackState, pCancelRequested' = pCancelRequested, pPlaybackError' = pPlaybackError,
+    textState' = textState, outputMode' = outputMode,
+  }
+
+  // Writing the WAV to disk can fail.
+  action emitFileFail = all {
+    sayState == Synthesized, outputMode == WriteFile,
+    sayState' = SayFailed, errorKind' = Output,
+    dDaemonState' = dDaemonState, dSocketState' = dSocketState, dReqState' = dReqState, dRetryCount' = dRetryCount,
+    pAudioReady' = pAudioReady, pPlaybackState' = pPlaybackState, pCancelRequested' = pCancelRequested, pPlaybackError' = pPlaybackError,
+    textState' = textState, outputMode' = outputMode,
+  }
+
+  // Silent output: the WAV is produced but neither played nor written.
+  action emitSilent = all {
+    sayState == Synthesized, outputMode == Silent,
     sayState' = SayDone, errorKind' = NoError,
     dDaemonState' = dDaemonState, dSocketState' = dSocketState, dReqState' = dReqState, dRetryCount' = dRetryCount,
     pAudioReady' = pAudioReady, pPlaybackState' = pPlaybackState, pCancelRequested' = pCancelRequested, pPlaybackError' = pPlaybackError,
@@ -292,13 +331,17 @@ module Say {
     chooseInvalidText,
     choosePlayOutput,
     chooseFileOutput,
+    chooseSilentOutput,
     validateOk,
     validateFail,
     startSynthesize,
     synthesizeSuccess,
     synthesizeFailNoDaemon,
     synthesizeFailAfterCrash,
+    synthesizeFail,
     emitToFile,
+    emitFileFail,
+    emitSilent,
     emitPlaybackBufferReady,
     emitPlaybackStart,
     emitPlaybackLaunchOk,
@@ -322,6 +365,8 @@ module Say {
   val doneHasNoError = sayState == SayDone implies errorKind == NoError
 
   val playbackFailureOnlyInPlayMode = errorKind == Playback implies outputMode == Play
+
+  val outputFailureOnlyInFileMode = errorKind == Output implies outputMode == WriteFile
 
   val playingRequiresAudio = pPlaybackState == Playing implies pAudioReady
 

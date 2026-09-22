@@ -9,6 +9,36 @@ pub enum TargetResolution {
     Missing { message: String },
 }
 
+/// Builds `model_id -> default style_id` by selecting the **smallest** style ID
+/// of each model.
+///
+/// Exposed so that the model-based test can exercise this exact production
+/// function: the previous MBT hard-coded the resulting map, so a change of the
+/// selection rule (e.g. `min` -> `max`) would not have been detected.
+#[must_use]
+pub fn build_model_default_style_map(
+    speakers: &[crate::infrastructure::voicevox::Speaker],
+    style_to_model_map: &HashMap<u32, u32>,
+) -> HashMap<u32, u32> {
+    speakers
+        .iter()
+        .flat_map(|speaker| speaker.styles.iter())
+        .filter_map(|style| {
+            style_to_model_map
+                .get(&style.id)
+                .copied()
+                .map(|model_id| (model_id, style.id))
+        })
+        .fold(HashMap::new(), |mut acc, (model_id, style_id)| {
+            acc.entry(model_id)
+                .and_modify(|current_style_id| {
+                    *current_style_id = (*current_style_id).min(style_id);
+                })
+                .or_insert(style_id);
+            acc
+        })
+}
+
 /// Resolves a requested style/model ID against a catalog snapshot.
 ///
 /// This is the pure decision logic behind [`ModelCatalog::resolve_synthesis_target`];
@@ -65,29 +95,6 @@ pub(super) struct ModelCatalog {
 impl ModelCatalog {
     // Catalog is intentionally a startup-time snapshot. Runtime model add/remove is not
     // observed until daemon restart under the current fixed-contract architecture.
-    fn build_model_default_style_map(
-        speakers: &[crate::infrastructure::voicevox::Speaker],
-        style_to_model_map: &HashMap<u32, u32>,
-    ) -> HashMap<u32, u32> {
-        speakers
-            .iter()
-            .flat_map(|speaker| speaker.styles.iter())
-            .filter_map(|style| {
-                style_to_model_map
-                    .get(&style.id)
-                    .copied()
-                    .map(|model_id| (model_id, style.id))
-            })
-            .fold(HashMap::new(), |mut acc, (model_id, style_id)| {
-                acc.entry(model_id)
-                    .and_modify(|current_style_id| {
-                        *current_style_id = (*current_style_id).min(style_id);
-                    })
-                    .or_insert(style_id);
-                acc
-            })
-    }
-
     pub(super) fn new(core: &VoicevoxCore) -> Result<Self> {
         let (mapping, speakers, models) =
             crate::infrastructure::voicevox::build_style_to_model_map_async_with_progress(
@@ -96,7 +103,7 @@ impl ModelCatalog {
             )?;
 
         Ok(Self {
-            model_default_style_map: Self::build_model_default_style_map(&speakers, &mapping),
+            model_default_style_map: build_model_default_style_map(&speakers, &mapping),
             style_to_model_map: mapping,
             all_speakers: speakers,
             available_models: models,

@@ -1,24 +1,32 @@
-// Ported from `modeling/tla/MCPServer.tla` (Phase 2).
+// Ported from `modeling/tla/MCPServer.tla` (Phase 2), revised.
 //
 // Client-side connection/retry with the shared playback submodel.
 // Flattened (see PORTING.md): all variables are assigned in every action
 // because Quint does not implicitly frame unmentioned variables.
-// Preserved properties: `ConnectedImpliesDaemonReady`,
-// `DegradedImpliesNotConnected`, `PlayingRequiresAudio`.
+//
+// Revisions vs the TLA+ port:
+// - `MAX_ATTEMPTS` matches the production connect budget
+//   `daemon::startup::MAX_CONNECT_ATTEMPTS` (10), not the historical 3.
+// - `transport::connect_with_retry` performs up to `MAX_ATTEMPTS` loop connects
+//   with backoff and then one **final** connect without backoff; the model has
+//   explicit `finalConnectOk` / `finalConnectFail` for that.
+// - The persistent `Degraded` service mode is removed: production has no such
+//   state. A failed connect episode ends in the terminal `ConnectFailed` state
+//   (the request errors); a new request resets to `ClientIdle`.
+//
+// Preserved properties: `ConnectedImpliesDaemonReady`, `PlayingRequiresAudio`.
 
 module MCPServer {
-  pure val MAX_ATTEMPTS = 3
+  pure val MAX_ATTEMPTS = 10
 
   type DaemonState = DaemonDown | DaemonReady
-  type ClientState = ClientIdle | Connecting | Connected
-  type ServiceMode = Normal | Degraded
+  type ClientState = ClientIdle | Connecting | Connected | ConnectFailed
   type PlaybackState = PlaybackIdle | Launching | Playing | Stopped | Failed
   type PlaybackError = NoPlaybackError | LaunchFailed | DeviceError | Canceled
 
   var daemonState: DaemonState
   var clientState: ClientState
   var attempt: int
-  var serviceMode: ServiceMode
   var playbackAudioReady: bool
   var playbackState: PlaybackState
   var playbackCancelRequested: bool
@@ -28,7 +36,6 @@ module MCPServer {
     daemonState' = DaemonDown,
     clientState' = ClientIdle,
     attempt' = 0,
-    serviceMode' = Normal,
     playbackAudioReady' = false,
     playbackState' = PlaybackIdle,
     playbackCancelRequested' = false,
@@ -40,7 +47,6 @@ module MCPServer {
     clientState' = Connecting,
     daemonState' = daemonState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackState' = playbackState,
     playbackCancelRequested' = playbackCancelRequested,
@@ -50,8 +56,8 @@ module MCPServer {
   action connectOk = all {
     clientState == Connecting,
     daemonState == DaemonReady,
+    attempt < MAX_ATTEMPTS,
     clientState' = Connected,
-    serviceMode' = Normal,
     daemonState' = daemonState,
     attempt' = attempt,
     playbackAudioReady' = playbackAudioReady,
@@ -67,19 +73,17 @@ module MCPServer {
     clientState' = ClientIdle,
     attempt' = attempt + 1,
     daemonState' = daemonState,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackState' = playbackState,
     playbackCancelRequested' = playbackCancelRequested,
     playbackErrorKind' = playbackErrorKind,
   }
 
-  action enterDegraded = all {
+  action finalConnectOk = all {
     clientState == Connecting,
-    daemonState == DaemonDown,
+    daemonState == DaemonReady,
     attempt == MAX_ATTEMPTS,
-    clientState' = ClientIdle,
-    serviceMode' = Degraded,
+    clientState' = Connected,
     daemonState' = daemonState,
     attempt' = attempt,
     playbackAudioReady' = playbackAudioReady,
@@ -88,13 +92,24 @@ module MCPServer {
     playbackErrorKind' = playbackErrorKind,
   }
 
-  action leaveDegraded = all {
-    serviceMode == Degraded,
-    clientState == ClientIdle,
-    serviceMode' = Normal,
+  action finalConnectFail = all {
+    clientState == Connecting,
+    daemonState == DaemonDown,
+    attempt == MAX_ATTEMPTS,
+    clientState' = ConnectFailed,
+    daemonState' = daemonState,
+    attempt' = attempt,
+    playbackAudioReady' = playbackAudioReady,
+    playbackState' = playbackState,
+    playbackCancelRequested' = playbackCancelRequested,
+    playbackErrorKind' = playbackErrorKind,
+  }
+
+  action resetConnectFailed = all {
+    clientState == ConnectFailed,
+    clientState' = ClientIdle,
     attempt' = 0,
     daemonState' = daemonState,
-    clientState' = clientState,
     playbackAudioReady' = playbackAudioReady,
     playbackState' = playbackState,
     playbackCancelRequested' = playbackCancelRequested,
@@ -106,7 +121,6 @@ module MCPServer {
     daemonState' = DaemonReady,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackState' = playbackState,
     playbackCancelRequested' = playbackCancelRequested,
@@ -117,8 +131,9 @@ module MCPServer {
     daemonState == DaemonReady,
     daemonState' = DaemonDown,
     clientState' = if (clientState == Connected) ClientIdle else clientState,
-    serviceMode' = if (clientState == Connected) Degraded else serviceMode,
-    attempt' = attempt,
+    // Losing a connection ends the connect episode; the next request starts a
+    // fresh `connect_with_retry` budget.
+    attempt' = if (clientState == Connected) 0 else attempt,
     playbackAudioReady' = playbackAudioReady,
     playbackState' = playbackState,
     playbackCancelRequested' = playbackCancelRequested,
@@ -133,7 +148,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackState' = playbackState,
     playbackCancelRequested' = playbackCancelRequested,
     playbackErrorKind' = playbackErrorKind,
@@ -149,7 +163,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
   }
 
@@ -160,7 +173,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackCancelRequested' = playbackCancelRequested,
     playbackErrorKind' = playbackErrorKind,
@@ -173,7 +185,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackCancelRequested' = playbackCancelRequested,
   }
@@ -184,7 +195,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackState' = playbackState,
     playbackErrorKind' = playbackErrorKind,
@@ -197,7 +207,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackCancelRequested' = playbackCancelRequested,
   }
@@ -209,7 +218,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackCancelRequested' = playbackCancelRequested,
   }
@@ -222,7 +230,6 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackCancelRequested' = playbackCancelRequested,
   }
@@ -236,14 +243,12 @@ module MCPServer {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
   }
 
   action stutter = all {
     daemonState' = daemonState,
     clientState' = clientState,
     attempt' = attempt,
-    serviceMode' = serviceMode,
     playbackAudioReady' = playbackAudioReady,
     playbackState' = playbackState,
     playbackCancelRequested' = playbackCancelRequested,
@@ -254,8 +259,9 @@ module MCPServer {
     startConnect,
     connectOk,
     connectRetry,
-    enterDegraded,
-    leaveDegraded,
+    finalConnectOk,
+    finalConnectFail,
+    resetConnectFailed,
     daemonReady,
     daemonDown,
     receiveAudio,
@@ -273,8 +279,6 @@ module MCPServer {
   val typeOK = attempt >= 0 and attempt <= MAX_ATTEMPTS
 
   val connectedImpliesDaemonReady = clientState == Connected implies daemonState == DaemonReady
-
-  val degradedImpliesNotConnected = serviceMode == Degraded implies clientState != Connected
 
   val playingRequiresAudio = playbackState == Playing implies playbackAudioReady
 }

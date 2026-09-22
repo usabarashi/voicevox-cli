@@ -119,10 +119,11 @@ module Playback {
 
   val playingRequiresAudio = playbackState == Playing implies audioReady
 
+  // The *Canceled error* implies the lifecycle has reached a terminal
+  // stopped/failed state. (The previous formula used the pending
+  // `cancelRequested` flag and admitted `Launching`/`Playing`, which made the
+  // property vacuous for the production stop/kill behavior.)
   val canceledImpliesStoppedOrFailed =
-    cancelRequested implies
-      (playbackState == Stopped or
-       playbackState == Failed or
-       playbackState == Launching or
-       playbackState == Playing)
+    errorKind == Canceled implies
+      (playbackState == Stopped or playbackState == Failed)
 }

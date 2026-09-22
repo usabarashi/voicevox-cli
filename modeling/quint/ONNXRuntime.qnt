@@ -1,7 +1,12 @@
-// Ported from `modeling/tla/ONNXRuntime.tla` (Phase 2).
+// Ported from `modeling/tla/ONNXRuntime.tla` (Phase 2), revised.
 //
-// Minimal ONNX Runtime lifecycle (loader/setup state).
-// Preserved properties: type bounds and `ReadyHasNoPendingRetry`.
+// Minimal ONNX Runtime lifecycle (loader/setup state). A failed load may be
+// retried only through the budget-guarded `retryLoad`, so the retry count is an
+// operational bound (production retries the installer at most `MAX_RETRY`
+// times; see `src/infrastructure/download/install.rs`).
+//
+// The historical `readyHasNoPendingRetry` invariant was equivalent to
+// `typeOK`; it is replaced by the liveness property `loadTerminates`.
 
 module ONNXRuntime {
   pure val MAX_RETRY = 3
@@ -17,7 +22,7 @@ module ONNXRuntime {
   }
 
   action beginLoad = all {
-    state == Missing or state == Failed,
+    state == Missing,
     state' = Loading,
     retryCount' = retryCount,
   }
@@ -41,13 +46,6 @@ module ONNXRuntime {
     retryCount' = retryCount,
   }
 
-  action giveUp = all {
-    state == Failed,
-    retryCount == MAX_RETRY,
-    state' = state,
-    retryCount' = retryCount,
-  }
-
   action stutter = all {
     state' = state,
     retryCount' = retryCount,
@@ -58,10 +56,23 @@ module ONNXRuntime {
     loadOk,
     loadFail,
     retryLoad,
-    giveUp,
     stutter,
   }
 
   val typeOK = retryCount >= 0 and retryCount <= MAX_RETRY
-  val readyHasNoPendingRetry = state == Ready implies retryCount <= MAX_RETRY
+
+  action advance = any {
+    beginLoad,
+    loadOk,
+    loadFail,
+    retryLoad,
+  }
+
+  val vars = (state, retryCount)
+
+  // The load loop terminates: under weak fairness it reaches `Ready`, or gives
+  // up with an exhausted retry budget.
+  temporal loadTerminates =
+    weakFair(advance, vars) implies
+      eventually(state == Ready or (state == Failed and retryCount == MAX_RETRY))
 }

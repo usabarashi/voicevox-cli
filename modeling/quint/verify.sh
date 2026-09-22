@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Phase 1 gate for the TLA+ -> Quint migration.
+# Quint verification gate for the TLA+ -> Quint migration.
 #
-# Runs the minimal Quint model with the TLC verification backend and asserts:
-#   * the safety and liveness properties hold on the real model, and
+# Runs the Quint models with the TLC verification backend and asserts:
+#   * the safety and liveness properties hold on the real models, and
 #   * the negative controls are detected for the intended reason
 #     (safety violation / infinite stall, not just a deadlock).
 #
@@ -80,19 +80,28 @@ done
 
 # Ported lifecycle models (Phase 2).
 run_ok "ONNXRuntime safety" \
-  --invariant=typeOK,readyHasNoPendingRetry \
+  --invariant=typeOK \
+  modeling/quint/ONNXRuntime.qnt
+run_ok "ONNXRuntime liveness" \
+  --temporal=loadTerminates \
   modeling/quint/ONNXRuntime.qnt
 run_ok "Dictionary safety" \
-  --invariant=typeOK,readyIsStable \
+  --invariant=typeOK \
+  modeling/quint/Dictionary.qnt
+run_ok "Dictionary liveness" \
+  --temporal=loadedStaysReady \
   modeling/quint/Dictionary.qnt
 run_ok "Socket safety" \
-  --invariant=typeOK,readyIsBounded \
+  --invariant=typeOK \
+  modeling/quint/Socket.qnt
+run_ok "Socket liveness" \
+  --temporal=bindingTerminates \
   modeling/quint/Socket.qnt
 run_ok "Playback safety" \
   --invariant=playingRequiresAudio,canceledImpliesStoppedOrFailed \
   modeling/quint/Playback.qnt
 run_ok "IPC safety" \
-  --invariant=typeOK,failedImpliesError,doneImpliesValidResponse \
+  --invariant=failedImpliesError,doneImpliesValidResponse,inFlightHasNoError \
   modeling/quint/IPC.qnt
 run_ok "IPC progress" \
   --temporal=eventuallyLeavesInFlight \
@@ -100,24 +109,39 @@ run_ok "IPC progress" \
 run_ok "Daemon safety" \
   --invariant=typeOK,socketImpliesReady,busyImpliesReady,retryBounded,alreadyRunningNotBusy \
   modeling/quint/Daemon.qnt
-run_ok "SynthesisParallel safety" \
-  --invariant=typeOK,atMostOneSynthesizing,workerMatchesSynthesis \
-  modeling/quint/SynthesisParallel.qnt
-run_ok "SynthesisParallel progress" \
+run_ok "Daemon serialization safety" \
+  --invariant=atMostOneSynthesizing,workerMatchesSynthesis \
+  modeling/quint/DaemonSerialization.qnt
+run_ok "Daemon serialization progress" \
   --temporal=eventuallyLeavesBusyWorker \
-  modeling/quint/SynthesisParallel.qnt
+  modeling/quint/DaemonSerialization.qnt
 run_ok "StartupResources safety" \
   --invariant=typeOK,daemonReadyRequiresDownloads,daemonStartRequiresDownloads,daemonReadyRequiresSocket \
   modeling/quint/StartupResources.qnt
 run_ok "MCPServer safety" \
-  --invariant=typeOK,connectedImpliesDaemonReady,degradedImpliesNotConnected,playingRequiresAudio \
+  --invariant=typeOK,connectedImpliesDaemonReady,playingRequiresAudio \
   modeling/quint/MCPServer.qnt
 run_ok "Say safety" \
-  --invariant=typeOK,synthesizingImpliesBusyReq,busyReqOwnedBySay,doneHasNoError,playbackFailureOnlyInPlayMode,playingRequiresAudio,emittingUsesPlayMode \
+  --invariant=typeOK,synthesizingImpliesBusyReq,busyReqOwnedBySay,doneHasNoError,playbackFailureOnlyInPlayMode,playingRequiresAudio,emittingUsesPlayMode,outputFailureOnlyInFileMode \
   modeling/quint/Say.qnt
 run_ok "System integration" \
-  --invariant=typeOK,viewsAligned,clientConnectedImpliesDaemonReady,synthRunningImpliesDaemonReady \
+  --invariant=typeOK,viewsAligned,clientConnectedImpliesDaemonReady \
   modeling/quint/System.qnt
+run_ok "StreamingSynthesis safety" \
+  --invariant=segmentsBounded,playbackRequiresAllSegments,canceledImpliesNoPlayback \
+  modeling/quint/StreamingSynthesis.qnt
+run_ok "Download safety" \
+  --invariant=attemptsBounded,failedHasReason,exhaustedImpliesAttempts,preparationFailureMeansNoAttempts \
+  modeling/quint/Download.qnt
+run_ok "Download liveness" \
+  --temporal=terminates \
+  modeling/quint/Download.qnt
+run_ok "ModelLifecycle safety" \
+  --invariant=loadedImpliesPhase \
+  modeling/quint/ModelLifecycle.qnt
+run_ok "ModelLifecycle liveness" \
+  --temporal=eventuallyUnloaded \
+  modeling/quint/ModelLifecycle.qnt
 run_ok "DaemonIpc safety" \
   --invariant=catalogRequiresConnection \
   modeling/quint/DaemonIpc.qnt
@@ -131,6 +155,9 @@ run_ok "SynthesisRetry safety" \
   modeling/quint/SynthesisRetry.qnt
 run_ok "SynthesisRetry liveness" \
   --temporal=eventuallyTerminal \
+  modeling/quint/SynthesisRetry.qnt
+run_ok "SynthesisRetry cancellation is terminal" \
+  --temporal=cancelIsTerminal \
   modeling/quint/SynthesisRetry.qnt
 
 # Negative controls: the checker must actually catch violations.

@@ -266,7 +266,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
+          # No `pipefail`: `yes` is killed by SIGPIPE (exit 141) once the
+          # downloader closes stdin, which would otherwise fail the step on an
+          # otherwise successful download.
+          set -eu
           RESOURCES_DIR="$HOME/.local/share/voicevox"
           MODELS_DIR="$RESOURCES_DIR/models"
 
@@ -281,11 +284,17 @@ jobs:
           # `voicevox-setup` is interactive: its confirmation prompt consumes the
           # single piped line, leaving the downloader's license prompt with empty
           # stdin in CI. Call the downloader directly and feed `yes` for the
-          # license agreement.
+          # license agreement. The downloader's own exit status is checked
+          # explicitly (the pipeline's status is `yes`'s, which is SIGPIPE).
           nix build --accept-flake-config
+          downloader_status=0
           yes | ./result/bin/voicevox-download \
             --only onnxruntime --only dict --only models \
-            --output "$RESOURCES_DIR"
+            --output "$RESOURCES_DIR" || downloader_status=$?
+          if [ "$downloader_status" -ne 0 ]; then
+            echo "::error::voicevox-download exited with status $downloader_status" >&2
+            exit 1
+          fi
 
           model_count=$(find "$MODELS_DIR" -name '*.vvm' 2>/dev/null | wc -l | tr -d ' ')
           echo "Voice models present: $model_count"

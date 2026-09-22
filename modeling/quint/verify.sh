@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Phase 1 gate for the TLA+ -> Quint migration.
+# Quint verification gate for the TLA+ -> Quint migration.
 #
-# Runs the minimal Quint model with the TLC verification backend and asserts:
-#   * the safety and liveness properties hold on the real model, and
+# Runs the Quint models with the TLC verification backend and asserts:
+#   * the safety and liveness properties hold on the real models, and
 #   * the negative controls are detected for the intended reason
 #     (safety violation / infinite stall, not just a deadlock).
 #
@@ -73,26 +73,105 @@ run_expect_violation() {
   echo "::endgroup::"
 }
 
+# Every spec must be classified as MBT-backed or verified-only, and every
+# MBT-backed spec must have a driver that references it (see MODEL_CLASSIFICATION).
+# Shared constants must agree across specs (see EXPECTED_CONSTANTS). Catches
+# cross-spec drift such as a connect budget changed in one spec only.
+check_constant_consistency() {
+  local file="modeling/quint/EXPECTED_CONSTANTS"
+  echo "::group::constant consistency"
+  local before="${failures}"
+  local kind a b c
+  while IFS='|' read -r kind a b c; do
+    case "${kind}" in
+      ""|\#*) continue ;;
+      spec)
+        # spec|<Spec>|<Const>|<Value>; anchored so `= 10 + 1` cannot pass `= 10`.
+        if ! grep -qE "^[[:space:]]*pure val[[:space:]]+${b}[[:space:]]*=[[:space:]]*${c}[[:space:]]*(//.*)?$" "modeling/quint/${a}.qnt"; then
+          echo "FAIL: ${a}.qnt does not declare 'pure val ${b} = ${c}'" >&2
+          failures=$((failures + 1))
+        fi
+        ;;
+      prod)
+        # prod|<path>|<anchored decl regex>
+        if ! grep -qE "${b}" "${a}"; then
+          echo "FAIL: ${a} has no declaration matching /${b}/" >&2
+          failures=$((failures + 1))
+        fi
+        ;;
+      *)
+        echo "FAIL: unknown entry kind '${kind}' in ${file}" >&2
+        failures=$((failures + 1))
+        ;;
+    esac
+  done < "${file}"
+  if [ "${failures}" -eq "${before}" ]; then
+    echo "ok: constant consistency"
+  fi
+  echo "::endgroup::"
+}
+
+check_model_classification() {
+  local class_file="modeling/quint/MODEL_CLASSIFICATION"
+  echo "::group::model classification"
+  local before="${failures}"
+  local spec name tier
+  for spec in modeling/quint/*.qnt; do
+    name="$(basename "${spec}" .qnt)"
+    if ! grep -qE "^${name}[[:space:]]" "${class_file}"; then
+      echo "FAIL: spec ${name} is not classified in ${class_file}" >&2
+      failures=$((failures + 1))
+    fi
+  done
+
+  while read -r name tier; do
+    case "${name}" in
+      ""|\#*) continue ;;
+    esac
+    if [ "${tier}" = "mbt" ]; then
+      # Require the actual `#[quint_run(... spec = "...")]` argument, not any
+      # text that merely mentions the spec path.
+      if ! grep -rqF "spec = \"../modeling/quint/${name}.qnt\"" mbt/tests; then
+        echo "FAIL: ${name} is classified 'mbt' but no driver references it" >&2
+        failures=$((failures + 1))
+      fi
+    elif [ "${tier}" != "verified-only" ]; then
+      echo "FAIL: unknown tier '${tier}' for ${name} in ${class_file}" >&2
+      failures=$((failures + 1))
+    fi
+  done < "${class_file}"
+  if [ "${failures}" -eq "${before}" ]; then
+    echo "ok: model classification"
+  fi
+  echo "::endgroup::"
+}
+
 # All specs must parse and typecheck.
 for spec in modeling/quint/*.qnt modeling/quint/negative/*.qnt; do
   check_typecheck "${spec}"
 done
 
+check_model_classification
+check_constant_consistency
+
 # Ported lifecycle models (Phase 2).
-run_ok "ONNXRuntime safety" \
-  --invariant=typeOK,readyHasNoPendingRetry \
-  modeling/quint/ONNXRuntime.qnt
-run_ok "Dictionary safety" \
-  --invariant=typeOK,readyIsStable \
-  modeling/quint/Dictionary.qnt
-run_ok "Socket safety" \
-  --invariant=typeOK,readyIsBounded \
-  modeling/quint/Socket.qnt
+run_ok "ResourceLoad liveness" \
+  --temporal=loadTerminates \
+  modeling/quint/ResourceLoad.qnt
+run_ok "ResourceLoad stability" \
+  --temporal=loadedStaysReady \
+  modeling/quint/ResourceLoad.qnt
+run_ok "StartupResources socket liveness" \
+  --temporal=bindingTerminates \
+  modeling/quint/StartupResources.qnt
+run_ok "StartupResources denial terminal" \
+  --temporal=permissionDeniedIsTerminal \
+  modeling/quint/StartupResources.qnt
 run_ok "Playback safety" \
   --invariant=playingRequiresAudio,canceledImpliesStoppedOrFailed \
   modeling/quint/Playback.qnt
 run_ok "IPC safety" \
-  --invariant=typeOK,failedImpliesError,doneImpliesValidResponse \
+  --invariant=failedImpliesError,doneImpliesValidResponse,inFlightHasNoError \
   modeling/quint/IPC.qnt
 run_ok "IPC progress" \
   --temporal=eventuallyLeavesInFlight \
@@ -100,24 +179,75 @@ run_ok "IPC progress" \
 run_ok "Daemon safety" \
   --invariant=typeOK,socketImpliesReady,busyImpliesReady,retryBounded,alreadyRunningNotBusy \
   modeling/quint/Daemon.qnt
-run_ok "SynthesisParallel safety" \
-  --invariant=typeOK,atMostOneSynthesizing,workerMatchesSynthesis \
-  modeling/quint/SynthesisParallel.qnt
-run_ok "SynthesisParallel progress" \
+run_ok "DaemonSynthesisPath safety" \
+  --invariant=typeOK,inFlightMatchesHolding,atMostOneSynthesizing,workerBusyMatchesSynthesizing \
+  modeling/quint/DaemonSynthesisPath.qnt
+run_ok "DaemonSynthesisPath liveness" \
+  --temporal=workerEventuallyIdle \
+  modeling/quint/DaemonSynthesisPath.qnt
+run_ok "Daemon serialization safety" \
+  --invariant=atMostOneSynthesizing,workerMatchesSynthesis \
+  modeling/quint/DaemonSerialization.qnt
+run_ok "Daemon serialization progress" \
   --temporal=eventuallyLeavesBusyWorker \
-  modeling/quint/SynthesisParallel.qnt
+  modeling/quint/DaemonSerialization.qnt
 run_ok "StartupResources safety" \
   --invariant=typeOK,daemonReadyRequiresDownloads,daemonStartRequiresDownloads,daemonReadyRequiresSocket \
   modeling/quint/StartupResources.qnt
 run_ok "MCPServer safety" \
-  --invariant=typeOK,connectedImpliesDaemonReady,degradedImpliesNotConnected,playingRequiresAudio \
+  --invariant=typeOK,connectedImpliesDaemonReady,playingRequiresAudio \
   modeling/quint/MCPServer.qnt
 run_ok "Say safety" \
-  --invariant=typeOK,synthesizingImpliesBusyReq,busyReqOwnedBySay,doneHasNoError,playbackFailureOnlyInPlayMode,playingRequiresAudio,emittingUsesPlayMode \
+  --invariant=typeOK,synthesizingImpliesBusyReq,busyReqOwnedBySay,doneHasNoError,playbackFailureOnlyInPlayMode,playingRequiresAudio,emittingUsesPlayMode,outputFailureOnlyInFileMode \
   modeling/quint/Say.qnt
 run_ok "System integration" \
-  --invariant=typeOK,viewsAligned,clientConnectedImpliesDaemonReady,synthRunningImpliesDaemonReady \
+  --invariant=typeOK,viewsAligned,clientConnectedImpliesDaemonReady,daemonStartingRequiresResources,daemonReadyRequiresResources,daemonReadyRequiresSocket \
   modeling/quint/System.qnt
+run_ok "StreamingSynthesis safety" \
+  --invariant=segmentsBounded,playbackRequiresAllSegments,canceledImpliesNoPlayback \
+  modeling/quint/StreamingSynthesis.qnt
+run_ok "Download safety" \
+  --invariant=attemptsBounded,failedHasReason,exhaustedImpliesAttempts,preparationFailureMeansNoAttempts \
+  modeling/quint/Download.qnt
+run_ok "Download liveness" \
+  --temporal=terminates \
+  modeling/quint/Download.qnt
+run_ok "ModelLifecycle safety" \
+  --invariant=loadedImpliesPhase \
+  modeling/quint/ModelLifecycle.qnt
+run_ok "ModelLifecycle liveness" \
+  --temporal=eventuallyUnloaded \
+  modeling/quint/ModelLifecycle.qnt
+run_ok "McpStartup safety" \
+  --invariant=doneHasOutcome,recoveryOnlyAfterAlreadyRunning \
+  modeling/quint/McpStartup.qnt
+run_ok "McpStartup liveness" \
+  --temporal=terminates \
+  modeling/quint/McpStartup.qnt
+run_ok "McpRequestLifecycle safety" \
+  --invariant=typeOK,activeMatchesHolding \
+  modeling/quint/McpRequestLifecycle.qnt
+run_ok "McpRequestLifecycle liveness" \
+  --temporal=allRequestsTerminate \
+  modeling/quint/McpRequestLifecycle.qnt
+run_ok "DaemonServer safety" \
+  --invariant=typeOK,inFlightMatchesHandling \
+  modeling/quint/DaemonServer.qnt
+run_ok "DaemonServer liveness (client 0)" \
+  --temporal=handling0Terminates \
+  modeling/quint/DaemonServer.qnt
+run_ok "DaemonServer liveness (client 1)" \
+  --temporal=handling1Terminates \
+  modeling/quint/DaemonServer.qnt
+run_ok "DaemonServer liveness (client 2)" \
+  --temporal=handling2Terminates \
+  modeling/quint/DaemonServer.qnt
+run_ok "StartupSafety safety" \
+  --invariant=readyRequiresResources,readyRequiresStartableSocket,startedImpliesNoLive,liveNeverRemoved,liveNeverStarted,staleRemovedBeforeStart,removedOnlyStale,alreadyRunningOnlyLive,failedImpliesResourceFailure \
+  modeling/quint/StartupSafety.qnt
+run_ok "StartupSafety liveness" \
+  --temporal=terminates \
+  modeling/quint/StartupSafety.qnt
 run_ok "DaemonIpc safety" \
   --invariant=catalogRequiresConnection \
   modeling/quint/DaemonIpc.qnt
@@ -131,6 +261,9 @@ run_ok "SynthesisRetry safety" \
   modeling/quint/SynthesisRetry.qnt
 run_ok "SynthesisRetry liveness" \
   --temporal=eventuallyTerminal \
+  modeling/quint/SynthesisRetry.qnt
+run_ok "SynthesisRetry cancellation is terminal" \
+  --temporal=cancelIsTerminal \
   modeling/quint/SynthesisRetry.qnt
 
 # Negative controls: the checker must actually catch violations.

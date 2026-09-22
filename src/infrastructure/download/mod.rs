@@ -10,6 +10,11 @@ use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 
 pub use cleanup::{cleanup_unnecessary_files, count_vvm_files_recursive};
+#[doc(hidden)]
+pub use install::{
+    DownloadAttempt, DownloadFailure, DownloadPhase, DownloadTracker, InstallReport,
+    MAX_DOWNLOAD_ATTEMPTS, ResourceInstaller, install_with_retries,
+};
 pub use install::{
     default_models_download_target_dir, download_missing_resources, launch_models_downloader,
     missing_resource_descriptions,

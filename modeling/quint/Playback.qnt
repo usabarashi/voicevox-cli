@@ -119,10 +119,45 @@ module Playback {
 
   val playingRequiresAudio = playbackState == Playing implies audioReady
 
+  // The *Canceled error* implies the lifecycle has reached a terminal
+  // stopped/failed state. (The previous formula used the pending
+  // `cancelRequested` flag and admitted `Launching`/`Playing`, which made the
+  // property vacuous for the production stop/kill behavior.)
   val canceledImpliesStoppedOrFailed =
-    cancelRequested implies
-      (playbackState == Stopped or
-       playbackState == Failed or
-       playbackState == Launching or
-       playbackState == Playing)
+    errorKind == Canceled implies
+      (playbackState == Stopped or playbackState == Failed)
+
+  // ---- Fixed scenarios (emit/play dispatch MBT) ---------------------------
+  //
+  // Terminal states of one `emit_and_play` call, used by
+  // `mbt/tests/playback.rs`. The driver runs the production dispatch with a
+  // scripted fake backend and maps the observed outcome.
+
+  action hold = all {
+    audioReady' = audioReady,
+    playbackState' = playbackState,
+    cancelRequested' = cancelRequested,
+    errorKind' = errorKind,
+  }
+
+  action scenarioNaturalEnd = all {
+    audioReady' = true,
+    playbackState' = Stopped,
+    cancelRequested' = false,
+    errorKind' = None,
+  }
+
+  action scenarioCanceled = all {
+    audioReady' = true,
+    playbackState' = Stopped,
+    cancelRequested' = true,
+    errorKind' = Canceled,
+  }
+
+  action scenarioLaunchFailed = all {
+    audioReady' = true,
+    playbackState' = Failed,
+    cancelRequested' = false,
+    errorKind' = LaunchFailed,
+  }
 }

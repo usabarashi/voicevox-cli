@@ -88,3 +88,13 @@ incremental = true
 inherits = "release"
 debug = true
 strip = false
+
+# `mbt` shares this workspace so it resolves dependencies from the same
+# `Cargo.lock` as the shipped binaries. It is excluded from `default-members`,
+# so the normal `cargo build`/`cargo test` (and the crane/Nix build) never needs
+# `quint`; run it explicitly with `--manifest-path mbt/Cargo.toml` from the
+# devShell (where `quint` is on PATH).
+[workspace]
+members = [".", "mbt"]
+default-members = ["."]
+resolver = "3"

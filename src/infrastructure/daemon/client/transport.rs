@@ -105,27 +105,83 @@ pub(crate) async fn connect_socket_with_timeout(
     Ok(stream)
 }
 
-pub(crate) async fn connect_with_retry(
-    socket_path: &Path,
-    timeout_duration: Duration,
-    policy: DaemonConnectRetryPolicy,
-) -> Result<UnixStream> {
-    let mut retry_delay = policy.initial_delay;
+/// One connection attempt.
+///
+/// Implemented by the real socket connector; the model-based test
+/// `mbt/tests/mcp_connect.rs` substitutes a counting fake to check the connect
+/// budget (`modeling/quint/MCPServer.qnt`).
+#[doc(hidden)]
+#[allow(async_fn_in_trait)]
+pub trait ConnectAttempt {
+    type Output;
+    type Error;
 
-    for attempt in 0..policy.attempts {
-        match connect_socket_with_timeout(socket_path, timeout_duration).await {
-            Ok(stream) => return Ok(stream),
+    async fn connect_once(&mut self) -> Result<Self::Output, Self::Error>;
+}
+
+/// The connect retry loop used by [`connect_with_retry`]: up to `attempts`
+/// attempts with exponential backoff, then one final attempt without sleep.
+///
+/// Returns the result and the number of attempts made.
+#[doc(hidden)]
+pub async fn retry_with_final<A: ConnectAttempt>(
+    connector: &mut A,
+    attempts: u32,
+    initial_delay: Duration,
+    max_delay: Duration,
+) -> (Result<A::Output, A::Error>, u32) {
+    let mut retry_delay = initial_delay;
+    let mut calls = 0u32;
+
+    for attempt in 0..attempts {
+        calls += 1;
+        match connector.connect_once().await {
+            Ok(value) => return (Ok(value), calls),
             Err(_) => {
-                if attempt + 1 < policy.attempts {
+                if attempt + 1 < attempts {
                     tokio::time::sleep(retry_delay).await;
-                    retry_delay = (retry_delay * 2).min(policy.max_delay);
+                    retry_delay = (retry_delay * 2).min(max_delay);
                 }
             }
         }
     }
 
     // Final connect check without backoff sleep, matching the modeled FinalConnect step.
-    connect_socket_with_timeout(socket_path, timeout_duration).await
+    calls += 1;
+    (connector.connect_once().await, calls)
+}
+
+struct SocketConnector<'a> {
+    socket_path: &'a Path,
+    timeout_duration: Duration,
+}
+
+impl ConnectAttempt for SocketConnector<'_> {
+    type Output = UnixStream;
+    type Error = anyhow::Error;
+
+    async fn connect_once(&mut self) -> Result<UnixStream> {
+        connect_socket_with_timeout(self.socket_path, self.timeout_duration).await
+    }
+}
+
+pub(crate) async fn connect_with_retry(
+    socket_path: &Path,
+    timeout_duration: Duration,
+    policy: DaemonConnectRetryPolicy,
+) -> Result<UnixStream> {
+    let mut connector = SocketConnector {
+        socket_path,
+        timeout_duration,
+    };
+    let (result, _attempts) = retry_with_final(
+        &mut connector,
+        policy.attempts,
+        policy.initial_delay,
+        policy.max_delay,
+    )
+    .await;
+    result
 }
 
 pub(crate) async fn send_request_and_receive_response(

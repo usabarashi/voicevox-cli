@@ -28,14 +28,12 @@ different property.
 
 | Module | Old property | Disposition | Quint target / reason |
 |---|---|---|---|
-| `ONNXRuntime` | `TypeOK`, `ReadyHasNoPendingRetry` | preserve | `ONNXRuntime.qnt` (done) |
-| `Dictionary` | `TypeOK`, `ReadyIsStable` | preserve | `Dictionary.qnt` (done) |
-| `Socket` | `TypeOK`, `ReadyIsBounded` | preserve | `Socket.qnt` (done) |
+| `ONNXRuntime`, `Dictionary` | `TypeOK`, `ReadyHasNoPendingRetry` / `ReadyIsStable` | replace | `ResourceLoad.qnt`: production loads both with a single `initialize()` call (no load retry; the installer retries). Properties: `loadTerminates`, `loadedStaysReady`. |
 | `Playback` | `TypeOK`, `PlayingRequiresAudio`, `CanceledImpliesStoppedOrFailed` | preserve | `Playback.qnt` (done) |
 | `IPC` | `TypeOK`, `FailedImpliesError`, `DoneImpliesValidResponse`, `EventuallyLeavesInFlight` | preserve | `IPC.qnt` (done) |
 | `Daemon` | `TypeOK`, `SocketImpliesReady`, `BusyImpliesReady`, `AlreadyRunningNotBusy`, `RetryBounded` | preserve | `Daemon.qnt` (done) |
 | `Daemon` | `RecoveryPathExists` | retract | not checked by any cfg; does not hold under weak fairness (`daemonFail` can exhaust `retryCount` before `recover` is taken) |
-| `SynthesisParallel` | `TypeOK`, `AtMostOneSynthesizing`, `WorkerMatchesSynthesis`, `EventuallyLeavesBusyWorker` | preserve | `SynthesisParallel.qnt` (done) |
+| `SynthesisParallel` | `TypeOK`, `AtMostOneSynthesizing`, `WorkerMatchesSynthesis`, `EventuallyLeavesBusyWorker` | replace | `DaemonSerialization.qnt` (revised): the TLA+ model was client-side parallel jobs with cancellation releasing the worker and daemon-side retry/requeue. Production serializes one synthesis per daemon (`SerializedSynthesisPolicy` mutex), has no cancel request, and retries on the client. `TypeOK` (numeric counters) is dropped. |
 | `StartupResources` | `TypeOK`, `DaemonReadyRequiresDownloads`, `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket` | preserve | `StartupResources.qnt` (done, flattened) |
 | `MCPServer` | `TypeOK`, `ConnectedImpliesDaemonReady`, `DegradedImpliesNotConnected`, `PlayingRequiresAudio` | preserve | `MCPServer.qnt` (done, flattened) |
 | `Say` | `TypeOK`, `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`, `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode` (+ `PlayingRequiresAudio`, `EmittingUsesPlayMode`) | preserve (flattened) | `Say.qnt` (done) |
@@ -59,9 +57,13 @@ does the following:
 
 - `viewsAligned` reduces to the client view (`clientDaemonState`) derived from
   `daemonState`; the old `synthDaemonReady` view is gone.
-- `SynthesisRunningImpliesDaemonReady` becomes: an attempt only starts while the
-  daemon is ready (`enqueue`/`backoffDone` gated on the client daemon view), and
-  going not-ready cancels a `Running`/`Backoff` synthesis (`viewsForDaemon`).
+- `SynthesisRunningImpliesDaemonReady` is **retracted**. Production auto-starts
+  the daemon (`connect_daemon_client_auto_start`) and treats daemon loss as a
+  retryable attempt failure, not a cancellation, so synthesis is
+  environment-driven and does not require a ready daemon. `daemonLost` only
+  updates the client view and resets the connect budget.
+- A non-retryable attempt failure (`synthFatalFail`) fails from any attempt,
+  matching `SynthesisRetry` (failure is not limited to the last attempt).
 - The four startup resources are encoded as an indexed map
   (`resources: int -> LoadState`, `retries: int -> int`, indices
   0=runtime, 1=dictionary, 2=socket, 3=model) using `nondet` over the index. This
@@ -87,25 +89,89 @@ properties. In Quint these become `init`/`step` plus `--invariant` /
 `--temporal` selections; constants are concrete `pure val`s (composition is
 flattened, so instance parameters are not used).
 
-| cfg scenario | Module | Constants | Invariants / properties |
-|---|---|---|---|
-| `ONNXRuntime.load` | ONNXRuntime | `MAX_RETRY=3` | `typeOK`, `readyHasNoPendingRetry` |
-| `Dictionary.load` | Dictionary | `MAX_RETRY=3` | `typeOK`, `readyIsStable` |
-| `Socket.bind` | Socket | `MAX_RETRY=3` | `typeOK`, `readyIsBounded` |
-| `Playback.standard` | Playback | — | `typeOK`, `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` |
-| `IPC.safety` | IPC | `MAX_TIMEOUTS=3` | `typeOK`, `failedImpliesError`, `doneImpliesValidResponse` |
-| `IPC.progress` | IPC | `MAX_TIMEOUTS=3` | `typeOK` + temporal `eventuallyLeavesInFlight` |
-| `Daemon.startup` | Daemon | `MAX_RETRY=3` | `typeOK`, `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded` |
-| `SynthesisParallel.safety` | SynthesisParallel | `MAX_RETRY=2` | `typeOK`, `atMostOneSynthesizing`, `workerMatchesSynthesis` |
-| `SynthesisParallel.progress` | SynthesisParallel | `MAX_RETRY=2` | same + temporal `eventuallyLeavesBusyWorker` |
-| `FirstStartup.bootstrap` | StartupResources | `MAX_RETRY=2` | `typeOK`, `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket` |
-| `MCPServer.connect` | MCPServer | `MAX_ATTEMPTS=3` | `typeOK`, `connectedImpliesDaemonReady`, `degradedImpliesNotConnected`, `playingRequiresAudio` |
-| `MCPServer.degraded` | MCPServer | `MAX_ATTEMPTS=3` | same as above |
-| `Say.standard` | Say | `MAX_RETRY=0` | `typeOK`, `doneHasNoError`, `playbackFailureOnlyInPlayMode` |
-| `Say.daemon` | Say | `MAX_RETRY=2` | `typeOK`, `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError` |
-| `System.integration` | System | `MAX_RETRY=2`, `MAX_ATTEMPTS=3` | `typeOK`, `viewsAligned`, `clientConnectedImpliesDaemonReady`, `synthesisRunningImpliesDaemonReady` |
-| `VoicevoxModel.standard` | VoicevoxModel | `MAX_RETRY=2` | retracted (see above) |
-| `Synthesis.*` (6) | Synthesis | `MAX_RETRY=1..3` | replaced by `SynthesisRetry.qnt` (Phase 1) |
+The table below reflects the current `verify.sh`; constants now track the
+production constants they abstract (see "Post-migration revisions").
+
+| Module | Constants | Invariants / temporal properties |
+|---|---|---|
+| ResourceLoad | one-shot | temporals `loadTerminates`, `loadedStaysReady` |
+| Playback | — | `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` |
+| IPC | frame/timeout values | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError` + temporal `eventuallyLeavesInFlight` |
+| Daemon | `MAX_RETRY=10` | `typeOK`, `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded` |
+| DaemonSerialization | — | `atMostOneSynthesizing`, `workerMatchesSynthesis` + temporal `eventuallyLeavesBusyWorker` |
+| DaemonServer | `PRODUCTION_MAX_IN_FLIGHT=32`, verify scale `MAX_IN_FLIGHT=2` | `typeOK`, `inFlightMatchesHandling` + temporal `handling{0,1,2}Terminates` |
+| DaemonSynthesisPath | `PRODUCTION_MAX_IN_FLIGHT=32`, verify scale `MAX_IN_FLIGHT=2` | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing` + temporal `workerEventuallyIdle` |
+| StartupSafety | resources × socket scenarios | `readyRequiresResources`, `readyRequiresStartableSocket`, `startedImpliesNoLive`, `liveNeverRemoved`, `liveNeverStarted`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure` + temporal `terminates` |
+| McpRequestLifecycle | `PRODUCTION_MAX_CONCURRENT=4`, verify scale `MAX_CONCURRENT=2` | `typeOK`, `activeMatchesHolding` + temporal `allRequestsTerminate` |
+| McpStartup | — | `doneHasOutcome`, `recoveryOnlyAfterAlreadyRunning` + temporal `terminates` |
+| StartupResources | `MAX_RETRY=3` | `typeOK`, `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket` + temporals `bindingTerminates`, `permissionDeniedIsTerminal` |
+| MCPServer | `MAX_ATTEMPTS=10` | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio` |
+| Say | `MAX_RETRY=10` | `typeOK`, `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError`, `playbackFailureOnlyInPlayMode`, `outputFailureOnlyInFileMode`, `playingRequiresAudio`, `emittingUsesPlayMode` |
+| System | resource retries 3, synth retries 2, connect attempts 10 | `typeOK`, `viewsAligned`, `clientConnectedImpliesDaemonReady`, `daemonStartingRequiresResources`, `daemonReadyRequiresResources`, `daemonReadyRequiresSocket` |
+| StreamingSynthesis | — | `segmentsBounded`, `playbackRequiresAllSegments`, `canceledImpliesNoPlayback` |
+| Download | `MAX_ATTEMPTS=3` | `attemptsBounded`, `failedHasReason`, `exhaustedImpliesAttempts`, `preparationFailureMeansNoAttempts` + temporal `terminates` |
+| ModelLifecycle | — | `loadedImpliesPhase` + temporal `eventuallyUnloaded` |
+| DaemonIpc | — | `catalogRequiresConnection` |
+| DaemonSynthesize | — | `synthesizedRequiresCatalog` |
+| SynthesisRetry | `MAX_RETRIES=2` | `attemptsBounded`, `backoffsBounded`, `backoffAfterAttempt` + temporal `eventuallyTerminal`, `cancelIsTerminal` |
+| McpRequestParsing | — | typecheck + MBT only |
+| TargetResolution | fixture catalog | MBT only |
+| `VoicevoxModel.standard` | — | retracted (see above) |
+| `Synthesis.*` (6) | — | replaced by `SynthesisRetry.qnt` (Phase 1) |
+
+## Post-migration revisions
+
+The following changes were made after the initial port to remove
+model↔implementation drift (they are reflected in `verify.sh`, the `*.qnt`
+files, and `STATE_TRACEABILITY.md`):
+
+- **Bounds now track production constants.** `Daemon` and `MCPServer` connect to
+  10 (`MAX_CONNECT_ATTEMPTS`), `StartupResources`/`Download` use 3
+  (`download_missing_resources`), `Say` uses 10, and `System` separates resource
+  retries (3), synth retries (2), and connect attempts (10).
+- **`MCPServer` `Degraded` removed.** Production has no persistent degraded
+  state; a failed connect episode is terminal (`ConnectFailed`) and a new request
+  resets. The final connect after the retry loop is explicit
+  (`finalConnectOk`/`finalConnectFail`).
+- **Resource retry guard.** `beginLoad` only accepts `Missing`; re-entry after a
+  failure goes through the budget-guarded `retryLoad`, so the retry counter is an
+  actual bound rather than a saturated bookkeeping value.
+- **Tautological properties replaced.** `readyHasNoPendingRetry` /
+  `readyIsStable` / `readyIsBounded` were subsumed by `typeOK`; they are now
+  `loadTerminates`, `loadedStaysReady`, and `bindingTerminates`.
+  `canceledImpliesStoppedOrFailed` now refers to the `Canceled` error, not the
+  pending `cancelRequested` flag.
+- **`SynthesisParallel` → `DaemonSerialization`.** Cancel releasing the worker
+  and daemon-side retry had no production counterpart. The model now encodes the
+  serialized mutex with no cancel/retry.
+- **`SynthesisRetry` attempt/backoff fidelity.** An in-flight `Attempting` state
+  and `cancelIsTerminal` were added; `backoffs` is now counted at backoff
+  *start*, matching `backoffs_started`. The module is scoped to the
+  non-streaming path.
+- **`StreamingSynthesis` added.** The default MCP streaming path
+  (`default_streaming() == true`) is now modelled and MBT-checked.
+- **`System` failure handling and retracted readiness gating.** `synthFatalFail`
+  allows early non-retryable failure, and `synthBackoffs` is counted at backoff
+  start. `daemonLost` resets the client view and connect budget but does **not**
+  cancel synthesis: production auto-starts the daemon, so
+  `synthRunningImpliesDaemonReady` / `synthBackoffImpliesDaemonReady` and the
+  `SynthesisNeedsDaemon` gating are retracted (see Phase 1 contract change 3).
+- **Connect-budget reset per episode.** `MCPServer` and `System` reset the
+  attempt counter when a connected client loses the daemon, because each new
+  request starts a fresh `connect_with_retry` budget.
+- **Streaming failure/cancellation coverage.** `StreamingSynthesis` now models
+  connection failure and cancellation before connection.
+- **`Download` preparation failure.** `Download.qnt` separates preparation
+  failure (before any downloader invocation) from retry exhaustion and counts
+  invocations, replacing the unsound `failedImpliesExhausted`.
+- **`Daemon` recovery bound.** `daemonFail` / `alreadyRunningUnresponsive` are
+  budget-guarded so the retry counter bounds actual recovery failures.
+- **`IPC` transport boundary.** Encode/write failure, EOF, oversized frame, and
+  protocol `Error` responses were added; the dead `MAX_TIMEOUTS` counter was
+  removed.
+- **New models for previously uncovered paths.** `Download`, `ModelLifecycle`,
+  and `McpRequestParsing` (+ MBT) cover installer retries, per-request model
+  load/unload, and request parsing.
 
 ## Assumptions carried over
 

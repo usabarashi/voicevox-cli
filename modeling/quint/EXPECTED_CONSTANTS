@@ -1,0 +1,37 @@
+# Cross-spec / cross-production constant consistency (machine-checked by verify.sh).
+#
+# Format (pipe-delimited; the value/regex fields must not contain `|`):
+#   spec|<SpecName>|<ConstantName>|<ExpectedValue>
+#   prod|<FilePath>|<AnchoredDeclRegex>
+#
+# `spec` asserts the spec declares `pure val <ConstantName> = <Value>`.
+# `prod` asserts the file has a line matching the anchored regex (so a different
+# numeric value such as `= 40` for `= 4`, or a commented-out declaration, does
+# not pass).
+#
+# Verification-scale constants: `McpRequestLifecycle.MAX_CONCURRENT`,
+# `DaemonServer.MAX_IN_FLIGHT` and `DaemonSynthesisPath.MAX_IN_FLIGHT` are
+# scaled down so their limits are actually reachable with the small ID sets; the
+# production value is declared as `PRODUCTION_*` and asserted here.
+#
+# Semantics note: `SynthesisRetry.MAX_RETRIES` counts retries (attempts = 1 +
+# MAX_RETRIES), while `Download.MAX_ATTEMPTS` and `StartupResources.MAX_RETRY`
+# bound total attempts. Do not assume a shared meaning; see
+# STATE_TRACEABILITY.md "Cross-spec consistency".
+spec|Daemon|MAX_RETRY|10
+spec|MCPServer|MAX_ATTEMPTS|10
+spec|System|MAX_CONNECT_ATTEMPTS|10
+spec|System|MAX_RESOURCE_RETRIES|3
+spec|SynthesisRetry|MAX_RETRIES|2
+spec|System|MAX_SYNTH_RETRIES|2
+spec|Download|MAX_ATTEMPTS|3
+spec|StartupResources|MAX_RETRY|3
+spec|Say|MAX_RETRY|10
+spec|McpRequestLifecycle|PRODUCTION_MAX_CONCURRENT|4
+spec|DaemonServer|PRODUCTION_MAX_IN_FLIGHT|32
+spec|DaemonSynthesisPath|PRODUCTION_MAX_IN_FLIGHT|32
+prod|src/infrastructure/daemon/mod.rs|^[[:space:]]*(pub )?const MAX_CONNECT_ATTEMPTS: u32 = 10;
+prod|src/interface/mcp_server/tools/text_to_speech.rs|^[[:space:]]*(pub )?const MCP_DAEMON_MAX_RETRIES: u32 = 2;
+prod|src/interface/mcp_server/server/runtime.rs|^[[:space:]]*(pub )?const MAX_CONCURRENT_TOOL_HANDLERS: usize = 4;
+prod|src/infrastructure/daemon/server.rs|^[[:space:]]*(pub )?const MAX_CONCURRENT_CLIENTS: usize = 32;
+prod|src/infrastructure/download/install.rs|^[[:space:]]*(pub )?const MAX_DOWNLOAD_ATTEMPTS: u32 = 3;

@@ -14,6 +14,48 @@ use crate::infrastructure::voicevox::{
     Speaker, open_voice_model_file, open_voice_model_file_by_id,
 };
 
+/// The subset of voice-core operations the daemon synthesis executor needs.
+///
+/// Implemented by [`VoicevoxCore`]; the model-based test
+/// `mbt/tests/model_lifecycle.rs` substitutes a recording fake to check the
+/// per-request load/unload contract (`modeling/quint/ModelLifecycle.qnt`).
+pub trait ModelRuntime {
+    /// Loads a voice model by numeric model ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model cannot be loaded.
+    fn load_model(&self, model_id: u32) -> Result<()>;
+
+    /// Synthesizes audio for the given text, style, and speech rate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if synthesis fails.
+    fn synthesize(&self, text: &str, style_id: u32, rate: f32) -> Result<Vec<u8>>;
+
+    /// Unloads a voice model by file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model cannot be unloaded.
+    fn unload_model_by_path(&self, model_path: &Path) -> Result<()>;
+}
+
+impl ModelRuntime for VoicevoxCore {
+    fn load_model(&self, model_id: u32) -> Result<()> {
+        self.load_specific_model(model_id)
+    }
+
+    fn synthesize(&self, text: &str, style_id: u32, rate: f32) -> Result<Vec<u8>> {
+        self.synthesize_with_rate(text, style_id, rate)
+    }
+
+    fn unload_model_by_path(&self, model_path: &Path) -> Result<()> {
+        self.unload_voice_model_by_path(model_path)
+    }
+}
+
 pub trait CoreSynthesis {
     type Error;
     type Output<'a>: AsRef<[u8]>

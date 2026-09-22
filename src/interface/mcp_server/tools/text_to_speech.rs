@@ -8,7 +8,8 @@ use tokio::sync::oneshot;
 use super::types::{ToolCallResult, success_result, text_result};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
 use crate::domain::synthesis::{
-    AttemptOutcome, RetryDecision, RetryPolicy, TextSynthesisRequest, validate_basic_request,
+    AttemptOutcome, RetryDecision, RetryPolicy, RetryTracker, TextSynthesisRequest,
+    validate_basic_request,
 };
 use crate::domain::text_to_speech::{
     SynthesizeParams, default_rate, default_streaming, validate_style_id,
@@ -24,7 +25,10 @@ use crate::interface::synthesis::flow::{
 };
 use crate::interface::synthesis::mode::{SynthesisMode, select_synthesis_mode_with_config};
 
-const MCP_DAEMON_MAX_RETRIES: u32 = 2;
+/// Number of retries for the non-streaming daemon synthesis path. Mirrors
+/// `MAX_RETRIES` in `modeling/quint/SynthesisRetry.qnt`; the model-based test
+/// drives `RetryPolicy::new(MCP_DAEMON_MAX_RETRIES)` against that spec.
+pub const MCP_DAEMON_MAX_RETRIES: u32 = 2;
 
 #[derive(Debug, Deserialize)]
 struct TextToSpeechToolInput {
@@ -37,14 +41,16 @@ struct TextToSpeechToolInput {
 }
 
 /// Result of one client-side synthesis attempt, as seen by the retry loop.
-enum AttemptCallOutcome {
+#[doc(hidden)]
+pub enum AttemptCallOutcome {
     Completed(Vec<u8>),
     Cancelled(String),
     Failed(anyhow::Error),
 }
 
 /// Result of waiting for a backoff.
-enum WaitOutcome {
+#[doc(hidden)]
+pub enum WaitOutcome {
     Elapsed,
     Cancelled(String),
 }
@@ -53,7 +59,9 @@ enum WaitOutcome {
 ///
 /// The daemon is an environment: an attempt either produces bytes, is canceled,
 /// or fails with an error whose retryability is classified outside this trait.
-trait SynthesisAttempt {
+#[doc(hidden)]
+#[allow(async_fn_in_trait)]
+pub trait SynthesisAttempt {
     async fn run(
         &mut self,
         request: &DaemonSynthesisBytesRequest<'_>,
@@ -62,7 +70,9 @@ trait SynthesisAttempt {
 }
 
 /// Waits for a backoff delay. Cancellation has priority when both are ready.
-trait BackoffWaiter {
+#[doc(hidden)]
+#[allow(async_fn_in_trait)]
+pub trait BackoffWaiter {
     async fn wait(
         &mut self,
         delay: Duration,
@@ -71,13 +81,18 @@ trait BackoffWaiter {
 }
 
 /// Outcome of the retry loop, including the observed attempt/backoff counts.
+///
+/// Exposed (like the traits above) so the model-based test can drive the real
+/// `run_retry_loop` with controllable seams and compare the observed counters
+/// against `modeling/quint/SynthesisRetry.qnt`.
+#[doc(hidden)]
 #[derive(Default)]
-struct RetryLoopResult {
-    wav_data: Option<Vec<u8>>,
-    last_error: Option<anyhow::Error>,
-    cancellation: Option<String>,
-    attempts_started: u32,
-    backoffs_started: u32,
+pub struct RetryLoopResult {
+    pub wav_data: Option<Vec<u8>>,
+    pub last_error: Option<anyhow::Error>,
+    pub cancellation: Option<String>,
+    pub attempts_started: u32,
+    pub backoffs_started: u32,
 }
 
 /// Executes the `text_to_speech` tool without external cancellation.
@@ -252,8 +267,11 @@ async fn handle_daemon_synthesis(
 /// only orchestrates. Cancellation is evaluated before every attempt and has
 /// priority while waiting for a backoff. Attempts and backoffs are counted so
 /// the observed behavior can be asserted.
+/// Drives the client-side retry loop. Exposed (with the traits above) as the
+/// production seam for `mbt/tests/synthesis_retry_loop.rs`.
+#[doc(hidden)]
 #[allow(clippy::future_not_send)]
-async fn run_retry_loop<A, W>(
+pub async fn run_retry_loop<A, W>(
     policy: RetryPolicy,
     attempt: &mut A,
     waiter: &mut W,
@@ -265,23 +283,32 @@ where
     W: BackoffWaiter,
 {
     let mut result = RetryLoopResult::default();
+    let mut tracker = RetryTracker::new(policy);
     let mut retry_index: u32 = 0;
 
     loop {
         if let Some(reason) = take_cancellation(cancel_rx) {
+            tracker.cancel();
             result.cancellation = Some(reason);
-            return result;
+            break;
         }
 
-        result.attempts_started += 1;
+        if !tracker.begin_attempt() {
+            // Unreachable while `Running` with attempts remaining; stop
+            // defensively rather than loop forever.
+            break;
+        }
+
         match attempt.run(request, cancel_rx.as_mut()).await {
             AttemptCallOutcome::Completed(wav_data) => {
+                let _ = tracker.record_attempt(AttemptOutcome::Succeeded);
                 result.wav_data = Some(wav_data);
-                return result;
+                break;
             }
             AttemptCallOutcome::Cancelled(reason) => {
+                tracker.cancel();
                 result.cancellation = Some(reason);
-                return result;
+                break;
             }
             AttemptCallOutcome::Failed(error) => {
                 let retryable = is_retryable_daemon_synthesis_error(&error);
@@ -291,11 +318,10 @@ where
                 } else {
                     AttemptOutcome::FatalFailure
                 };
-                if policy.after_attempt(result.attempts_started, outcome) == RetryDecision::Finish {
-                    return result;
+                if tracker.record_attempt(outcome) == RetryDecision::Finish {
+                    break;
                 }
 
-                result.backoffs_started += 1;
                 let delay = policy.backoff_delay(
                     retry_index,
                     startup::initial_retry_delay(),
@@ -303,15 +329,22 @@ where
                 );
                 retry_index += 1;
                 match waiter.wait(delay, cancel_rx.as_mut()).await {
-                    WaitOutcome::Elapsed => {}
+                    WaitOutcome::Elapsed => {
+                        tracker.end_backoff();
+                    }
                     WaitOutcome::Cancelled(reason) => {
+                        tracker.cancel();
                         result.cancellation = Some(reason);
-                        return result;
+                        break;
                     }
                 }
             }
         }
     }
+
+    result.attempts_started = tracker.attempts_started();
+    result.backoffs_started = tracker.backoffs_started();
+    result
 }
 
 fn take_cancellation(cancel_rx: &mut Option<oneshot::Receiver<String>>) -> Option<String> {

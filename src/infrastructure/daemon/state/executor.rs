@@ -1,19 +1,30 @@
 use std::path::Path;
 
-use crate::infrastructure::core::VoicevoxCore;
+use crate::infrastructure::core::ModelRuntime;
 
 use super::catalog::{ModelCatalog, TargetResolution};
 use super::result::{DaemonServiceError, DaemonServiceErrorKind, DaemonServiceResult};
 
-pub(super) struct DaemonSynthesisExecutor;
+/// Creates a fresh model runtime per request.
+///
+/// Per-request creation (rather than a cached core) is the documented memory
+/// contract; the factory seam lets the model-based test substitute a recording
+/// fake.
+pub type ModelRuntimeFactory<R> = Box<dyn Fn() -> anyhow::Result<R> + Send + Sync>;
+
+/// Executes one daemon synthesis request: load a model, synthesize, unload.
+#[doc(hidden)]
+pub struct DaemonSynthesisExecutor<R: ModelRuntime> {
+    create: ModelRuntimeFactory<R>,
+}
 
 /// RAII guard that unloads a voice model on drop.
 ///
 /// Guarantees the model is unloaded even on panic or task cancellation (the
-/// daemon's per-request load/unload contract). The model lifecycle itself is
-/// not modelled in `modeling/quint/SynthesisRetry.qnt`.
-struct ModelUnloadGuard<'a> {
-    core: &'a VoicevoxCore,
+/// daemon's per-request load/unload contract), which is modelled by
+/// `modeling/quint/ModelLifecycle.qnt`.
+struct ModelUnloadGuard<'a, R: ModelRuntime> {
+    core: &'a R,
     model_id: u32,
     model_path: Option<&'a Path>,
 }
@@ -26,7 +37,7 @@ impl Drop for AllocatorReliefGuard {
     }
 }
 
-impl Drop for ModelUnloadGuard<'_> {
+impl<R: ModelRuntime> Drop for ModelUnloadGuard<'_, R> {
     fn drop(&mut self) {
         let Some(model_path) = self.model_path else {
             crate::infrastructure::logging::warn(&format!(
@@ -36,7 +47,7 @@ impl Drop for ModelUnloadGuard<'_> {
             return;
         };
 
-        if let Err(error) = self.core.unload_voice_model_by_path(model_path) {
+        if let Err(error) = self.core.unload_model_by_path(model_path) {
             crate::infrastructure::logging::warn(&format!(
                 "Failed to unload model {}: {error}",
                 self.model_id
@@ -45,12 +56,13 @@ impl Drop for ModelUnloadGuard<'_> {
     }
 }
 
-impl DaemonSynthesisExecutor {
-    pub(super) fn new() -> Self {
-        Self
+impl<R: ModelRuntime> DaemonSynthesisExecutor<R> {
+    #[must_use]
+    pub fn with_factory(create: ModelRuntimeFactory<R>) -> Self {
+        Self { create }
     }
 
-    pub(super) fn synthesize(
+    pub fn synthesize(
         &mut self,
         catalog: &ModelCatalog,
         text: String,
@@ -69,14 +81,14 @@ impl DaemonSynthesisExecutor {
         let model_path = catalog.get_model_path(model_id);
 
         let _allocator_relief = AllocatorReliefGuard;
-        let core = VoicevoxCore::new().map_err(|error| {
+        let core = (self.create)().map_err(|error| {
             DaemonServiceError::new(
                 DaemonServiceErrorKind::ModelLoadFailed,
                 format!("Failed to initialize VOICEVOX core for synthesis: {error}"),
             )
         })?;
 
-        if let Err(error) = core.load_specific_model(model_id) {
+        if let Err(error) = core.load_model(model_id) {
             crate::infrastructure::logging::error(&format!(
                 "Failed to load model {model_id}: {error}"
             ));
@@ -95,7 +107,7 @@ impl DaemonSynthesisExecutor {
                 model_path,
             };
 
-            core.synthesize_with_rate(&text, style_id, rate)
+            core.synthesize(&text, style_id, rate)
         };
 
         match synthesis_result {

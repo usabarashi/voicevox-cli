@@ -5,12 +5,14 @@
 //
 // The TLA+ module uses `INSTANCE` composition with a shared `MAX_RETRY`. The
 // TLC verification backend cannot assign constants through instances, so this
-// port is flattened with a concrete `pure val MAX_RETRY` (the cfg value 2).
+// port is flattened with a concrete `pure val MAX_RETRY`. The value mirrors the
+// production resource installer `download_missing_resources` (`max_retries = 3`
+// in `src/infrastructure/download/install.rs`).
 // Preserved properties: `DaemonReadyRequiresDownloads`,
 // `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket`.
 
 module StartupResources {
-  pure val MAX_RETRY = 2
+  pure val MAX_RETRY = 3
 
   type LoadState = Missing | Loading | Ready | Failed
   type SocketPhase = SocketAbsent | Binding | SocketReady | PermissionDenied
@@ -21,7 +23,6 @@ module StartupResources {
   var dictState: LoadState
   var dictRetry: int
   var socketState: SocketPhase
-  var socketRetry: int
   var modelState: LoadState
   var modelRetry: int
   var daemonState: DaemonPhase
@@ -35,7 +36,6 @@ module StartupResources {
     dictState' = Missing,
     dictRetry' = 0,
     socketState' = SocketAbsent,
-    socketRetry' = 0,
     modelState' = Missing,
     modelRetry' = 0,
     daemonState' = Down,
@@ -44,13 +44,14 @@ module StartupResources {
   // ---- ONNX Runtime ------------------------------------------------------
 
   action beginLoadRuntime = all {
-    runtimeState == Missing or runtimeState == Failed,
+    // First load only; re-entry after failure goes through `retryLoadRuntime`,
+    // which enforces the retry budget.
+    runtimeState == Missing,
     runtimeState' = Loading,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -63,7 +64,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -76,7 +76,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -90,7 +89,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -104,7 +102,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -113,13 +110,13 @@ module StartupResources {
   // ---- Dictionary --------------------------------------------------------
 
   action beginLoadDict = all {
-    dictState == Missing or dictState == Failed,
+    // First load only; re-entry after failure goes through `retryLoadDict`.
+    dictState == Missing,
     dictState' = Loading,
     dictRetry' = dictRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -132,7 +129,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -145,7 +141,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -159,7 +154,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -173,7 +167,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -183,9 +176,10 @@ module StartupResources {
 
   action startBind = all {
     daemonState == DaemonStarting,
-    socketState == SocketAbsent or socketState == PermissionDenied,
+    // A bind attempt is one-shot (production `UnixListener::bind`); permission
+    // denial is terminal for the run.
+    socketState == SocketAbsent,
     socketState' = Binding,
-    socketRetry' = socketRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -199,7 +193,6 @@ module StartupResources {
     daemonState == DaemonStarting,
     socketState == Binding,
     socketState' = SocketReady,
-    socketRetry' = socketRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -213,7 +206,6 @@ module StartupResources {
     daemonState == DaemonStarting,
     socketState == Binding,
     socketState' = PermissionDenied,
-    socketRetry' = if (socketRetry < MAX_RETRY) socketRetry + 1 else socketRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -223,12 +215,13 @@ module StartupResources {
     daemonState' = daemonState,
   }
 
-  action retryBind = all {
-    daemonState == DaemonStarting,
-    socketState == PermissionDenied,
-    socketRetry < MAX_RETRY,
-    socketState' = Binding,
-    socketRetry' = socketRetry,
+  // The socket file is removed when the daemon is not running (recovered from
+  // the retired `Socket.qnt`). Guarding on a non-ready daemon keeps
+  // `daemonReadyRequiresSocket` true.
+  action socketDrop = all {
+    daemonState == Down or daemonState == DaemonFailed,
+    socketState == SocketReady,
+    socketState' = SocketAbsent,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -241,7 +234,9 @@ module StartupResources {
   // ---- Model download ----------------------------------------------------
 
   action startModelDownload = all {
-    modelState == Missing or modelState == Failed,
+    // First download only; re-entry after failure is not modelled as a retry
+    // path here (production retries the whole installer, modelled by MAX_RETRY).
+    modelState == Missing,
     modelState' = Loading,
     modelRetry' = modelRetry,
     runtimeState' = runtimeState,
@@ -249,7 +244,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     daemonState' = daemonState,
   }
 
@@ -262,7 +256,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     daemonState' = daemonState,
   }
 
@@ -275,7 +268,19 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
+    daemonState' = daemonState,
+  }
+
+  action retryModelDownload = all {
+    modelState == Failed,
+    modelRetry < MAX_RETRY,
+    modelState' = Loading,
+    modelRetry' = modelRetry,
+    runtimeState' = runtimeState,
+    runtimeRetry' = runtimeRetry,
+    dictState' = dictState,
+    dictRetry' = dictRetry,
+    socketState' = socketState,
     daemonState' = daemonState,
   }
 
@@ -290,7 +295,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -304,7 +308,20 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
+    modelState' = modelState,
+    modelRetry' = modelRetry,
+  }
+
+  // A running daemon stops and removes its socket. Leaving `DaemonReady` keeps
+  // `daemonReadyRequiresSocket` true.
+  action daemonStop = all {
+    daemonState == DaemonReady,
+    daemonState' = Down,
+    socketState' = SocketAbsent,
+    runtimeState' = runtimeState,
+    runtimeRetry' = runtimeRetry,
+    dictState' = dictState,
+    dictRetry' = dictRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -316,8 +333,10 @@ module StartupResources {
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
     dictRetry' = dictRetry,
-    socketState' = socketState,
-    socketRetry' = socketRetry,
+    // A failed boot drops an in-progress bind (the socket is removed on
+    // shutdown), so `Binding` never stays stuck. A terminal `PermissionDenied`
+    // is left in place.
+    socketState' = if (socketState == Binding) SocketAbsent else socketState,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -330,7 +349,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -341,7 +359,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -361,12 +378,14 @@ module StartupResources {
     startBind,
     bindOk,
     bindPermissionDenied,
-    retryBind,
+    socketDrop,
     startModelDownload,
     modelDownloadOk,
     modelDownloadFail,
+    retryModelDownload,
     startDaemon,
     daemonBootOk,
+    daemonStop,
     daemonBootFail,
     resetDaemon,
     stutter,
@@ -375,7 +394,6 @@ module StartupResources {
   val typeOK =
     runtimeRetry >= 0 and runtimeRetry <= MAX_RETRY and
     dictRetry >= 0 and dictRetry <= MAX_RETRY and
-    socketRetry >= 0 and socketRetry <= MAX_RETRY and
     modelRetry >= 0 and modelRetry <= MAX_RETRY
 
   val daemonReadyRequiresDownloads =
@@ -386,4 +404,25 @@ module StartupResources {
 
   val daemonReadyRequiresSocket =
     daemonState == DaemonReady implies socketState == SocketReady
+
+  // ---- Socket bind liveness (ported from the retired `Socket.qnt`) --------
+
+  action bindAdvance = any {
+    startBind,
+    bindOk,
+    bindPermissionDenied,
+    daemonBootFail,
+  }
+
+  val bindVars = (socketState, daemonState)
+
+  // A bind attempt always leaves `Binding` (success, permission denial, or a
+  // daemon boot failure that drops the socket).
+  temporal bindingTerminates =
+    weakFair(bindAdvance, bindVars) implies
+      always(socketState == Binding implies eventually(socketState != Binding))
+
+  // A permission denial is terminal for that daemon run.
+  temporal permissionDeniedIsTerminal =
+    always(socketState == PermissionDenied implies always(socketState == PermissionDenied))
 }

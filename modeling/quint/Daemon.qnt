@@ -1,12 +1,18 @@
-// Ported from `modeling/tla/Daemon.tla` (Phase 2).
+// Ported from `modeling/tla/Daemon.tla` (Phase 2), revised.
 //
 // Minimal daemon startup/recovery model focused on state-space control.
 // Preserved properties: `SocketImpliesReady`, `BusyImpliesReady`,
-// `RetryBounded`, `AlreadyRunningNotBusy`, and the temporal `RecoveryPathExists`
-// (under weak fairness of `recover`, matching the intended recovery path).
+// `RetryBounded`, `AlreadyRunningNotBusy`.
+//
+// `RecoveryPathExists` is intentionally **not** checked (retracted, see
+// PORTING.md): it does not hold under weak fairness because `daemonFail` can be
+// taken repeatedly from `Recovering` and exhaust `retryCount`. The retry bound
+// mirrors the production connect budget `daemon::startup::MAX_CONNECT_ATTEMPTS`
+// (10); the CLI/MCP readiness waits use 18/12 respectively and are not modelled
+// here.
 
 module Daemon {
-  pure val MAX_RETRY = 3
+  pure val MAX_RETRY = 10
 
   type DaemonState = DaemonDown | Starting | AlreadyRunning | Ready | Recovering
   type SocketState = SocketAbsent | SocketReady
@@ -56,20 +62,24 @@ module Daemon {
     retryCount' = retryCount,
   }
 
+  // Recovery failures are budget-guarded: once the retry budget is exhausted,
+  // `daemonFail` is disabled and the only way out of `Recovering` is `giveUp`.
   action alreadyRunningUnresponsive = all {
     daemonState == AlreadyRunning,
+    retryCount < MAX_RETRY,
     daemonState' = Recovering,
     socketState' = SocketAbsent,
     reqState' = Idle,
-    retryCount' = if (retryCount < MAX_RETRY) retryCount + 1 else retryCount,
+    retryCount' = retryCount + 1,
   }
 
   action daemonFail = all {
     daemonState == Starting or daemonState == Recovering,
+    retryCount < MAX_RETRY,
     daemonState' = Recovering,
     socketState' = SocketAbsent,
     reqState' = Idle,
-    retryCount' = if (retryCount < MAX_RETRY) retryCount + 1 else retryCount,
+    retryCount' = retryCount + 1,
   }
 
   action crashFromReady = all {

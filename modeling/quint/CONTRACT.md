@@ -40,7 +40,7 @@ Phase 1 targets the Synthesis retry/cancel loop first (the walking skeleton for
 
 | Concern | Old TLA+ source | Quint artifact | Status |
 |---|---|---|---|
-| Retry/cancel loop state | `Synthesis.tla` (`synthState`, `retryCount`, `errorKind`, `cancelSource`, `daemonReady`) | `quint/SynthesisRetry.qnt` (`outcome`, `attempts`, `backoffs`) | reworked (see contract changes) |
+| Retry/cancel loop state | `Synthesis.tla` (`synthState`, `retryCount`, `errorKind`, `cancelSource`, `daemonReady`) | `quint/SynthesisRetry.qnt` (`outcome`, `attempts`, `backoffs`) + `domain/synthesis/{lifecycle,retry}.rs` | reworked (see contract changes) |
 | Bounded retries (safety) | `Synthesis.tla` `TypeOK`, `TerminalStates` (`retryCount ≤ MAX_RETRY`) | `attemptsBounded`, `backoffsBounded` | preserved (bound changed) |
 | Backoff only between attempts | (implicit) | `backoffAfterAttempt` | added |
 | Termination (liveness) | `Synthesis.tla` `EventuallyLeavesSynthesizing` under `WF_vars` (`ProgressSpec`) | `eventuallyTerminal` under `weakFair` | strengthened (see contract changes) |
@@ -186,6 +186,47 @@ crate reproduces it. It is not caused by this crate. Failing MBT tests still
 exit non-zero, so CI detection works; debugging a failure requires running the
 test with `--nocapture`, because the harness cannot print captured output
 before the abort.
+
+## Phase 1: in-process retry orchestration
+
+The client-side retry loop is now driven by the pure domain rules and tested
+with fake synthesis results and a controllable wait seam:
+
+- `domain/synthesis/lifecycle.rs`: single-attempt lifecycle
+  (`Idle/Queued/Synthesizing/Done/Failed/Canceled`), used by
+  `interface/synthesis/flow.rs`.
+- `domain/synthesis/retry.rs`: retry policy (`max_retries`, `after_attempt`,
+  `backoff_delay`). The daemon error classification stays in the interface.
+- `interface/mcp_server/tools/text_to_speech.rs`: `run_retry_loop` orchestrates
+  a generic `SynthesisAttempt` + `BackoffWaiter`. Production uses
+  `RealSynthesisAttempt` (daemon client) and `RealBackoffWaiter`
+  (`tokio::select!` with `biased;` and the cancel branch first, so cancellation
+  wins when both are ready at the same poll instant).
+
+The rule's return value actually drives the loop (attempt / backoff / stop);
+there is no bookkeeping-only state machine.
+
+### Observation contract, satisfied by the orchestration tests
+
+- Attempts are counted when started and backoffs when started. The fake attempt
+  also counts how many times the production loop invoked it, so "no attempt
+  after cancellation" is observed directly.
+- Cancellation is injected (pre-sent signal, or the wait seam returning
+  `Cancelled`) instead of relying on wall-clock or auto-advancing time.
+- The wait seam is released explicitly by the test, not by `tokio::time::pause`.
+
+### Mutation acceptance (this step)
+
+- Off-by-one in the retry bound (`after_attempt(attempts_started + 1, ...)`)
+  makes `retry_loop_exhausts_retryable_failures` fail.
+- Ignoring the wait's `Cancelled` outcome makes
+  `retry_loop_cancel_during_backoff_prevents_next_attempt` fail (a second
+  attempt is observed).
+- Reversing the style/model precedence (previous step) makes the target
+  resolution MBT fail.
+
+These confirm the tests are wired to the production path, not to a copy of the
+expected behavior.
 
 ## Removal plan (not in this change)
 

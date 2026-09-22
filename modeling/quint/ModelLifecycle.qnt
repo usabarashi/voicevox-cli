@@ -112,4 +112,33 @@ module ModelLifecycle {
   temporal eventuallyUnloaded =
     weakFair(advance, vars) implies
       always(loaded implies eventually(not(loaded)))
+
+  // ---- Fixed scenarios (executor MBT) -------------------------------------
+  //
+  // Terminal states of one daemon synthesis request, used by
+  // `mbt/tests/model_lifecycle.rs`. The driver runs the production executor with
+  // a recording fake runtime and observes that no model stays loaded.
+
+  action hold = all {
+    phase' = phase,
+    loaded' = loaded,
+  }
+
+  // The request completed (success or synthesis failure); the guard unloaded.
+  action scenarioUnloaded = all {
+    phase' = Idle,
+    loaded' = false,
+  }
+
+  // The model failed to load, so nothing is loaded.
+  action scenarioLoadFailed = all {
+    phase' = Failed,
+    loaded' = false,
+  }
+
+  // The synthesis failed after loading; the guard still unloaded.
+  action scenarioUnloadedAfterSynthFailure = all {
+    phase' = Idle,
+    loaded' = false,
+  }
 }

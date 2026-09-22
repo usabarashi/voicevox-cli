@@ -85,7 +85,8 @@ pub fn resolve_target(
     }
 }
 
-pub(super) struct ModelCatalog {
+#[doc(hidden)]
+pub struct ModelCatalog {
     style_to_model_map: HashMap<u32, u32>,
     model_default_style_map: HashMap<u32, u32>,
     all_speakers: Vec<crate::infrastructure::voicevox::Speaker>,
@@ -93,6 +94,24 @@ pub(super) struct ModelCatalog {
 }
 
 impl ModelCatalog {
+    /// Test seam: builds a catalog from precomputed parts, so the
+    /// model-based test can drive the executor without a real voice core.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn from_parts(
+        style_to_model_map: HashMap<u32, u32>,
+        model_default_style_map: HashMap<u32, u32>,
+        all_speakers: Vec<crate::infrastructure::voicevox::Speaker>,
+        available_models: Vec<crate::infrastructure::voicevox::AvailableModel>,
+    ) -> Self {
+        Self {
+            style_to_model_map,
+            model_default_style_map,
+            all_speakers,
+            available_models,
+        }
+    }
+
     // Catalog is intentionally a startup-time snapshot. Runtime model add/remove is not
     // observed until daemon restart under the current fixed-contract architecture.
     pub(super) fn new(core: &VoicevoxCore) -> Result<Self> {

@@ -135,4 +135,21 @@ module DaemonSerialization {
   temporal eventuallyLeavesBusyWorker =
     (weakFair(advanceJ1, vars) and weakFair(advanceJ2, vars)) implies
       always(worker == Busy implies eventually(worker == WorkerIdle))
+
+  // ---- Fixed scenario (real-daemon concurrency MBT) -----------------------
+  //
+  // Two concurrent client syntheses both complete through the serialized daemon
+  // worker, used by `mbt/tests/daemon_serialization.rs`.
+
+  action hold = all {
+    worker' = worker,
+    j1' = j1,
+    j2' = j2,
+  }
+
+  action scenarioBothDone = all {
+    worker' = WorkerIdle,
+    j1' = Done,
+    j2' = Done,
+  }
 }

@@ -21,6 +21,8 @@ McpNotificationParsing mbt
 IPC mbt
 DaemonIpc mbt
 DaemonSynthesize mbt
+DaemonSerialization mbt
+ModelLifecycle mbt
 StreamingSynthesis mbt
 Daemon verified-only
 StartupResources verified-only
@@ -31,6 +33,4 @@ MCPServer verified-only
 Playback verified-only
 Say verified-only
 Download verified-only
-ModelLifecycle verified-only
-DaemonSerialization verified-only
 System verified-only

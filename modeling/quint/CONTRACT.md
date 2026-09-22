@@ -369,6 +369,8 @@ WAV header check).
 | `mbt/tests/mcp_request_parsing.rs` | `McpRequestParsing.qnt` | `parse_request_message` |
 | `mbt/tests/mcp_notification_parsing.rs` | `McpNotificationParsing.qnt` | `parse_notification_message` |
 | `mbt/tests/ipc_transport.rs` | `IPC.qnt` | `DaemonClient` against a fake Unix-socket server |
+| `mbt/tests/model_lifecycle.rs` | `ModelLifecycle.qnt` | `DaemonSynthesisExecutor` with a recording fake `ModelRuntime` |
+| `mbt/tests/daemon_serialization.rs` | `DaemonSerialization.qnt` | two concurrent real-daemon syntheses |
 | `mbt/tests/target_resolution.rs` | `TargetResolution.qnt` | `resolve_target` + `build_model_default_style_map` |
 | `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesis.qnt` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` (real daemon) |
 
@@ -392,6 +394,10 @@ Mutation acceptance for the follow-up:
 - Serving a valid frame in the `ipc_corrupt_frame` scenario, or treating a
   mismatched/`Error` response as success, makes the corresponding
   `ipc_*` test fail.
+- Removing the `ModelUnloadGuard` (or skipping the unload) makes
+  `model_lifecycle_success` / `model_lifecycle_synth_failure` fail on `loaded`.
+- Breaking daemon-side serialization (deadlock or a dropped concurrent request)
+  makes `daemon_serialization_concurrent` fail.
 
 The `quint-mbt-explore` CI job runs the non-daemon MBT with a random seed
 (`QUINT_SEED` unset) on a nightly schedule, because the PR/push jobs pin the

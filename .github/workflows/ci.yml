@@ -267,6 +267,8 @@ jobs:
               -- --ignored --test-threads=1
             QUINT_SEED=0x5eed cargo test --locked --manifest-path mbt/Cargo.toml --test daemon_synthesize \
               -- --ignored --test-threads=1
+            QUINT_SEED=0x5eed cargo test --locked --manifest-path mbt/Cargo.toml --test daemon_serialization \
+              -- --ignored --test-threads=1
             QUINT_SEED=0x5eed cargo test --locked --manifest-path mbt/Cargo.toml --test streaming_synthesis \
               -- --ignored --test-threads=1
           '

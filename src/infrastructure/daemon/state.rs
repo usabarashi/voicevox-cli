@@ -3,11 +3,15 @@ use crate::infrastructure::ipc::{
 };
 
 pub mod catalog;
-mod executor;
-mod policy;
-mod result;
+#[doc(hidden)]
+pub mod executor;
+#[doc(hidden)]
+pub mod policy;
+#[doc(hidden)]
+pub mod result;
 
 use crate::domain::synthesis::{TextSynthesisRequest, validate_basic_request};
+use crate::infrastructure::core::VoicevoxCore;
 use anyhow::Result;
 use catalog::ModelCatalog;
 use executor::DaemonSynthesisExecutor;
@@ -16,7 +20,7 @@ use result::{DaemonServiceError, DaemonServiceErrorKind, DaemonServiceResult};
 
 pub struct DaemonState {
     catalog: ModelCatalog,
-    synthesis_policy: SerializedSynthesisPolicy,
+    synthesis_policy: SerializedSynthesisPolicy<VoicevoxCore>,
 }
 
 impl DaemonState {
@@ -57,8 +61,9 @@ impl DaemonState {
         drop(catalog_core);
         crate::infrastructure::memory::release_unused_allocator_memory();
 
-        let synthesis_executor = DaemonSynthesisExecutor::new();
-        let synthesis_policy = SerializedSynthesisPolicy::new(synthesis_executor);
+        let synthesis_policy = SerializedSynthesisPolicy::new(
+            DaemonSynthesisExecutor::with_factory(Box::new(VoicevoxCore::new)),
+        );
 
         Ok(Self {
             catalog,

@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::infrastructure::voicevox::{AvailableModel, Speaker};
 
-pub(super) enum DaemonServiceResult {
+#[doc(hidden)]
+pub enum DaemonServiceResult {
     SynthesizeResult {
         wav_data: Vec<u8>,
     },
@@ -15,14 +16,16 @@ pub(super) enum DaemonServiceResult {
     },
 }
 
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy)]
-pub(super) enum DaemonServiceErrorKind {
+pub enum DaemonServiceErrorKind {
     InvalidTargetId,
     ModelLoadFailed,
     SynthesisFailed,
 }
 
-pub(super) struct DaemonServiceError {
+#[doc(hidden)]
+pub struct DaemonServiceError {
     pub(super) kind: DaemonServiceErrorKind,
     pub(super) message: String,
 }

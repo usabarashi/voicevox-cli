@@ -1,5 +1,7 @@
 use tokio::sync::Mutex;
 
+use crate::infrastructure::core::ModelRuntime;
+
 use super::catalog::ModelCatalog;
 use super::executor::DaemonSynthesisExecutor;
 use super::result::{DaemonServiceError, DaemonServiceResult};
@@ -8,18 +10,20 @@ use super::result::{DaemonServiceError, DaemonServiceResult};
 ///
 /// VOICEVOX core/model loading is executed under a single async mutex to keep memory usage
 /// predictable under the current no-model-cache design.
-pub(super) struct SerializedSynthesisPolicy {
-    executor: Mutex<DaemonSynthesisExecutor>,
+#[doc(hidden)]
+pub struct SerializedSynthesisPolicy<R: ModelRuntime> {
+    executor: Mutex<DaemonSynthesisExecutor<R>>,
 }
 
-impl SerializedSynthesisPolicy {
-    pub(super) fn new(executor: DaemonSynthesisExecutor) -> Self {
+impl<R: ModelRuntime> SerializedSynthesisPolicy<R> {
+    #[must_use]
+    pub fn new(executor: DaemonSynthesisExecutor<R>) -> Self {
         Self {
             executor: Mutex::new(executor),
         }
     }
 
-    pub(super) async fn synthesize(
+    pub async fn synthesize(
         &self,
         catalog: &ModelCatalog,
         text: String,

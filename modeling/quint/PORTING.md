@@ -35,8 +35,8 @@ different property.
 | `IPC` | `TypeOK`, `FailedImpliesError`, `DoneImpliesValidResponse`, `EventuallyLeavesInFlight` | preserve | `IPC.qnt` (done) |
 | `Daemon` | `TypeOK`, `SocketImpliesReady`, `BusyImpliesReady`, `AlreadyRunningNotBusy`, `RetryBounded` | preserve | `Daemon.qnt` (done) |
 | `Daemon` | `RecoveryPathExists` | retract | not checked by any cfg; does not hold under weak fairness (`daemonFail` can exhaust `retryCount` before `recover` is taken) |
-| `SynthesisParallel` | `TypeOK`, `AtMostOneSynthesizing`, `WorkerMatchesSynthesis`, `EventuallyLeavesBusyWorker` | preserve | `SynthesisParallel.qnt` |
-| `StartupResources` | `TypeOK`, `DaemonReadyRequiresDownloads`, `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket` | preserve | `StartupResources.qnt` |
+| `SynthesisParallel` | `TypeOK`, `AtMostOneSynthesizing`, `WorkerMatchesSynthesis`, `EventuallyLeavesBusyWorker` | preserve | `SynthesisParallel.qnt` (done) |
+| `StartupResources` | `TypeOK`, `DaemonReadyRequiresDownloads`, `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket` | preserve | `StartupResources.qnt` (done, flattened) |
 | `MCPServer` | `TypeOK`, `ConnectedImpliesDaemonReady`, `DegradedImpliesNotConnected`, `PlayingRequiresAudio` | preserve | `MCPServer.qnt` |
 | `Say` | `TypeOK`, `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`, `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode` | preserve (adapt to refined Synthesis) | `Say.qnt` |
 | `System` | `TypeOK`, `ViewsAligned`, `ClientConnectedImpliesDaemonReady`, `SynthesisRunningImpliesDaemonReady` | preserve (adapt INSTANCE to `SynthesisRetry`) | `System.qnt` |
@@ -102,6 +102,15 @@ properties. In Quint these become `init`/`step` plus `--invariant` /
   values, e.g. `Say` with `MAX_RETRY=0` and `2`).
 - Fairness (`WF_vars(...)`) is expressed with `weakFair(action, vars)`, as in
   `SynthesisRetry.qnt`.
+- Composition is **flattened** rather than using Quint module instances: the TLC
+  verification backend cannot assign constants through `import M(N = 3) as M`
+  (it reports "constant parameter N is not assigned a value"). Each ported
+  module therefore carries concrete `pure val` constants and inlines the
+  composed state/actions. Properties are preserved; the INSTANCE structure is
+  not.
+- Fairness must stay per-component: `SynthesisParallel`'s `EventuallyLeavesBusyWorker`
+  needs separate `weakFair` for the J1 and J2 progress sets. A single combined
+  fairness set is satisfiable by progress on one job alone and does not hold.
 - `Stutter`/`UNCHANGED` become explicit no-op actions where the TLA+ model
   relied on them being enabled.
 

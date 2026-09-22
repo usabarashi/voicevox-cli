@@ -100,6 +100,15 @@ run_ok "IPC progress" \
 run_ok "Daemon safety" \
   --invariant=typeOK,socketImpliesReady,busyImpliesReady,retryBounded,alreadyRunningNotBusy \
   modeling/quint/Daemon.qnt
+run_ok "SynthesisParallel safety" \
+  --invariant=typeOK,atMostOneSynthesizing,workerMatchesSynthesis \
+  modeling/quint/SynthesisParallel.qnt
+run_ok "SynthesisParallel progress" \
+  --temporal=eventuallyLeavesBusyWorker \
+  modeling/quint/SynthesisParallel.qnt
+run_ok "StartupResources safety" \
+  --invariant=typeOK,daemonReadyRequiresDownloads,daemonStartRequiresDownloads,daemonReadyRequiresSocket \
+  modeling/quint/StartupResources.qnt
 
 # Real model: safety and liveness must hold.
 run_ok "SynthesisRetry safety" \

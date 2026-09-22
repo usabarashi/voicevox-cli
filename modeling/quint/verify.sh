@@ -118,6 +118,9 @@ run_ok "Say safety" \
 run_ok "System integration" \
   --invariant=typeOK,viewsAligned,clientConnectedImpliesDaemonReady,synthRunningImpliesDaemonReady \
   modeling/quint/System.qnt
+run_ok "DaemonIpc safety" \
+  --invariant=catalogRequiresConnection \
+  modeling/quint/DaemonIpc.qnt
 
 # Real model: safety and liveness must hold.
 run_ok "SynthesisRetry safety" \

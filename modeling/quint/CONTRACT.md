@@ -256,9 +256,9 @@ maintenance cost acceptable.
 | Existing abstract TLA+ kept during migration | the `tla-model-check` job and `modeling/tla` / `modeling/cfg` are untouched. |
 | Maintenance cost acceptable | verification gate and MBT both run in seconds and need no model downloads. |
 
-Not yet done (Phase 2+): port the remaining TLA+ modules, preserve their
-properties with `quint verify`, retire the handwritten TLA+/cfg/direct job, and
-decide Phase 3 (process/socket MBT).
+Phases 2 and 3 (walking skeleton) are complete: the remaining TLA+ modules were
+ported and verified, the handwritten TLA+/cfg artifacts and job were removed,
+and a real-daemon IPC model-based test now runs in CI (see below).
 
 ## Removal plan (done)
 
@@ -267,3 +267,23 @@ The handwritten `modeling/tla` and `modeling/cfg` directories, the
 after every preserved property gained a Quint equivalent that verifies green.
 The TLC verification *engine* is retained, reached through Quint's TLC backend
 (`quint verify --backend=tlc`).
+
+## Phase 3: real-daemon IPC (walking skeleton)
+
+`modeling/quint/DaemonIpc.qnt` models the client connection/catalog-read
+lifecycle, and `mbt/tests/daemon_ipc.rs` exercises it against a real
+`voicevox-daemon` over the Unix socket: the driver spawns the daemon, connects,
+calls `list_speakers`/`list_models`, and Quint Connect compares the observed
+lifecycle with the spec. Catalog integrity is asserted in the driver.
+
+- The daemon starts and serves list requests with an **empty catalog**, so this
+  walking skeleton needs no downloaded models. It is verified locally and in the
+  `quint-mbt-daemon` CI job.
+- The socket must live in a directory owned by the user with mode 0700 (the
+  daemon rejects group/world-accessible parents); the driver creates such a
+  directory and an empty temporary models directory by default.
+- `VOICEVOX_MBT_MODELS_DIR` (optional) points at real models; `VOICEVOX_DAEMON_BIN`
+  overrides the daemon binary path. The test is `#[ignore]`d and run with
+  `-- --ignored`.
+- Deferred: synthesize-level MBT (Phase 3 (B)) needs models + ONNX/OpenJTalk in
+  CI and a model cache; the daemon MBT job runs on an empty catalog for now.

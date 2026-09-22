@@ -2920,6 +2920,8 @@ dependencies = [
  "anyhow",
  "quint-connect",
  "serde",
+ "tempfile",
+ "tokio",
  "voicevox-cli",
 ]
 

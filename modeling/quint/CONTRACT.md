@@ -286,9 +286,11 @@ lifecycle with the spec. Catalog integrity is asserted in the driver.
 
 - The daemon serves list requests with an **empty catalog** (no voice models
   needed), but it still requires the **ONNX Runtime** resource to start. The
-  `quint-mbt-daemon` CI job provisions VOICEVOX resources with `voicevox-setup`
-  (using `GH_TOKEN` to avoid the GitHub API rate limit) into the default XDG
-  location, caches them, and runs both the IPC and synthesize MBT.
+  `quint-mbt-daemon` CI job provisions VOICEVOX resources with
+  `voicevox-download` (feeding `yes` for its license agreement, since the
+  `voicevox-setup` wrapper's interactive prompt does not work with piped stdin)
+  into the default XDG location, caches them, and runs both the IPC and
+  synthesize MBT.
 - The socket must live in a directory owned by the user with mode 0700 (the
   daemon rejects group/world-accessible parents); the driver creates such a
   directory and an empty temporary models directory by default.
@@ -305,9 +307,9 @@ and validate the returned WAV bytes. This needs the full VOICEVOX resource set
 (models + ONNX Runtime + OpenJTalk dictionary), so the test is `#[ignore]`d and
 run in the same `quint-mbt-daemon` CI job.
 
-Note: the (B) spec verifies with TLC and the driver compiles, but it was **not**
-executed in the development environment (no resources available); the CI job is
-the first end-to-end validation point.
+The (B) spec verifies with TLC, and the synthesize MBT was validated locally
+against provisioned resources (real daemon -> `listSpeakers` -> `synthesize` ->
+WAV header check).
 
 ### Known modelling limitations
 

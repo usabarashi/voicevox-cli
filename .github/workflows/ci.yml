@@ -218,8 +218,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # `voicevox-setup` is interactive: its confirmation prompt consumes the
+          # single piped line, leaving the downloader's license prompt with empty
+          # stdin in CI. Call the downloader directly and feed `yes` for the
+          # license agreement.
           nix build --accept-flake-config
-          echo y | ./result/bin/voicevox-setup
+          yes | ./result/bin/voicevox-download \
+            --only onnxruntime --only dict --only models \
+            --output "$HOME/.local/share/voicevox"
 
       - name: Run real-daemon MBT (IPC + synthesize)
         run: |

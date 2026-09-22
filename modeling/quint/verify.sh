@@ -169,6 +169,12 @@ run_ok "IPC progress" \
 run_ok "Daemon safety" \
   --invariant=typeOK,socketImpliesReady,busyImpliesReady,retryBounded,alreadyRunningNotBusy \
   modeling/quint/Daemon.qnt
+run_ok "DaemonSynthesisPath safety" \
+  --invariant=typeOK,inFlightMatchesHolding,atMostOneSynthesizing,workerBusyMatchesSynthesizing \
+  modeling/quint/DaemonSynthesisPath.qnt
+run_ok "DaemonSynthesisPath liveness" \
+  --temporal=workerEventuallyIdle \
+  modeling/quint/DaemonSynthesisPath.qnt
 run_ok "Daemon serialization safety" \
   --invariant=atMostOneSynthesizing,workerMatchesSynthesis \
   modeling/quint/DaemonSerialization.qnt

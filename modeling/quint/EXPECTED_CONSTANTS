@@ -30,3 +30,4 @@ spec Download MAX_ATTEMPTS 3
 spec StartupResources MAX_RETRY 3
 spec McpRequestLifecycle MAX_CONCURRENT 4
 spec DaemonServer MAX_IN_FLIGHT 32
+spec DaemonSynthesisPath MAX_IN_FLIGHT 32

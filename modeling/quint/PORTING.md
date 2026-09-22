@@ -103,7 +103,8 @@ production constants they abstract (see "Post-migration revisions").
 | IPC | frame/timeout values | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError` + temporal `eventuallyLeavesInFlight` |
 | Daemon | `MAX_RETRY=10` | `typeOK`, `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded` |
 | DaemonSerialization | — | `atMostOneSynthesizing`, `workerMatchesSynthesis` + temporal `eventuallyLeavesBusyWorker` |
-| DaemonServer | `MAX_IN_FLIGHT=32`, `MAX_CONNECTIONS=32` | `typeOK`, `inFlightMatchesHandling`, `connectionsMatchClient` + temporal `handling{0,1,2}Terminates` |
+| DaemonServer | `MAX_IN_FLIGHT=32` | `typeOK`, `inFlightMatchesHandling` + temporal `handling{0,1,2}Terminates` |
+| DaemonSynthesisPath | `MAX_IN_FLIGHT=32` | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing` + temporal `workerEventuallyIdle` |
 | DaemonStartup | socket scenarios | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart` + temporal `decides` |
 | StartupSafety | resources × socket scenarios | `readyRequiresResources`, `readyRequiresSocketReady`, `startedImpliesNoLive`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure` + temporal `terminates` |
 | McpRequestLifecycle | `MAX_CONCURRENT=4` | `typeOK`, `activeMatchesRunning` + temporal `allRequestsTerminate` |

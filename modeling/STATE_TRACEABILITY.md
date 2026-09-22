@@ -26,6 +26,7 @@ See also:
 | Synthesis retry/cancel loop (non-streaming) | `SynthesisRetry.qnt` | `Running/Attempting/Backoff/Done/Failed/Canceled`, `attempts` (started), `backoffs` (started) | `attemptsBounded`, `backoffsBounded`, `backoffAfterAttempt`, `eventuallyTerminal`, `cancelIsTerminal` |
 | Streaming synthesis (default MCP path) | `StreamingSynthesis.qnt` | connect (or connect failure) → split → per-segment synthesis → concatenate → play; cancel before/after connect and at any point before playback; fail | `segmentsBounded`, `playbackRequiresAllSegments`, `canceledImpliesNoPlayback` |
 | Daemon synthesis serialization (MBT) | `DaemonSerialization.qnt` | one worker (mutex), queued jobs, no cancel, no daemon-side retry | `atMostOneSynthesizing`, `workerMatchesSynthesis`, `eventuallyLeavesBusyWorker`; `mbt/tests/daemon_serialization.rs` (two concurrent real-daemon requests) |
+| Daemon request path (composed) | `DaemonSynthesisPath.qnt` | server admission (`MAX_IN_FLIGHT = 32`) × serialized worker | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing`, `workerEventuallyIdle` (temporal) |
 | Daemon IPC server | `DaemonServer.qnt` | per-client accept/handle/finish, shared `MAX_IN_FLIGHT = 32` permits, `MAX_CONNECTIONS = 32` accept permits, idle-timeout close | `typeOK`, `inFlightMatchesHandling`, `connectionsMatchClient`, `handling{0,1,2}Terminates` (temporal) |
 | Daemon startup / duplicate prevention | `DaemonStartup.qnt` | absent/stale/live socket scenarios; probe, TOCTOU re-check, stale removal, start | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart`, `decides` (temporal) |
 | MCP request lifecycle | `McpRequestLifecycle.qnt` | admit/complete/cancel, `MAX_CONCURRENT = 4` slots, busy rejection, `cancelAll` on disconnect | `typeOK`, `activeMatchesRunning`, `allRequestsTerminate` (temporal) |
@@ -71,12 +72,12 @@ See also:
 ## Cross-spec consistency
 
 The specs are **per-concern models**, not one composed top-level model:
-`System.qnt` composes startup resources + daemon + client + synthesis, and
+`System.qnt` composes startup resources + daemon + client + synthesis;
 `StartupSafety.qnt` composes the startup path (resources × socket scenario ×
-start ordering). The other protocols (daemon server admission, MCP request
-lifecycle, startup recovery) remain separate. There is therefore no single
-proof that *all* layers fit together; their integration is a reviewed contract,
-listed here.
+start ordering); `DaemonSynthesisPath.qnt` composes server admission × the
+serialized worker. The remaining protocols (MCP request lifecycle, startup
+recovery) are separate. There is therefore no single proof that *all* layers fit
+together; their integration is a reviewed contract, listed here.
 
 What *is* machine-checked:
 
@@ -97,7 +98,7 @@ Layer ownership:
 | Layer | Spec(s) |
 |---|---|
 | Process / daemon lifecycle | `Daemon.qnt`, `DaemonStartup.qnt` |
-| IPC server (admission / connections) | `DaemonServer.qnt`, `DaemonSerialization.qnt` |
+| IPC server (admission / connections / worker) | `DaemonServer.qnt`, `DaemonSerialization.qnt`, `DaemonSynthesisPath.qnt` |
 | IPC transport (client) | `IPC.qnt`, `DaemonIpc.qnt`, `MCPServer.qnt` |
 | MCP server (stdio) | `McpRequestParsing.qnt`, `McpNotificationParsing.qnt`, `McpRequestLifecycle.qnt`, `McpStartup.qnt` |
 | Startup resources / ordering | `ONNXRuntime.qnt`, `Dictionary.qnt`, `Socket.qnt`, `StartupResources.qnt`, `Download.qnt`, `StartupSafety.qnt` |

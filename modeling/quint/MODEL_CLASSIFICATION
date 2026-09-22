@@ -29,6 +29,7 @@ Playback mbt
 StreamingSynthesis mbt
 Daemon verified-only
 DaemonServer verified-only
+DaemonSynthesisPath verified-only
 DaemonStartup verified-only
 StartupResources verified-only
 StartupSafety verified-only

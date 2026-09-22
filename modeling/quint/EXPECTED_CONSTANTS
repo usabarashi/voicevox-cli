@@ -1,0 +1,32 @@
+# Cross-spec constant consistency (machine-checked by verify.sh).
+#
+# These are the constants whose value is shared with production or across
+# specs. `verify.sh` asserts each spec declares the value listed here, so a spec
+# that drifts (e.g. someone changes MCPServer's connect budget but not System's)
+# fails the gate.
+#
+# Format:  spec <SpecName> <ConstantName> <ExpectedValue>
+#
+# Production mapping (kept here for review; the value is asserted above):
+#   Daemon.MAX_RETRY                   ~ daemon::startup::MAX_CONNECT_ATTEMPTS = 10
+#   MCPServer.MAX_ATTEMPTS             ~ daemon::startup::MAX_CONNECT_ATTEMPTS = 10
+#   System.MAX_CONNECT_ATTEMPTS        ~ daemon::startup::MAX_CONNECT_ATTEMPTS = 10
+#   SynthesisRetry.MAX_RETRIES         ~ MCP_DAEMON_MAX_RETRIES = 2
+#   System.MAX_SYNTH_RETRIES           ~ MCP_DAEMON_MAX_RETRIES = 2
+#   Download.MAX_ATTEMPTS              ~ download::install::MAX_DOWNLOAD_ATTEMPTS = 3 (total invocations)
+#   StartupResources.MAX_RETRY         ~ installer retries = 3
+#   McpRequestLifecycle.MAX_CONCURRENT ~ runtime::MAX_CONCURRENT_TOOL_HANDLERS = 4
+#   DaemonServer.MAX_IN_FLIGHT         ~ server::MAX_CONCURRENT_CLIENTS = 32 (concurrent requests, not connections)
+#
+# NOTE: `MAX_RETRY` in the installer-side specs counts *retries*, while
+# `MAX_ATTEMPTS` counts *total attempts*. They are not interchangeable; see
+# STATE_TRACEABILITY.md "Cross-spec consistency".
+spec Daemon MAX_RETRY 10
+spec MCPServer MAX_ATTEMPTS 10
+spec System MAX_CONNECT_ATTEMPTS 10
+spec SynthesisRetry MAX_RETRIES 2
+spec System MAX_SYNTH_RETRIES 2
+spec Download MAX_ATTEMPTS 3
+spec StartupResources MAX_RETRY 3
+spec McpRequestLifecycle MAX_CONCURRENT 4
+spec DaemonServer MAX_IN_FLIGHT 32

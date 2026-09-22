@@ -34,6 +34,7 @@ StartupResources verified-only
 ONNXRuntime verified-only
 Dictionary verified-only
 Socket verified-only
+McpStartup verified-only
 McpRequestLifecycle verified-only
 Say verified-only
 System verified-only

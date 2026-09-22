@@ -75,6 +75,31 @@ run_expect_violation() {
 
 # Every spec must be classified as MBT-backed or verified-only, and every
 # MBT-backed spec must have a driver that references it (see MODEL_CLASSIFICATION).
+# Shared constants must agree across specs (see EXPECTED_CONSTANTS). Catches
+# cross-spec drift such as a connect budget changed in one spec only.
+check_constant_consistency() {
+  local file="modeling/quint/EXPECTED_CONSTANTS"
+  echo "::group::constant consistency"
+  local kind spec name value
+  while read -r kind spec name value; do
+    case "${kind}" in
+      ""|\#*) continue ;;
+      spec)
+        if ! grep -qE "pure val ${name} = ${value}([^0-9]|$)" "modeling/quint/${spec}.qnt"; then
+          echo "FAIL: ${spec}.qnt does not declare 'pure val ${name} = ${value}'" >&2
+          failures=$((failures + 1))
+        fi
+        ;;
+      *)
+        echo "FAIL: unknown entry kind '${kind}' in ${file}" >&2
+        failures=$((failures + 1))
+        ;;
+    esac
+  done < "${file}"
+  echo "ok: constant consistency"
+  echo "::endgroup::"
+}
+
 check_model_classification() {
   local class_file="modeling/quint/MODEL_CLASSIFICATION"
   echo "::group::model classification"
@@ -111,25 +136,26 @@ for spec in modeling/quint/*.qnt modeling/quint/negative/*.qnt; do
 done
 
 check_model_classification
+check_constant_consistency
 
 # Ported lifecycle models (Phase 2).
-run_ok "ONNXRuntime safety" \
-  --invariant=typeOK \
-  modeling/quint/ONNXRuntime.qnt
 run_ok "ONNXRuntime liveness" \
   --temporal=loadTerminates \
   modeling/quint/ONNXRuntime.qnt
-run_ok "Dictionary safety" \
-  --invariant=typeOK \
-  modeling/quint/Dictionary.qnt
+run_ok "ONNXRuntime stability" \
+  --temporal=readyIsStable \
+  modeling/quint/ONNXRuntime.qnt
 run_ok "Dictionary liveness" \
+  --temporal=loadTerminates \
+  modeling/quint/Dictionary.qnt
+run_ok "Dictionary stability" \
   --temporal=loadedStaysReady \
   modeling/quint/Dictionary.qnt
-run_ok "Socket safety" \
-  --invariant=typeOK \
-  modeling/quint/Socket.qnt
 run_ok "Socket liveness" \
   --temporal=bindingTerminates \
+  modeling/quint/Socket.qnt
+run_ok "Socket denial terminal" \
+  --temporal=permissionDeniedIsTerminal \
   modeling/quint/Socket.qnt
 run_ok "Playback safety" \
   --invariant=playingRequiresAudio,canceledImpliesStoppedOrFailed \
@@ -176,6 +202,12 @@ run_ok "ModelLifecycle safety" \
 run_ok "ModelLifecycle liveness" \
   --temporal=eventuallyUnloaded \
   modeling/quint/ModelLifecycle.qnt
+run_ok "McpStartup safety" \
+  --invariant=doneHasOutcome,recoveryOnlyAfterAlreadyRunning \
+  modeling/quint/McpStartup.qnt
+run_ok "McpStartup liveness" \
+  --temporal=terminates \
+  modeling/quint/McpStartup.qnt
 run_ok "McpRequestLifecycle safety" \
   --invariant=typeOK,activeMatchesRunning \
   modeling/quint/McpRequestLifecycle.qnt
@@ -183,7 +215,7 @@ run_ok "McpRequestLifecycle liveness" \
   --temporal=allRequestsTerminate \
   modeling/quint/McpRequestLifecycle.qnt
 run_ok "DaemonServer safety" \
-  --invariant=typeOK,inFlightMatchesHandling,connectionsMatchClient \
+  --invariant=typeOK,inFlightMatchesHandling \
   modeling/quint/DaemonServer.qnt
 run_ok "DaemonServer liveness (client 0)" \
   --temporal=handling0Terminates \

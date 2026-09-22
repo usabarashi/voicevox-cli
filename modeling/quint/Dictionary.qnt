@@ -1,66 +1,59 @@
-// Ported from `modeling/tla/Dictionary.tla` (Phase 2), revised.
+// OpenJTalk dictionary resource lifecycle model.
 //
-// Minimal dictionary lifecycle (e.g. OpenJTalk dictionary). A failed load may be
-// retried only through the budget-guarded `retryLoad`.
+// Production loads the dictionary with a single `openjtalk::initialize()` call
+// (`src/infrastructure/openjtalk.rs`, reached from `core.rs`): there is **no
+// retry**. Retries belong to the installer (`Download.qnt` /
+// `StartupResources.qnt`), not to the load step.
 //
-// The historical `readyIsStable` invariant was equivalent to `typeOK`; it is
-// replaced by the temporal property `loadedStaysReady` (the dictionary is not
-// unloaded once ready).
+// Properties: the load reaches a terminal state (`loadTerminates`), and once
+// ready it is never unloaded (`loadedStaysReady`).
 
 module Dictionary {
-  pure val MAX_RETRY = 3
-
   type LoadState = Missing | Loading | Ready | Failed
 
   var state: LoadState
-  var retryCount: int
 
   action init = all {
     state' = Missing,
-    retryCount' = 0,
   }
 
   action beginLoad = all {
     state == Missing,
     state' = Loading,
-    retryCount' = retryCount,
   }
 
   action loadOk = all {
     state == Loading,
     state' = Ready,
-    retryCount' = retryCount,
   }
 
   action loadFail = all {
     state == Loading,
     state' = Failed,
-    retryCount' = if (retryCount < MAX_RETRY) retryCount + 1 else retryCount,
-  }
-
-  action retryLoad = all {
-    state == Failed,
-    retryCount < MAX_RETRY,
-    state' = Loading,
-    retryCount' = retryCount,
   }
 
   action stutter = all {
     state' = state,
-    retryCount' = retryCount,
   }
 
   action step = any {
     beginLoad,
     loadOk,
     loadFail,
-    retryLoad,
     stutter,
   }
 
-  val typeOK = retryCount >= 0 and retryCount <= MAX_RETRY
+  action advance = any {
+    beginLoad,
+    loadOk,
+    loadFail,
+  }
 
-  // Once the dictionary is ready it is never unloaded.
+  val vars = (state, state)
+
+  temporal loadTerminates =
+    weakFair(advance, vars) implies eventually(state == Ready or state == Failed)
+
   temporal loadedStaysReady =
     always(state == Ready implies always(state == Ready))
 }

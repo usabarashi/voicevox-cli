@@ -1,78 +1,59 @@
-// Ported from `modeling/tla/ONNXRuntime.tla` (Phase 2), revised.
+// ONNX Runtime resource lifecycle model.
 //
-// Minimal ONNX Runtime lifecycle (loader/setup state). A failed load may be
-// retried only through the budget-guarded `retryLoad`, so the retry count is an
-// operational bound (production retries the installer at most `MAX_RETRY`
-// times; see `src/infrastructure/download/install.rs`).
+// Production loads ONNX Runtime with a single `onnxruntime::initialize()` call
+// (`src/infrastructure/onnxruntime.rs`, reached from `core.rs`): there is **no
+// retry**. Retries belong to the installer (`Download.qnt` /
+// `StartupResources.qnt`), not to the load step.
 //
-// The historical `readyHasNoPendingRetry` invariant was equivalent to
-// `typeOK`; it is replaced by the liveness property `loadTerminates`.
+// Properties: the load reaches a terminal state (`loadTerminates`), and once
+// ready it is never unloaded (`readyIsStable`).
 
 module ONNXRuntime {
-  pure val MAX_RETRY = 3
-
   type LoadState = Missing | Loading | Ready | Failed
 
   var state: LoadState
-  var retryCount: int
 
   action init = all {
     state' = Missing,
-    retryCount' = 0,
   }
 
   action beginLoad = all {
     state == Missing,
     state' = Loading,
-    retryCount' = retryCount,
   }
 
   action loadOk = all {
     state == Loading,
     state' = Ready,
-    retryCount' = retryCount,
   }
 
   action loadFail = all {
     state == Loading,
     state' = Failed,
-    retryCount' = if (retryCount < MAX_RETRY) retryCount + 1 else retryCount,
-  }
-
-  action retryLoad = all {
-    state == Failed,
-    retryCount < MAX_RETRY,
-    state' = Loading,
-    retryCount' = retryCount,
   }
 
   action stutter = all {
     state' = state,
-    retryCount' = retryCount,
   }
 
   action step = any {
     beginLoad,
     loadOk,
     loadFail,
-    retryLoad,
     stutter,
   }
-
-  val typeOK = retryCount >= 0 and retryCount <= MAX_RETRY
 
   action advance = any {
     beginLoad,
     loadOk,
     loadFail,
-    retryLoad,
   }
 
-  val vars = (state, retryCount)
+  val vars = (state, state)
 
-  // The load loop terminates: under weak fairness it reaches `Ready`, or gives
-  // up with an exhausted retry budget.
   temporal loadTerminates =
-    weakFair(advance, vars) implies
-      eventually(state == Ready or (state == Failed and retryCount == MAX_RETRY))
+    weakFair(advance, vars) implies eventually(state == Ready or state == Failed)
+
+  temporal readyIsStable =
+    always(state == Ready implies always(state == Ready))
 }

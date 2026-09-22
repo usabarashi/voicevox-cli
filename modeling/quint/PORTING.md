@@ -28,9 +28,9 @@ different property.
 
 | Module | Old property | Disposition | Quint target / reason |
 |---|---|---|---|
-| `ONNXRuntime` | `TypeOK`, `ReadyHasNoPendingRetry` | preserve | `ONNXRuntime.qnt` (done) |
-| `Dictionary` | `TypeOK`, `ReadyIsStable` | preserve | `Dictionary.qnt` (done) |
-| `Socket` | `TypeOK`, `ReadyIsBounded` | preserve | `Socket.qnt` (done) |
+| `ONNXRuntime` | `TypeOK`, `ReadyHasNoPendingRetry` | replace | `ONNXRuntime.qnt`: production `onnxruntime::initialize()` is one-shot (no load retry; the installer retries), so the retry machinery was removed. Properties: `loadTerminates`, `readyIsStable`. |
+| `Dictionary` | `TypeOK`, `ReadyIsStable` | replace | `Dictionary.qnt`: one-shot load; `loadTerminates`, `loadedStaysReady`. |
+| `Socket` | `TypeOK`, `ReadyIsBounded` | replace | `Socket.qnt`: one-shot bind; `bindingTerminates`, `permissionDeniedIsTerminal`. |
 | `Playback` | `TypeOK`, `PlayingRequiresAudio`, `CanceledImpliesStoppedOrFailed` | preserve | `Playback.qnt` (done) |
 | `IPC` | `TypeOK`, `FailedImpliesError`, `DoneImpliesValidResponse`, `EventuallyLeavesInFlight` | preserve | `IPC.qnt` (done) |
 | `Daemon` | `TypeOK`, `SocketImpliesReady`, `BusyImpliesReady`, `AlreadyRunningNotBusy`, `RetryBounded` | preserve | `Daemon.qnt` (done) |
@@ -96,9 +96,9 @@ production constants they abstract (see "Post-migration revisions").
 
 | Module | Constants | Invariants / temporal properties |
 |---|---|---|
-| ONNXRuntime | `MAX_RETRY=3` | `typeOK` + temporal `loadTerminates` |
-| Dictionary | `MAX_RETRY=3` | `typeOK` + temporal `loadedStaysReady` |
-| Socket | `MAX_RETRY=3` | `typeOK` + temporal `bindingTerminates` |
+| ONNXRuntime | one-shot | temporals `loadTerminates`, `readyIsStable` |
+| Dictionary | one-shot | temporals `loadTerminates`, `loadedStaysReady` |
+| Socket | one-shot | temporals `bindingTerminates`, `permissionDeniedIsTerminal` |
 | Playback | — | `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` |
 | IPC | frame/timeout values | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError` + temporal `eventuallyLeavesInFlight` |
 | Daemon | `MAX_RETRY=10` | `typeOK`, `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded` |
@@ -106,6 +106,7 @@ production constants they abstract (see "Post-migration revisions").
 | DaemonServer | `MAX_IN_FLIGHT=32`, `MAX_CONNECTIONS=32` | `typeOK`, `inFlightMatchesHandling`, `connectionsMatchClient` + temporal `handling{0,1,2}Terminates` |
 | DaemonStartup | socket scenarios | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart` + temporal `decides` |
 | McpRequestLifecycle | `MAX_CONCURRENT=4` | `typeOK`, `activeMatchesRunning` + temporal `allRequestsTerminate` |
+| McpStartup | — | `doneHasOutcome`, `recoveryOnlyAfterAlreadyRunning` + temporal `terminates` |
 | StartupResources | `MAX_RETRY=3` | `typeOK`, `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket` |
 | MCPServer | `MAX_ATTEMPTS=10` | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio` |
 | Say | `MAX_RETRY=10` | `typeOK`, `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError`, `playbackFailureOnlyInPlayMode`, `outputFailureOnlyInFileMode`, `playingRequiresAudio`, `emittingUsesPlayMode` |

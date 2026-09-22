@@ -103,7 +103,7 @@ production constants they abstract (see "Post-migration revisions").
 | IPC | frame/timeout values | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError` + temporal `eventuallyLeavesInFlight` |
 | Daemon | `MAX_RETRY=10` | `typeOK`, `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded` |
 | DaemonSerialization | — | `atMostOneSynthesizing`, `workerMatchesSynthesis` + temporal `eventuallyLeavesBusyWorker` |
-| DaemonServer | `MAX_IN_FLIGHT=32` | `typeOK`, `inFlightMatchesHandling` + temporal `handling{0,1,2}Terminates` |
+| DaemonServer | `MAX_IN_FLIGHT=32`, `MAX_CONNECTIONS=32` | `typeOK`, `inFlightMatchesHandling`, `connectionsMatchClient` + temporal `handling{0,1,2}Terminates` |
 | McpRequestLifecycle | `MAX_CONCURRENT=4` | `typeOK`, `activeMatchesRunning` + temporal `allRequestsTerminate` |
 | StartupResources | `MAX_RETRY=3` | `typeOK`, `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket` |
 | MCPServer | `MAX_ATTEMPTS=10` | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio` |

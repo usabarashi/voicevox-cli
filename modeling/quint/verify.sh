@@ -183,7 +183,7 @@ run_ok "McpRequestLifecycle liveness" \
   --temporal=allRequestsTerminate \
   modeling/quint/McpRequestLifecycle.qnt
 run_ok "DaemonServer safety" \
-  --invariant=typeOK,inFlightMatchesHandling \
+  --invariant=typeOK,inFlightMatchesHandling,connectionsMatchClient \
   modeling/quint/DaemonServer.qnt
 run_ok "DaemonServer liveness (client 0)" \
   --temporal=handling0Terminates \

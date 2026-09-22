@@ -135,6 +135,15 @@ impl DaemonIpcDriver {
             if socket.exists() {
                 return Ok(());
             }
+            if let Some(child) = self.child.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        bail!("daemon exited before binding its socket (status: {status})");
+                    }
+                    Ok(None) => {}
+                    Err(error) => bail!("failed to poll the daemon process: {error}"),
+                }
+            }
             std::thread::sleep(Duration::from_millis(100));
         }
         bail!("daemon did not bind its socket within 30s");

@@ -78,6 +78,29 @@ for spec in modeling/quint/*.qnt modeling/quint/negative/*.qnt; do
   check_typecheck "${spec}"
 done
 
+# Ported lifecycle models (Phase 2).
+run_ok "ONNXRuntime safety" \
+  --invariant=typeOK,readyHasNoPendingRetry \
+  modeling/quint/ONNXRuntime.qnt
+run_ok "Dictionary safety" \
+  --invariant=typeOK,readyIsStable \
+  modeling/quint/Dictionary.qnt
+run_ok "Socket safety" \
+  --invariant=typeOK,readyIsBounded \
+  modeling/quint/Socket.qnt
+run_ok "Playback safety" \
+  --invariant=playingRequiresAudio,canceledImpliesStoppedOrFailed \
+  modeling/quint/Playback.qnt
+run_ok "IPC safety" \
+  --invariant=typeOK,failedImpliesError,doneImpliesValidResponse \
+  modeling/quint/IPC.qnt
+run_ok "IPC progress" \
+  --temporal=eventuallyLeavesInFlight \
+  modeling/quint/IPC.qnt
+run_ok "Daemon safety" \
+  --invariant=typeOK,socketImpliesReady,busyImpliesReady,retryBounded,alreadyRunningNotBusy \
+  modeling/quint/Daemon.qnt
+
 # Real model: safety and liveness must hold.
 run_ok "SynthesisRetry safety" \
   --invariant=attemptsBounded,backoffsBounded,backoffAfterAttempt \
@@ -99,4 +122,4 @@ if [ "${failures}" -ne 0 ]; then
   echo "Quint verification gate FAILED (${failures} failure(s))" >&2
   exit 1
 fi
-echo "Quint verification gate passed (2 positive, 2 negative controls)"
+echo "Quint verification gate passed"

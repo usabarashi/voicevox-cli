@@ -38,8 +38,8 @@ different property.
 | `SynthesisParallel` | `TypeOK`, `AtMostOneSynthesizing`, `WorkerMatchesSynthesis`, `EventuallyLeavesBusyWorker` | preserve | `SynthesisParallel.qnt` (done) |
 | `StartupResources` | `TypeOK`, `DaemonReadyRequiresDownloads`, `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket` | preserve | `StartupResources.qnt` (done, flattened) |
 | `MCPServer` | `TypeOK`, `ConnectedImpliesDaemonReady`, `DegradedImpliesNotConnected`, `PlayingRequiresAudio` | preserve | `MCPServer.qnt` (done, flattened) |
-| `Say` | `TypeOK`, `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`, `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode` | preserve (adapt to refined Synthesis) | `Say.qnt` |
-| `System` | `TypeOK`, `ViewsAligned`, `ClientConnectedImpliesDaemonReady`, `SynthesisRunningImpliesDaemonReady` | preserve (adapt INSTANCE to `SynthesisRetry`) | `System.qnt` |
+| `Say` | `TypeOK`, `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`, `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode` (+ `PlayingRequiresAudio`, `EmittingUsesPlayMode`) | preserve (flattened) | `Say.qnt` (done) |
+| `System` | `TypeOK`, `ViewsAligned`, `ClientConnectedImpliesDaemonReady`, `SynthesisRunningImpliesDaemonReady` | preserve (adapt INSTANCE to `SynthesisRetry`) | `System.qnt` (pending; see "System adaptation") |
 | `Synthesis` | `TypeOK` | replace | `SynthesisRetry.qnt` (Phase 1) |
 | `Synthesis` | `TerminalStates` (`retryCount ≤ MAX_RETRY`) | replace | `attemptsBounded` / `backoffsBounded` (Phase 1) |
 | `Synthesis` | `SynthesisNeedsDaemon` | retract | `daemonReady` gating dropped; daemon is environment (Phase 1 contract change 3) |

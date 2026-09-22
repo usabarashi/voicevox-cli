@@ -112,6 +112,9 @@ run_ok "StartupResources safety" \
 run_ok "MCPServer safety" \
   --invariant=typeOK,connectedImpliesDaemonReady,degradedImpliesNotConnected,playingRequiresAudio \
   modeling/quint/MCPServer.qnt
+run_ok "Say safety" \
+  --invariant=typeOK,synthesizingImpliesBusyReq,busyReqOwnedBySay,doneHasNoError,playbackFailureOnlyInPlayMode,playingRequiresAudio,emittingUsesPlayMode \
+  modeling/quint/Say.qnt
 
 # Real model: safety and liveness must hold.
 run_ok "SynthesisRetry safety" \

@@ -75,16 +75,17 @@ does the following:
 ## Exit criteria for Phase 2
 
 Porting is complete: every preserved property has a Quint equivalent that
-verifies green with `quint verify --backend=tlc`. The remaining Phase 2 step is
-the removal of the handwritten `modeling/tla`, `modeling/cfg`, the
-`tla-model-check` job, and `tlaplus` from the devShell — to be done only after
-this is reviewed.
+verifies green with `quint verify --backend=tlc`. The handwritten
+`modeling/tla`, `modeling/cfg`, the `tla-model-check` job, and `tlaplus` from
+the devShell have been removed. The TLC engine is retained via Quint's TLC
+backend.
 
 ## Scenario mapping (cfg → Quint)
 
 The old `cfg` selects constants, a spec variant, invariants, and temporal
 properties. In Quint these become `init`/`step` plus `--invariant` /
-`--temporal` selections; constants become module values or instance parameters.
+`--temporal` selections; constants are concrete `pure val`s (composition is
+flattened, so instance parameters are not used).
 
 | cfg scenario | Module | Constants | Invariants / properties |
 |---|---|---|---|
@@ -133,11 +134,3 @@ properties. In Quint these become `init`/`step` plus `--invariant` /
   fairness set is satisfiable by progress on one job alone and does not hold.
 - `Stutter`/`UNCHANGED` become explicit no-op actions where the TLA+ model
   relied on them being enabled.
-
-## Exit criteria for Phase 2
-
-- Every preserved property has a Quint equivalent that verifies green with
-  `quint verify --backend=tlc`.
-- The correspondence table above is updated to mark each row `done`.
-- Only then are `modeling/tla`, `modeling/cfg`, the `tla-model-check` job, and
-  `tlaplus` from the devShell removed.

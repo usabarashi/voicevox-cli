@@ -5,12 +5,12 @@ dependency correspondence table plus the observation contract for the
 model-based tests. It is written **before** the specs and the code are
 reworked, so that every intentional change of meaning is recorded.
 
-Phase 1 is a **feasibility gate**, not the full migration. It proves that the
+Phase 1 was a **feasibility gate**, not the full migration. It proved that the
 Quint toolchain (verification + model-based testing) can carry the existing
-guarantees and detect intended faults in production code. The old TLA+/TLC
-artifacts are kept for now (see "Removal plan"). Nothing in `modeling/tla` or
-`modeling/cfg` is deleted until its properties have an equivalent in Quint and
-both are green.
+guarantees and detect intended faults in production code. The full migration is
+now complete: every TLA+ module has a verified Quint equivalent and the
+handwritten TLA+/cfg artifacts, the `tla-model-check` job, and `tlaplus` have
+been removed (see "Removal plan").
 
 ## Toolchain and version pinning
 
@@ -18,7 +18,6 @@ both are green.
 |---|---|---|---|
 | `quint` | 0.32.0 | `nixpkgs` (pinned by `flake.lock`) | added to the devShell in `flake.nix` |
 | TLC backend | TLC 2.19 (through `quint verify --backend=tlc`) | bundled with the `quint` package | JRE 21 bundled as well; **no external Java or TLA+ install required** |
-| `tlaplus` / TLC | existing | `nixpkgs` | kept for the existing `tla-model-check` job |
 
 Rationale for the TLC backend: the existing suite relies on exhaustive
 finite-state exploration and fairness-based liveness. Apalache (the default
@@ -48,7 +47,7 @@ Phase 1 targets the Synthesis retry/cancel loop first (the walking skeleton for
 | Daemon readiness gating | `Synthesis.tla` `SynthesisNeedsDaemon` (`daemonReady`) | not modeled | dropped (code auto-starts; see contract changes) |
 | Target resolution | `VoicevoxModel.tla` `SetTargetExists`/`SetTargetMissing`, accept/reject | `quint/TargetResolution.qnt` + `mbt/tests/target_resolution.rs` | done (Phase 1 walking skeleton) |
 | Download lifecycle / retries | `VoicevoxModel.tla` `StartDownload`/`DownloadOk`/`DownloadFail`, `retryCount` | not modeled | **pending relocation** (belongs to `infrastructure/download`, not the catalog) |
-| Integrated system | `System.tla` INSTANCE wiring of `StartupResources`/`MCPServer`/`Synthesis` | not modeled | Phase 2 |
+| Integrated system | `System.tla` INSTANCE wiring of `StartupResources`/`MCPServer`/`Synthesis` | `quint/System.qnt` | done (Phase 2, adapted to `SynthesisRetry`) |
 
 The old `cfg` files selected constants, a specification variant
 (`Spec`/`NormalSpec`/`ProgressSpec`/`InvalidTargetSpec`), invariants, and
@@ -261,8 +260,10 @@ Not yet done (Phase 2+): port the remaining TLA+ modules, preserve their
 properties with `quint verify`, retire the handwritten TLA+/cfg/direct job, and
 decide Phase 3 (process/socket MBT).
 
-## Removal plan (not in this change)
+## Removal plan (done)
 
-Handwritten `modeling/tla` and `modeling/cfg` plus the direct `tlc` CI job are
-removed only after each module has an equivalent Quint artifact that verifies
-green. The TLC verification *engine* (through Quint's TLC backend) is retained.
+The handwritten `modeling/tla` and `modeling/cfg` directories, the
+`tla-model-check` CI job, and `tlaplus` from the devShell have been removed,
+after every preserved property gained a Quint equivalent that verifies green.
+The TLC verification *engine* is retained, reached through Quint's TLC backend
+(`quint verify --backend=tlc`).

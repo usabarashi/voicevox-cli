@@ -45,7 +45,7 @@ async fn remove_stale_socket_if_requested(
         return Ok(());
     }
 
-    // Mirror DaemonStartup.tla: never remove a responsive socket.
+    // Mirror modeling/quint/Daemon.qnt: never remove a responsive socket.
     if socket_probe::try_connect_with_timeout(socket_path, connect_timeout).await {
         return Ok(());
     }

@@ -10,7 +10,7 @@ pub(super) struct DaemonSynthesisExecutor;
 /// RAII guard that unloads a voice model on drop.
 ///
 /// Guarantees `model_loaded = FALSE` even on panic or task cancellation,
-/// matching `DaemonRequestHandling.tla` `ClientDisconnect`:
+/// matching the cancellation semantics in `modeling/quint/SynthesisRetry.qnt`:
 ///   `mutex_holder = c => model_loaded' = FALSE`
 struct ModelUnloadGuard<'a> {
     core: &'a VoicevoxCore,
@@ -88,7 +88,8 @@ impl DaemonSynthesisExecutor {
 
         let synthesis_result = {
             // RAII guard ensures the model is always unloaded, even on panic or
-            // task cancellation. Matches DaemonRequestHandling.tla ClientDisconnect:
+            // task cancellation. Matches the cancellation semantics in
+            // modeling/quint/SynthesisRetry.qnt:
             //   mutex_holder = c => model_loaded' = FALSE
             let _model_guard = ModelUnloadGuard {
                 core: &core,

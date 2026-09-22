@@ -143,7 +143,7 @@ async fn handle_client_with_limit(
             break;
         };
 
-        // `DaemonRequestHandling.tla` models permit admission per request, not per
+        // modeling/quint/Daemon.qnt permits admission per request, not per
         // connection. Acquire/release around request handling to keep that contract.
         let Some(_permit) = acquire_request_permit(Arc::clone(&permits)).await else {
             log_client_error("Permit semaphore closed", &"request limiter unavailable");
@@ -248,12 +248,13 @@ fn set_socket_permissions(socket_path: &Path) -> Result<()> {
 ///
 /// Daemon state (VoicevoxCore, model catalog) is initialized before binding
 /// the socket, ensuring the daemon is fully ready before clients can connect.
-/// This matches the TLA+ `ConnectedImpliesReady` invariant.
+/// This matches the `connectedImpliesDaemonReady` invariant in
+/// `modeling/quint/MCPServer.qnt`.
 ///
 /// Stale socket removal is handled by `check_and_prevent_duplicate` before
 /// this function is called. The `bind` call is the atomic safety gate:
 /// if the socket already exists (another daemon bound it), bind fails
-/// with `EADDRINUSE`, matching the TLA+ model's atomic `BindSocket`.
+/// with `EADDRINUSE`; the socket bind is atomic in `modeling/quint/Socket.qnt`.
 pub async fn run_daemon(socket_path: PathBuf, foreground: bool) -> Result<()> {
     ensure_socket_parent_dir(&socket_path)?;
 

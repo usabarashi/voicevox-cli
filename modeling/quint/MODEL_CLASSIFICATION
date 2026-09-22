@@ -31,6 +31,7 @@ Daemon verified-only
 DaemonServer verified-only
 DaemonStartup verified-only
 StartupResources verified-only
+StartupSafety verified-only
 ONNXRuntime verified-only
 Dictionary verified-only
 Socket verified-only

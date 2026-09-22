@@ -226,6 +226,12 @@ run_ok "DaemonServer liveness (client 1)" \
 run_ok "DaemonServer liveness (client 2)" \
   --temporal=handling2Terminates \
   modeling/quint/DaemonServer.qnt
+run_ok "StartupSafety safety" \
+  --invariant=readyRequiresResources,readyRequiresSocketReady,startedImpliesNoLive,staleRemovedBeforeStart,removedOnlyStale,alreadyRunningOnlyLive,failedImpliesResourceFailure \
+  modeling/quint/StartupSafety.qnt
+run_ok "StartupSafety liveness" \
+  --temporal=terminates \
+  modeling/quint/StartupSafety.qnt
 run_ok "DaemonStartup safety" \
   --invariant=liveNeverRemoved,liveNeverStarted,removedOnlyStale,staleRemovedBeforeStart \
   modeling/quint/DaemonStartup.qnt

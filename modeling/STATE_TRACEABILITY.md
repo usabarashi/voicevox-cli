@@ -18,6 +18,7 @@ See also:
 |---|---|---|---|
 | Daemon lifecycle | `Daemon.qnt` | `DaemonDown/Starting/AlreadyRunning/Ready/Recovering`, recovery transitions (`MAX_RETRY = 10`) | `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded`, `typeOK` |
 | Startup resources | `StartupResources.qnt` | runtime/dictionary/socket/model readiness + daemon bootstrap (`MAX_RETRY = 3`) | `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket`, `typeOK` |
+| Startup safety (composed) | `StartupSafety.qnt` | resources readiness × socket scenario (absent/stale/live) × start ordering | `readyRequiresResources`, `readyRequiresSocketReady`, `startedImpliesNoLive`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure`, `terminates` (temporal) |
 | ONNX runtime resource | `ONNXRuntime.qnt` | one-shot load (production has no load retry; the installer retries) | `loadTerminates`, `readyIsStable` (temporal) |
 | OpenJTalk dictionary | `Dictionary.qnt` | one-shot load | `loadTerminates`, `loadedStaysReady` (temporal) |
 | Socket binding/readiness | `Socket.qnt` | one-shot bind, ready, permission-denied (terminal), socket drop | `bindingTerminates`, `permissionDeniedIsTerminal` (temporal) |
@@ -70,11 +71,12 @@ See also:
 ## Cross-spec consistency
 
 The specs are **per-concern models**, not one composed top-level model:
-`System.qnt` composes startup resources + daemon + client + synthesis, but the
-other protocols (daemon startup/duplicate prevention, daemon server admission,
-MCP request lifecycle, startup recovery) are separate. There is therefore no
-single proof that the layers fit together; their integration is a reviewed
-contract, listed here.
+`System.qnt` composes startup resources + daemon + client + synthesis, and
+`StartupSafety.qnt` composes the startup path (resources × socket scenario ×
+start ordering). The other protocols (daemon server admission, MCP request
+lifecycle, startup recovery) remain separate. There is therefore no single
+proof that *all* layers fit together; their integration is a reviewed contract,
+listed here.
 
 What *is* machine-checked:
 
@@ -98,7 +100,7 @@ Layer ownership:
 | IPC server (admission / connections) | `DaemonServer.qnt`, `DaemonSerialization.qnt` |
 | IPC transport (client) | `IPC.qnt`, `DaemonIpc.qnt`, `MCPServer.qnt` |
 | MCP server (stdio) | `McpRequestParsing.qnt`, `McpNotificationParsing.qnt`, `McpRequestLifecycle.qnt`, `McpStartup.qnt` |
-| Startup resources | `ONNXRuntime.qnt`, `Dictionary.qnt`, `Socket.qnt`, `StartupResources.qnt`, `Download.qnt` |
+| Startup resources / ordering | `ONNXRuntime.qnt`, `Dictionary.qnt`, `Socket.qnt`, `StartupResources.qnt`, `Download.qnt`, `StartupSafety.qnt` |
 | Synthesis | `SynthesisRetry.qnt`, `StreamingSynthesis.qnt`, `TargetResolution.qnt`, `ModelLifecycle.qnt` |
 | Integrated | `System.qnt`, `Say.qnt` |
 

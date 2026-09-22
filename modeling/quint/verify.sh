@@ -194,6 +194,12 @@ run_ok "DaemonServer liveness (client 1)" \
 run_ok "DaemonServer liveness (client 2)" \
   --temporal=handling2Terminates \
   modeling/quint/DaemonServer.qnt
+run_ok "DaemonStartup safety" \
+  --invariant=liveNeverRemoved,liveNeverStarted,removedOnlyStale,staleRemovedBeforeStart \
+  modeling/quint/DaemonStartup.qnt
+run_ok "DaemonStartup liveness" \
+  --temporal=decides \
+  modeling/quint/DaemonStartup.qnt
 run_ok "DaemonIpc safety" \
   --invariant=catalogRequiresConnection \
   modeling/quint/DaemonIpc.qnt

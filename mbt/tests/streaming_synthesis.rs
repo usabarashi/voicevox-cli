@@ -352,6 +352,9 @@ impl Default for StreamingFailureDriver {
     }
 }
 
+/// Serializes the tests that mutate `VOICEVOX_SOCKET_PATH` (see `run`).
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn dead_socket_path() -> PathBuf {
     let path = std::env::temp_dir().join("voicevox-mbt-does-not-exist.sock");
     let _ = std::fs::remove_file(&path);
@@ -370,8 +373,12 @@ impl StreamingFailureDriver {
     /// cancellation (otherwise the connect attempt fails against the dead
     /// socket).
     fn run(&mut self, cancel: Option<&str>) {
-        // The value is identical for every test in this binary, so parallel
-        // tests setting it are benign.
+        // Process environment mutation is process-global and (in Rust 2024)
+        // `unsafe` because it is not thread-safe. Serialize the two tests in
+        // this binary that mutate it; no other test in this binary reads it.
+        let _env_guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let path = dead_socket_path();
         unsafe { std::env::set_var("VOICEVOX_SOCKET_PATH", &path) };
 

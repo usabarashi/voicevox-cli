@@ -5,18 +5,23 @@
 // dispatch in `server/stdio.rs`):
 //   - at most `MAX_CONCURRENT` tool handlers run at once (a semaphore; a
 //     request that cannot get a slot is answered with an error immediately),
-//   - a running request terminates by completion or cancellation,
-//   - `cancelAll` (client disconnect / shutdown) cancels every running request.
+//   - cancellation only *signals* the handler; the handler keeps its permit
+//     until it exits and releases it (`Cancelling` -> `Cancelled`),
+//   - `cancelAll` (client disconnect / shutdown) signals every running request.
+//
+// `MAX_CONCURRENT` is a verification-scale bound (the three IDs must be able to
+// exceed it); the production value is `PRODUCTION_MAX_CONCURRENT` and is
+// asserted by `EXPECTED_CONSTANTS`.
 //
 // Duplicate request IDs are not modelled here (production answers a duplicate
-// in-flight ID with an error while the original still completes; that
-// double-response is a separate concern).
+// in-flight ID with an error while the original still completes).
 
 module McpRequestLifecycle {
-  pure val MAX_CONCURRENT = 4
+  pure val PRODUCTION_MAX_CONCURRENT = 4
+  pure val MAX_CONCURRENT = 2
   pure val REQ_IDS = Set(0, 1, 2)
 
-  type ReqPhase = Unseen | Running | Responded | Cancelled | Rejected
+  type ReqPhase = Unseen | Running | Cancelling | Responded | Cancelled | Rejected
 
   var phase: int -> ReqPhase
   var active: int
@@ -58,22 +63,34 @@ module McpRequestLifecycle {
     }
   }
 
+  // Cancellation is signalled; the permit is not released yet.
   action cancel = all {
     nondet id = oneOf(REQ_IDS)
     all {
       phase.get(id) == Running,
+      phase' = phase.set(id, Cancelling),
+      active' = active,
+    }
+  }
+
+  // The cancelled handler exits and releases its slot.
+  action cancelComplete = all {
+    nondet id = oneOf(REQ_IDS)
+    all {
+      phase.get(id) == Cancelling,
       phase' = phase.set(id, Cancelled),
       active' = active - 1,
     }
   }
 
-  // Client disconnect / server shutdown cancels every running request.
+  // Client disconnect / server shutdown signals every running request; slots are
+  // released as each handler exits.
   action cancelAll = all {
     phase' = phase
-      .set(0, if (phase.get(0) == Running) Cancelled else phase.get(0))
-      .set(1, if (phase.get(1) == Running) Cancelled else phase.get(1))
-      .set(2, if (phase.get(2) == Running) Cancelled else phase.get(2)),
-    active' = 0,
+      .set(0, if (phase.get(0) == Running) Cancelling else phase.get(0))
+      .set(1, if (phase.get(1) == Running) Cancelling else phase.get(1))
+      .set(2, if (phase.get(2) == Running) Cancelling else phase.get(2)),
+    active' = active,
   }
 
   action stutter = all {
@@ -86,6 +103,7 @@ module McpRequestLifecycle {
     rejectBusy,
     complete,
     cancel,
+    cancelComplete,
     cancelAll,
     stutter,
   }
@@ -94,11 +112,12 @@ module McpRequestLifecycle {
 
   val typeOK = active >= 0 and active <= MAX_CONCURRENT
 
-  val activeMatchesRunning =
+  // Running and cancelling handlers both hold a permit.
+  val activeMatchesHolding =
     active ==
-      (if (phase.get(0) == Running) 1 else 0) +
-      (if (phase.get(1) == Running) 1 else 0) +
-      (if (phase.get(2) == Running) 1 else 0)
+      (if (phase.get(0) == Running or phase.get(0) == Cancelling) 1 else 0) +
+      (if (phase.get(1) == Running or phase.get(1) == Cancelling) 1 else 0) +
+      (if (phase.get(2) == Running or phase.get(2) == Cancelling) 1 else 0)
 
   // ---- Liveness -----------------------------------------------------------
 
@@ -107,13 +126,15 @@ module McpRequestLifecycle {
     rejectBusy,
     complete,
     cancel,
+    cancelComplete,
     cancelAll,
   }
 
   val vars = (phase, active)
 
-  // Each ID can be received at most once, so under fairness every request
-  // eventually reaches a terminal phase (no handler is stuck running).
+  // A non-empty set of handlers always drains to empty (no stuck handler). The
+  // property is NOT `eventually(active == 0)` (which `init` satisfies vacuously).
   temporal allRequestsTerminate =
-    weakFair(advance, vars) implies eventually(active == 0)
+    weakFair(advance, vars) implies
+      always(active > 0 implies eventually(active == 0))
 }

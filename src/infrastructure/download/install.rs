@@ -268,7 +268,8 @@ pub async fn download_missing_resources(missing_resources: &[&str]) -> Result<()
         return Ok(());
     }
 
-    cleanup_incomplete_downloads(&target_dir);
+    // `install_with_retries` already ran `installer.cleanup()` on the terminal
+    // failure; do not clean up a second time here.
     let details = report
         .last_detail
         .unwrap_or_else(|| "unknown error".to_string());

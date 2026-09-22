@@ -74,6 +74,11 @@ impl ModelRuntime for FakeCore {
     }
 
     fn synthesize(&self, _text: &str, _style_id: u32, _rate: f32) -> AnyResult<Vec<u8>> {
+        // Order check: production must load before synthesizing.
+        assert!(
+            self.state.loaded.load(Ordering::SeqCst),
+            "synthesize called before the model was loaded"
+        );
         self.state.synth_calls.fetch_add(1, Ordering::SeqCst);
         if self.state.fail_synth {
             return Err(anyhow!("injected synthesis failure"));
@@ -159,9 +164,27 @@ impl LifecycleDriver {
             .runtime
             .block_on(self.policy.synthesize(&self.catalog, text, STYLE_ID, 1.0));
 
+        // Observed operation sequence. This rejects a false positive where the
+        // executor returns early and does no work.
+        let load_calls = self.state.load_calls.load(Ordering::SeqCst);
+        let synth_calls = self.state.synth_calls.load(Ordering::SeqCst);
+        let unload_calls = self.state.unload_calls.load(Ordering::SeqCst);
+        if fail_load {
+            assert_eq!(load_calls, 1, "load must be attempted");
+            assert_eq!(
+                synth_calls, 0,
+                "synthesis must not run after a load failure"
+            );
+            assert_eq!(unload_calls, 0, "nothing loaded, so nothing to unload");
+        } else {
+            assert_eq!(load_calls, 1, "load must run");
+            assert_eq!(synth_calls, 1, "synthesis must run after load");
+            assert_eq!(unload_calls, 1, "the guard must unload exactly once");
+        }
+
         // Observed: the guard must have unloaded any loaded model.
         self.loaded = self.state.is_loaded();
-        self.phase = if fail_load && self.state.synth_calls.load(Ordering::SeqCst) == 0 {
+        self.phase = if fail_load {
             Phase::Failed
         } else {
             Phase::Idle

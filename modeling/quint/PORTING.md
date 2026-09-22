@@ -99,10 +99,10 @@ production constants they abstract (see "Post-migration revisions").
 | IPC | frame/timeout values | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError` + temporal `eventuallyLeavesInFlight` |
 | Daemon | `MAX_RETRY=10` | `typeOK`, `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded` |
 | DaemonSerialization | — | `atMostOneSynthesizing`, `workerMatchesSynthesis` + temporal `eventuallyLeavesBusyWorker` |
-| DaemonServer | `MAX_IN_FLIGHT=32` | `typeOK`, `inFlightMatchesHandling` + temporal `handling{0,1,2}Terminates` |
-| DaemonSynthesisPath | `MAX_IN_FLIGHT=32` | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing` + temporal `workerEventuallyIdle` |
+| DaemonServer | `PRODUCTION_MAX_IN_FLIGHT=32`, verify scale `MAX_IN_FLIGHT=2` | `typeOK`, `inFlightMatchesHandling` + temporal `handling{0,1,2}Terminates` |
+| DaemonSynthesisPath | `PRODUCTION_MAX_IN_FLIGHT=32`, verify scale `MAX_IN_FLIGHT=2` | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing` + temporal `workerEventuallyIdle` |
 | StartupSafety | resources × socket scenarios | `readyRequiresResources`, `readyRequiresSocketReady`, `startedImpliesNoLive`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure` + temporal `terminates` |
-| McpRequestLifecycle | `MAX_CONCURRENT=4` | `typeOK`, `activeMatchesRunning` + temporal `allRequestsTerminate` |
+| McpRequestLifecycle | `PRODUCTION_MAX_CONCURRENT=4`, verify scale `MAX_CONCURRENT=2` | `typeOK`, `activeMatchesHolding` + temporal `allRequestsTerminate` |
 | McpStartup | — | `doneHasOutcome`, `recoveryOnlyAfterAlreadyRunning` + temporal `terminates` |
 | StartupResources | `MAX_RETRY=3` | `typeOK`, `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket` + temporals `bindingTerminates`, `permissionDeniedIsTerminal` |
 | MCPServer | `MAX_ATTEMPTS=10` | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio` |

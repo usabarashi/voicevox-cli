@@ -205,3 +205,111 @@ fn playback_cancelled() -> impl Driver {
 fn playback_launch_failed() -> impl Driver {
     PlaybackDriver::default()
 }
+
+// ---- Dispatch cases (plain tests) ------------------------------------------
+//
+// The Quint scenarios above only exercise `play: true` with no file and no
+// cancellation, so they would pass even if `emit_and_play_with_backend` called
+// the backend unconditionally. These tests pin the dispatch decisions.
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Records whether a cancellation receiver and audio bytes were forwarded.
+    #[derive(Default)]
+    struct RecordingBackend {
+        calls: u32,
+        cancel_present: bool,
+        wav_len: usize,
+    }
+
+    impl AudioPlayback for RecordingBackend {
+        async fn play(
+            &mut self,
+            wav_data: &[u8],
+            cancel_rx: Option<&mut oneshot::Receiver<String>>,
+        ) -> AnyResult<PlaybackOutcome> {
+            self.calls += 1;
+            self.cancel_present = cancel_rx.is_some();
+            self.wav_len = wav_data.len();
+            Ok(PlaybackOutcome::Completed)
+        }
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime")
+    }
+
+    #[test]
+    fn play_false_skips_the_backend() {
+        let mut backend = RecordingBackend::default();
+        let request = PlaybackRequest {
+            wav_data: &[1, 2, 3, 4],
+            output_file: None,
+            play: false,
+            cancel_rx: None,
+        };
+        let result = runtime().block_on(emit_and_play_with_backend(request, &mut backend));
+        assert!(matches!(result, Ok(PlaybackOutcome::Completed)));
+        assert_eq!(backend.calls, 0, "the backend must not be called");
+    }
+
+    #[test]
+    fn file_output_is_written_and_backend_skipped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("out.wav");
+        let mut backend = RecordingBackend::default();
+        let request = PlaybackRequest {
+            wav_data: &[9, 8, 7],
+            output_file: Some(&path),
+            play: false,
+            cancel_rx: None,
+        };
+        let result = runtime().block_on(emit_and_play_with_backend(request, &mut backend));
+        assert!(matches!(result, Ok(PlaybackOutcome::Completed)));
+        assert_eq!(backend.calls, 0);
+        assert_eq!(std::fs::read(&path).expect("file written"), vec![9, 8, 7]);
+    }
+
+    #[test]
+    fn file_write_failure_is_an_error() {
+        // A directory path cannot be written as a file.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().to_path_buf();
+        let mut backend = RecordingBackend::default();
+        let request = PlaybackRequest {
+            wav_data: &[1, 2, 3],
+            output_file: Some(&path),
+            play: false,
+            cancel_rx: None,
+        };
+        let result = runtime().block_on(emit_and_play_with_backend(request, &mut backend));
+        assert!(result.is_err(), "writing to a directory must fail");
+        assert_eq!(backend.calls, 0);
+    }
+
+    #[test]
+    fn cancellation_receiver_and_bytes_are_forwarded() {
+        let mut backend = RecordingBackend::default();
+        let (_tx, rx) = oneshot::channel::<String>();
+        let request = PlaybackRequest {
+            wav_data: &[4, 5, 6, 7, 8],
+            output_file: None,
+            play: true,
+            cancel_rx: Some(rx),
+        };
+        let result = runtime().block_on(emit_and_play_with_backend(request, &mut backend));
+        assert!(matches!(result, Ok(PlaybackOutcome::Completed)));
+        assert_eq!(backend.calls, 1);
+        assert!(
+            backend.cancel_present,
+            "the cancel receiver must be forwarded"
+        );
+        assert_eq!(backend.wav_len, 5);
+    }
+}

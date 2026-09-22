@@ -15,7 +15,10 @@
 // `DaemonSerialization.qnt`.
 
 module DaemonServer {
-  pure val MAX_IN_FLIGHT = 32
+  pure val PRODUCTION_MAX_IN_FLIGHT = 32
+  // Verification scale: the three clients must be able to exceed it, so the
+  // admission guard and the upper-bound invariant are reachable.
+  pure val MAX_IN_FLIGHT = 2
   pure val CLIENT_IDS = Set(0, 1, 2)
 
   type ClientPhase = Absent | Connected | Handling | Closed

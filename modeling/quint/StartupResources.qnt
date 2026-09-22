@@ -312,6 +312,20 @@ module StartupResources {
     modelRetry' = modelRetry,
   }
 
+  // A running daemon stops and removes its socket. Leaving `DaemonReady` keeps
+  // `daemonReadyRequiresSocket` true.
+  action daemonStop = all {
+    daemonState == DaemonReady,
+    daemonState' = Down,
+    socketState' = SocketAbsent,
+    runtimeState' = runtimeState,
+    runtimeRetry' = runtimeRetry,
+    dictState' = dictState,
+    dictRetry' = dictRetry,
+    modelState' = modelState,
+    modelRetry' = modelRetry,
+  }
+
   action daemonBootFail = all {
     daemonState == DaemonStarting,
     daemonState' = DaemonFailed,
@@ -371,6 +385,7 @@ module StartupResources {
     retryModelDownload,
     startDaemon,
     daemonBootOk,
+    daemonStop,
     daemonBootFail,
     resetDaemon,
     stutter,

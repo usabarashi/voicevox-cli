@@ -24,10 +24,10 @@ See also:
 | Synthesis retry/cancel loop (non-streaming) | `SynthesisRetry.qnt` | `Running/Attempting/Backoff/Done/Failed/Canceled`, `attempts` (started), `backoffs` (started) | `attemptsBounded`, `backoffsBounded`, `backoffAfterAttempt`, `eventuallyTerminal`, `cancelIsTerminal` |
 | Streaming synthesis (default MCP path) | `StreamingSynthesis.qnt` | connect (or connect failure) → split → per-segment synthesis → concatenate → play; cancel before/after connect and at any point before playback; fail | `segmentsBounded`, `playbackRequiresAllSegments`, `canceledImpliesNoPlayback` |
 | Daemon synthesis serialization (MBT) | `DaemonSerialization.qnt` | one worker (mutex), queued jobs, no cancel, no daemon-side retry | `atMostOneSynthesizing`, `workerMatchesSynthesis`, `eventuallyLeavesBusyWorker`; `mbt/tests/daemon_serialization.rs` (two concurrent real-daemon requests) |
-| Daemon request path (composed) | `DaemonSynthesisPath.qnt` | server admission (`MAX_IN_FLIGHT = 32`) × serialized worker | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing`, `workerEventuallyIdle` (temporal) |
-| Daemon IPC server | `DaemonServer.qnt` | per-client accept/handle/finish, shared `MAX_IN_FLIGHT = 32` permits, `MAX_CONNECTIONS = 32` accept permits, idle-timeout close | `typeOK`, `inFlightMatchesHandling`, `connectionsMatchClient`, `handling{0,1,2}Terminates` (temporal) |
-| Daemon startup / duplicate prevention | `StartupSafety.qnt` | absent/stale/live socket scenarios; probe, TOCTOU re-check, stale removal, start | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart`, `alreadyRunningOnlyLive`, `decides`/`terminates` (temporal) |
-| MCP request lifecycle | `McpRequestLifecycle.qnt` | admit/complete/cancel, `MAX_CONCURRENT = 4` slots, busy rejection, `cancelAll` on disconnect | `typeOK`, `activeMatchesRunning`, `allRequestsTerminate` (temporal) |
+| Daemon request path (composed) | `DaemonSynthesisPath.qnt` | server admission (verify scale `MAX_IN_FLIGHT = 2`, production `PRODUCTION_MAX_IN_FLIGHT = 32`) × serialized worker | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing`, `workerEventuallyIdle` (temporal) |
+| Daemon IPC server | `DaemonServer.qnt` | per-client accept/handle/finish, shared request permits (verify scale `MAX_IN_FLIGHT = 2`, production `PRODUCTION_MAX_IN_FLIGHT = 32`), idle-timeout close | `typeOK`, `inFlightMatchesHandling`, `handling{0,1,2}Terminates` (temporal) |
+| Daemon startup / duplicate prevention | `StartupSafety.qnt` | absent/stale/live socket scenarios; static decide/remove/start ordering (no bind or TOCTOU re-probe modelled) | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart`, `alreadyRunningOnlyLive`, `terminates` (temporal) |
+| MCP request lifecycle | `McpRequestLifecycle.qnt` | admit/complete, two-step cancel (`Cancelling` -> `Cancelled`), busy rejection, `cancelAll`; verify scale `MAX_CONCURRENT = 2` (production `PRODUCTION_MAX_CONCURRENT = 4`) | `typeOK`, `activeMatchesHolding`, `allRequestsTerminate` (temporal, non-vacuous) |
 | MCP daemon startup / recovery | `McpStartup.qnt` | first attempt (started / already-running / error), single recovery, non-fatal failure | `doneHasOutcome`, `recoveryOnlyAfterAlreadyRunning`, `terminates` (temporal) |
 | IPC transport contract | `IPC.qnt` | request/response with encode/write/corrupt/mismatch/timeout/EOF/frame-limit/protocol-error | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError`, `eventuallyLeavesInFlight` |
 | Playback (MBT) | `Playback.qnt` | launch/playing/stop/cancel/fail | `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` (about the `Canceled` error); emit/play dispatch via `mbt/tests/playback.rs` (fake backend) |
@@ -88,6 +88,12 @@ What *is* machine-checked:
   `MAX_RETRIES` counts retries (attempts = 1 + `MAX_RETRIES`), while
   `Download.MAX_ATTEMPTS` and `StartupResources.MAX_RETRY` bound total attempts.
   Mixing them is an off-by-one hazard; see the note in `EXPECTED_CONSTANTS`.
+- **Verification-scale constants**: `McpRequestLifecycle`, `DaemonServer`, and
+  `DaemonSynthesisPath` use a small `MAX_*` so their admission limits are
+  reachable with the tiny ID sets (otherwise the guard and the upper-bound
+  invariant would be vacuous). The production value is declared as
+  `PRODUCTION_*` and asserted by `EXPECTED_CONSTANTS`; do not compare the scale
+  constant to production.
 - **Every spec is classified** (`MODEL_CLASSIFICATION`) as `mbt` or
   `verified-only`; `verify.sh` rejects an unclassified spec or an `mbt` spec with
   no driver.

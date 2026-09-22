@@ -48,6 +48,9 @@ jobs:
               - '.github/workflows/ci.yml'
             modeling:
               - 'modeling/**'
+              # verify.sh also machine-checks production constants, so a
+              # source-only change can drift them; run the gate for src too.
+              - 'src/**'
               - 'flake.nix'
               - 'flake.lock'
               - '.github/workflows/ci.yml'

@@ -116,7 +116,10 @@ module StartupSafety {
 
   val readyRequiresResources = phase == Ready implies resourcesReady
 
-  val readyRequiresSocketReady =
+  // Narrowed name: this checks the socket *scenario* is startable (absent, or
+  // stale-and-removed) and not live. Bind success and the TOCTOU re-probe are
+  // not modelled here (see STATE_TRACEABILITY.md).
+  val readyRequiresStartableSocket =
     phase == Ready implies socket != LivePresent and (socket == Absent or staleRemoved)
 
   val startedImpliesNoLive = startedByUs implies socket != LivePresent

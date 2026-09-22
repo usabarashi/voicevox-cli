@@ -11,7 +11,10 @@
 // exact while requests wait for the worker.
 
 module DaemonSynthesisPath {
-  pure val MAX_IN_FLIGHT = 32
+  pure val PRODUCTION_MAX_IN_FLIGHT = 32
+  // Verification scale: the three requests must be able to exceed it, so the
+  // admission guard and the upper-bound invariant are reachable.
+  pure val MAX_IN_FLIGHT = 2
   pure val REQ_IDS = Set(0, 1, 2)
 
   type ReqPhase = Idle | Admitted | Waiting | Synthesizing | Done

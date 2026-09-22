@@ -92,9 +92,9 @@ check_constant_consistency() {
         fi
         ;;
       prod)
-        # prod|<path>|<exact substring>
-        if ! grep -qF "${b}" "${a}"; then
-          echo "FAIL: ${a} does not contain '${b}'" >&2
+        # prod|<path>|<anchored decl regex>
+        if ! grep -qE "${b}" "${a}"; then
+          echo "FAIL: ${a} has no declaration matching /${b}/" >&2
           failures=$((failures + 1))
         fi
         ;;
@@ -217,7 +217,7 @@ run_ok "McpStartup liveness" \
   --temporal=terminates \
   modeling/quint/McpStartup.qnt
 run_ok "McpRequestLifecycle safety" \
-  --invariant=typeOK,activeMatchesRunning \
+  --invariant=typeOK,activeMatchesHolding \
   modeling/quint/McpRequestLifecycle.qnt
 run_ok "McpRequestLifecycle liveness" \
   --temporal=allRequestsTerminate \
@@ -235,7 +235,7 @@ run_ok "DaemonServer liveness (client 2)" \
   --temporal=handling2Terminates \
   modeling/quint/DaemonServer.qnt
 run_ok "StartupSafety safety" \
-  --invariant=readyRequiresResources,readyRequiresSocketReady,startedImpliesNoLive,liveNeverRemoved,liveNeverStarted,staleRemovedBeforeStart,removedOnlyStale,alreadyRunningOnlyLive,failedImpliesResourceFailure \
+  --invariant=readyRequiresResources,readyRequiresStartableSocket,startedImpliesNoLive,liveNeverRemoved,liveNeverStarted,staleRemovedBeforeStart,removedOnlyStale,alreadyRunningOnlyLive,failedImpliesResourceFailure \
   modeling/quint/StartupSafety.qnt
 run_ok "StartupSafety liveness" \
   --temporal=terminates \

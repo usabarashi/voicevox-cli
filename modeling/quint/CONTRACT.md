@@ -244,7 +244,8 @@ expected behavior.
 - On failure, quint-connect prints the seed (`Reproduce this error with
   QUINT_SEED=...`) and, with `QUINT_VERBOSE=1|2`, the trace. quint-connect 0.1.2
   does not persist traces to disk, so reproduction is seed-based:
-  `QUINT_SEED=<printed> cargo test --locked --manifest-path mbt/Cargo.toml -- --nocapture`.
+  `nix develop --accept-flake-config --command bash -c 'QUINT_SEED=<printed> cargo test --locked --manifest-path mbt/Cargo.toml -- --nocapture'`
+  (`quint` and the Rust toolchain come from the devShell).
 - `max_samples` / `max_steps` are set explicitly in the test attributes
   (200 / 6 for the simulation, 1 / 1 for the fixed scenarios), because supplying
   a seed also changes quint's default sample count.

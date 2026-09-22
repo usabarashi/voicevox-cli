@@ -57,6 +57,7 @@ jobs:
               - 'Cargo.lock'
               - 'flake.nix'
               - 'flake.lock'
+              - 'scripts/voicevox-setup.sh'
               - '.github/workflows/ci.yml'
 
   build-and-test:

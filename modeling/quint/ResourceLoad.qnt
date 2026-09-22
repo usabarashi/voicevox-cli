@@ -1,14 +1,20 @@
-// OpenJTalk dictionary resource lifecycle model.
+// One-shot resource load lifecycle.
 //
-// Production loads the dictionary with a single `openjtalk::initialize()` call
-// (`src/infrastructure/openjtalk.rs`, reached from `core.rs`): there is **no
-// retry**. Retries belong to the installer (`Download.qnt` /
-// `StartupResources.qnt`), not to the load step.
+// Models a startup resource that production loads with a single initialize call
+// and **no retry**:
+//   - ONNX Runtime (`onnxruntime::initialize()` in `infrastructure/onnxruntime.rs`),
+//   - the OpenJTalk dictionary (`openjtalk::initialize()` in
+//     `infrastructure/openjtalk.rs`).
+//
+// Retries belong to the installer (`Download.qnt` / `StartupResources.qnt`), not
+// to the load step. This consolidates the two previously identical specs
+// (`ONNXRuntime.qnt` / `Dictionary.qnt`), which were merged because their state
+// machines and properties were duplicates.
 //
 // Properties: the load reaches a terminal state (`loadTerminates`), and once
-// ready it is never unloaded (`loadedStaysReady`).
+// ready the resource is never unloaded (`loadedStaysReady`).
 
-module Dictionary {
+module ResourceLoad {
   type LoadState = Missing | Loading | Ready | Failed
 
   var state: LoadState

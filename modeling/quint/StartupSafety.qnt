@@ -121,6 +121,11 @@ module StartupSafety {
 
   val startedImpliesNoLive = startedByUs implies socket != LivePresent
 
+  // A live daemon's socket is never removed and a second daemon is never
+  // started (subsumes DaemonStartup.qnt, which was retired into this model).
+  val liveNeverRemoved = socket == LivePresent implies not(staleRemoved)
+  val liveNeverStarted = socket == LivePresent implies not(startedByUs)
+
   val staleRemovedBeforeStart =
     startedByUs and socket == StalePresent implies staleRemoved
 

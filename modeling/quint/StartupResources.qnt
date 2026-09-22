@@ -23,7 +23,6 @@ module StartupResources {
   var dictState: LoadState
   var dictRetry: int
   var socketState: SocketPhase
-  var socketRetry: int
   var modelState: LoadState
   var modelRetry: int
   var daemonState: DaemonPhase
@@ -37,7 +36,6 @@ module StartupResources {
     dictState' = Missing,
     dictRetry' = 0,
     socketState' = SocketAbsent,
-    socketRetry' = 0,
     modelState' = Missing,
     modelRetry' = 0,
     daemonState' = Down,
@@ -54,7 +52,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -67,7 +64,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -80,7 +76,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -94,7 +89,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -108,7 +102,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -124,7 +117,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -137,7 +129,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -150,7 +141,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -164,7 +154,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -178,7 +167,6 @@ module StartupResources {
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -188,10 +176,10 @@ module StartupResources {
 
   action startBind = all {
     daemonState == DaemonStarting,
-    // First bind only; re-entry after permission denial goes through `retryBind`.
+    // A bind attempt is one-shot (production `UnixListener::bind`); permission
+    // denial is terminal for the run.
     socketState == SocketAbsent,
     socketState' = Binding,
-    socketRetry' = socketRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -205,7 +193,6 @@ module StartupResources {
     daemonState == DaemonStarting,
     socketState == Binding,
     socketState' = SocketReady,
-    socketRetry' = socketRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -219,22 +206,6 @@ module StartupResources {
     daemonState == DaemonStarting,
     socketState == Binding,
     socketState' = PermissionDenied,
-    socketRetry' = if (socketRetry < MAX_RETRY) socketRetry + 1 else socketRetry,
-    runtimeState' = runtimeState,
-    runtimeRetry' = runtimeRetry,
-    dictState' = dictState,
-    dictRetry' = dictRetry,
-    modelState' = modelState,
-    modelRetry' = modelRetry,
-    daemonState' = daemonState,
-  }
-
-  action retryBind = all {
-    daemonState == DaemonStarting,
-    socketState == PermissionDenied,
-    socketRetry < MAX_RETRY,
-    socketState' = Binding,
-    socketRetry' = socketRetry,
     runtimeState' = runtimeState,
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
@@ -257,7 +228,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     daemonState' = daemonState,
   }
 
@@ -270,7 +240,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     daemonState' = daemonState,
   }
 
@@ -283,7 +252,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     daemonState' = daemonState,
   }
 
@@ -297,7 +265,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     daemonState' = daemonState,
   }
 
@@ -312,7 +279,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -326,7 +292,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -338,8 +303,10 @@ module StartupResources {
     runtimeRetry' = runtimeRetry,
     dictState' = dictState,
     dictRetry' = dictRetry,
-    socketState' = socketState,
-    socketRetry' = socketRetry,
+    // A failed boot drops an in-progress bind (the socket is removed on
+    // shutdown), so `Binding` never stays stuck. A terminal `PermissionDenied`
+    // is left in place.
+    socketState' = if (socketState == Binding) SocketAbsent else socketState,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -352,7 +319,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
   }
@@ -363,7 +329,6 @@ module StartupResources {
     dictState' = dictState,
     dictRetry' = dictRetry,
     socketState' = socketState,
-    socketRetry' = socketRetry,
     modelState' = modelState,
     modelRetry' = modelRetry,
     daemonState' = daemonState,
@@ -383,7 +348,6 @@ module StartupResources {
     startBind,
     bindOk,
     bindPermissionDenied,
-    retryBind,
     startModelDownload,
     modelDownloadOk,
     modelDownloadFail,
@@ -398,7 +362,6 @@ module StartupResources {
   val typeOK =
     runtimeRetry >= 0 and runtimeRetry <= MAX_RETRY and
     dictRetry >= 0 and dictRetry <= MAX_RETRY and
-    socketRetry >= 0 and socketRetry <= MAX_RETRY and
     modelRetry >= 0 and modelRetry <= MAX_RETRY
 
   val daemonReadyRequiresDownloads =
@@ -409,4 +372,25 @@ module StartupResources {
 
   val daemonReadyRequiresSocket =
     daemonState == DaemonReady implies socketState == SocketReady
+
+  // ---- Socket bind liveness (ported from the retired `Socket.qnt`) --------
+
+  action bindAdvance = any {
+    startBind,
+    bindOk,
+    bindPermissionDenied,
+    daemonBootFail,
+  }
+
+  val bindVars = (socketState, daemonState)
+
+  // A bind attempt always leaves `Binding` (success, permission denial, or a
+  // daemon boot failure that drops the socket).
+  temporal bindingTerminates =
+    weakFair(bindAdvance, bindVars) implies
+      always(socketState == Binding implies eventually(socketState != Binding))
+
+  // A permission denial is terminal for that daemon run.
+  temporal permissionDeniedIsTerminal =
+    always(socketState == PermissionDenied implies always(socketState == PermissionDenied))
 }

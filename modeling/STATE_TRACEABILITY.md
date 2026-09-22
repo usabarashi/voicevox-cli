@@ -17,18 +17,16 @@ See also:
 | Concern | Quint module | Core states/actions | Checked by |
 |---|---|---|---|
 | Daemon lifecycle | `Daemon.qnt` | `DaemonDown/Starting/AlreadyRunning/Ready/Recovering`, recovery transitions (`MAX_RETRY = 10`) | `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded`, `typeOK` |
-| Startup resources | `StartupResources.qnt` | runtime/dictionary/socket/model readiness + daemon bootstrap (`MAX_RETRY = 3`) | `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket`, `typeOK` |
+| Startup resources / socket | `StartupResources.qnt` | runtime/dictionary/socket/model readiness + one-shot socket bind + daemon bootstrap (`MAX_RETRY = 3`) | `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket`, `typeOK`, `bindingTerminates`, `permissionDeniedIsTerminal` (temporal) |
 | Startup safety (composed) | `StartupSafety.qnt` | resources readiness × socket scenario (absent/stale/live) × start ordering | `readyRequiresResources`, `readyRequiresSocketReady`, `startedImpliesNoLive`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure`, `terminates` (temporal) |
-| ONNX runtime resource | `ONNXRuntime.qnt` | one-shot load (production has no load retry; the installer retries) | `loadTerminates`, `readyIsStable` (temporal) |
-| OpenJTalk dictionary | `Dictionary.qnt` | one-shot load | `loadTerminates`, `loadedStaysReady` (temporal) |
-| Socket binding/readiness | `Socket.qnt` | one-shot bind, ready, permission-denied (terminal), socket drop | `bindingTerminates`, `permissionDeniedIsTerminal` (temporal) |
+| Startup resource load | `ResourceLoad.qnt` | one-shot load of ONNX Runtime / OpenJTalk dictionary (production has no load retry; the installer retries) | `loadTerminates`, `loadedStaysReady` (temporal) |
 | MCP client connect/playback | `MCPServer.qnt` | `startConnect`, `connectOk`, `connectRetry`, `finalConnectOk/Fail`, `connectFailed` (`MAX_ATTEMPTS = 10`), playback | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio`; connect budget via `mbt/tests/mcp_connect.rs` |
 | Synthesis retry/cancel loop (non-streaming) | `SynthesisRetry.qnt` | `Running/Attempting/Backoff/Done/Failed/Canceled`, `attempts` (started), `backoffs` (started) | `attemptsBounded`, `backoffsBounded`, `backoffAfterAttempt`, `eventuallyTerminal`, `cancelIsTerminal` |
 | Streaming synthesis (default MCP path) | `StreamingSynthesis.qnt` | connect (or connect failure) → split → per-segment synthesis → concatenate → play; cancel before/after connect and at any point before playback; fail | `segmentsBounded`, `playbackRequiresAllSegments`, `canceledImpliesNoPlayback` |
 | Daemon synthesis serialization (MBT) | `DaemonSerialization.qnt` | one worker (mutex), queued jobs, no cancel, no daemon-side retry | `atMostOneSynthesizing`, `workerMatchesSynthesis`, `eventuallyLeavesBusyWorker`; `mbt/tests/daemon_serialization.rs` (two concurrent real-daemon requests) |
 | Daemon request path (composed) | `DaemonSynthesisPath.qnt` | server admission (`MAX_IN_FLIGHT = 32`) × serialized worker | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing`, `workerEventuallyIdle` (temporal) |
 | Daemon IPC server | `DaemonServer.qnt` | per-client accept/handle/finish, shared `MAX_IN_FLIGHT = 32` permits, `MAX_CONNECTIONS = 32` accept permits, idle-timeout close | `typeOK`, `inFlightMatchesHandling`, `connectionsMatchClient`, `handling{0,1,2}Terminates` (temporal) |
-| Daemon startup / duplicate prevention | `DaemonStartup.qnt` | absent/stale/live socket scenarios; probe, TOCTOU re-check, stale removal, start | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart`, `decides` (temporal) |
+| Daemon startup / duplicate prevention | `StartupSafety.qnt` | absent/stale/live socket scenarios; probe, TOCTOU re-check, stale removal, start | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart`, `alreadyRunningOnlyLive`, `decides`/`terminates` (temporal) |
 | MCP request lifecycle | `McpRequestLifecycle.qnt` | admit/complete/cancel, `MAX_CONCURRENT = 4` slots, busy rejection, `cancelAll` on disconnect | `typeOK`, `activeMatchesRunning`, `allRequestsTerminate` (temporal) |
 | MCP daemon startup / recovery | `McpStartup.qnt` | first attempt (started / already-running / error), single recovery, non-fatal failure | `doneHasOutcome`, `recoveryOnlyAfterAlreadyRunning`, `terminates` (temporal) |
 | IPC transport contract | `IPC.qnt` | request/response with encode/write/corrupt/mismatch/timeout/EOF/frame-limit/protocol-error | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError`, `eventuallyLeavesInFlight` |
@@ -97,17 +95,17 @@ Layer ownership:
 
 | Layer | Spec(s) |
 |---|---|
-| Process / daemon lifecycle | `Daemon.qnt`, `DaemonStartup.qnt` |
+| Process / daemon lifecycle | `Daemon.qnt`, `StartupSafety.qnt` |
 | IPC server (admission / connections / worker) | `DaemonServer.qnt`, `DaemonSerialization.qnt`, `DaemonSynthesisPath.qnt` |
 | IPC transport (client) | `IPC.qnt`, `DaemonIpc.qnt`, `MCPServer.qnt` |
 | MCP server (stdio) | `McpRequestParsing.qnt`, `McpNotificationParsing.qnt`, `McpRequestLifecycle.qnt`, `McpStartup.qnt` |
-| Startup resources / ordering | `ONNXRuntime.qnt`, `Dictionary.qnt`, `Socket.qnt`, `StartupResources.qnt`, `Download.qnt`, `StartupSafety.qnt` |
+| Startup resources / ordering | `ResourceLoad.qnt`, `StartupResources.qnt`, `Download.qnt`, `StartupSafety.qnt` |
 | Synthesis | `SynthesisRetry.qnt`, `StreamingSynthesis.qnt`, `TargetResolution.qnt`, `ModelLifecycle.qnt` |
 | Integrated | `System.qnt`, `Say.qnt` |
 
 Design-only specs (not derived from production code; correspondence is a design
-decision, not an observed behavior): `Daemon.qnt`, `ONNXRuntime.qnt` (one-shot
-load only), `Dictionary.qnt`, `Socket.qnt`, `Say.qnt`, `System.qnt`.
+decision, not an observed behavior): `Daemon.qnt`, `ResourceLoad.qnt` (one-shot
+load only), `Say.qnt`, `System.qnt`.
 
 ## Verification gate
 
@@ -154,9 +152,9 @@ pre-connect-cancel paths daemon-free through the MCP entry point; the remaining
 streaming failure/cancel interleavings are verified in `StreamingSynthesis.qnt`
 but have no executable driver.
 
-The remaining Lifecycle models (`Daemon`, `DaemonServer`, `DaemonStartup`,
-`McpStartup`, `McpRequestLifecycle`, `StartupResources`, `ONNXRuntime`,
-`Dictionary`, `Socket`, `Say`, `System`) are verified exhaustively but are
+The remaining Lifecycle models (`Daemon`, `DaemonServer`, `DaemonSynthesisPath`,
+`McpStartup`, `McpRequestLifecycle`, `StartupResources`, `ResourceLoad`,
+`Say`, `System`) are verified exhaustively but are
 **not** executable
 refinements; their correspondence is the prose above plus ordinary tests.
 

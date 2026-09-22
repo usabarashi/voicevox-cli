@@ -139,24 +139,18 @@ check_model_classification
 check_constant_consistency
 
 # Ported lifecycle models (Phase 2).
-run_ok "ONNXRuntime liveness" \
+run_ok "ResourceLoad liveness" \
   --temporal=loadTerminates \
-  modeling/quint/ONNXRuntime.qnt
-run_ok "ONNXRuntime stability" \
-  --temporal=readyIsStable \
-  modeling/quint/ONNXRuntime.qnt
-run_ok "Dictionary liveness" \
-  --temporal=loadTerminates \
-  modeling/quint/Dictionary.qnt
-run_ok "Dictionary stability" \
+  modeling/quint/ResourceLoad.qnt
+run_ok "ResourceLoad stability" \
   --temporal=loadedStaysReady \
-  modeling/quint/Dictionary.qnt
-run_ok "Socket liveness" \
+  modeling/quint/ResourceLoad.qnt
+run_ok "StartupResources socket liveness" \
   --temporal=bindingTerminates \
-  modeling/quint/Socket.qnt
-run_ok "Socket denial terminal" \
+  modeling/quint/StartupResources.qnt
+run_ok "StartupResources denial terminal" \
   --temporal=permissionDeniedIsTerminal \
-  modeling/quint/Socket.qnt
+  modeling/quint/StartupResources.qnt
 run_ok "Playback safety" \
   --invariant=playingRequiresAudio,canceledImpliesStoppedOrFailed \
   modeling/quint/Playback.qnt
@@ -233,17 +227,11 @@ run_ok "DaemonServer liveness (client 2)" \
   --temporal=handling2Terminates \
   modeling/quint/DaemonServer.qnt
 run_ok "StartupSafety safety" \
-  --invariant=readyRequiresResources,readyRequiresSocketReady,startedImpliesNoLive,staleRemovedBeforeStart,removedOnlyStale,alreadyRunningOnlyLive,failedImpliesResourceFailure \
+  --invariant=readyRequiresResources,readyRequiresSocketReady,startedImpliesNoLive,liveNeverRemoved,liveNeverStarted,staleRemovedBeforeStart,removedOnlyStale,alreadyRunningOnlyLive,failedImpliesResourceFailure \
   modeling/quint/StartupSafety.qnt
 run_ok "StartupSafety liveness" \
   --temporal=terminates \
   modeling/quint/StartupSafety.qnt
-run_ok "DaemonStartup safety" \
-  --invariant=liveNeverRemoved,liveNeverStarted,removedOnlyStale,staleRemovedBeforeStart \
-  modeling/quint/DaemonStartup.qnt
-run_ok "DaemonStartup liveness" \
-  --temporal=decides \
-  modeling/quint/DaemonStartup.qnt
 run_ok "DaemonIpc safety" \
   --invariant=catalogRequiresConnection \
   modeling/quint/DaemonIpc.qnt

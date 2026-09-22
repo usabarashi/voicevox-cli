@@ -116,14 +116,17 @@ impl DaemonSynthesizeDriver {
         }
         self.child = Some(command.spawn().context("failed to spawn voicevox-daemon")?);
 
-        let deadline = Instant::now() + Duration::from_secs(60);
+        // The daemon builds its catalog (loading every model once) before
+        // binding its socket; with a populated models directory this can take
+        // minutes on a cold CI runner.
+        let deadline = Instant::now() + Duration::from_secs(300);
         while Instant::now() < deadline {
             if socket.exists() {
                 return Ok(());
             }
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(200));
         }
-        bail!("daemon did not bind its socket within 60s");
+        bail!("daemon did not bind its socket within 300s");
     }
 
     fn kill_daemon(&mut self) {
@@ -134,8 +137,10 @@ impl DaemonSynthesizeDriver {
     }
 
     fn reset(&mut self) {
+        // Keep the daemon process alive across traces: rebuilding its catalog
+        // (loading every model once) is the expensive part. The process is
+        // killed in `Drop`.
         self.client = None;
-        self.kill_daemon();
         self.style_id = None;
         self.connected = false;
         self.catalog_read = false;

@@ -79,22 +79,25 @@ production code count as refinement evidence:
 | Driver | Production entry point |
 |---|---|
 | `mbt/tests/target_resolution.rs` | `catalog::resolve_target` + `catalog::build_model_default_style_map` |
-| `mbt/tests/synthesis_retry.rs` | `domain::synthesis::retry::RetryPolicy` + `MCP_DAEMON_MAX_RETRIES` (retry arithmetic) |
+| `mbt/tests/synthesis_retry.rs` | `domain::synthesis::retry::RetryTracker` (production retry state machine), one step per spec action |
 | `mbt/tests/synthesis_retry_loop.rs` | `run_retry_loop` with scripted attempt/waiter seams (orchestration + counters) |
 | `mbt/tests/mcp_request_parsing.rs` | `mcp_server::protocol::parse_request_message` |
 | `mbt/tests/daemon_ipc.rs` | `DaemonClient` over a real daemon |
 | `mbt/tests/daemon_synthesize.rs` | `DaemonClient::synthesize` over a real daemon |
-| `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` over a real daemon |
+| `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` over a real daemon; plus daemon-free `handle_text_to_speech_cancellable` connect-failure/cancel scenarios (dead `VOICEVOX_SOCKET_PATH`) |
 
-Scope note: `synthesis_retry.rs` covers the retry **decision policy**
-(`RetryPolicy` + `MCP_DAEMON_MAX_RETRIES`); `synthesis_retry_loop.rs` runs the
-real `run_retry_loop` with injected attempt/waiter seams and checks the observed
-counters and terminal outcome for the fixed scenarios (exhaustion, success after
-retry, early fatal, cancel during backoff, cancel in flight). The in-file
-fake-seam tests in `src/interface/mcp_server/tools/text_to_speech.rs` remain as
-finer-grained unit evidence. `streaming_synthesis.rs` covers the successful
-pipeline only; the streaming failure/cancellation paths are verified in
-`StreamingSynthesis.qnt` but have no executable driver.
+Scope note: `synthesis_retry.rs` drives the production `RetryTracker` one step
+per spec action over random traces (attempts/backoffs counted at start,
+cancellation terminal). `synthesis_retry_loop.rs` runs the real `run_retry_loop`
+with injected attempt/waiter seams and checks the observed counters and terminal
+outcome for fixed scenarios (exhaustion, success after retry, early fatal,
+cancel before the first attempt, cancel during backoff, cancel in flight). The
+in-file fake-seam tests in `src/interface/mcp_server/tools/text_to_speech.rs`
+remain as finer-grained unit evidence. `streaming_synthesis.rs` covers both the
+successful pipeline against a real daemon and the connect-failure /
+pre-connect-cancel paths daemon-free through the MCP entry point; the remaining
+streaming failure/cancel interleavings are verified in `StreamingSynthesis.qnt`
+but have no executable driver.
 
 The remaining Lifecycle models (`Daemon`, `StartupResources`, `MCPServer`,
 `Say`, `System`, `Playback`, `IPC`, `DaemonSerialization`, `Download`,

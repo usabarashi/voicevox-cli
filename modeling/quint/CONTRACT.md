@@ -364,8 +364,8 @@ WAV header check).
 
 | Driver | Spec | Production entry point |
 |---|---|---|
-| `mbt/tests/synthesis_retry.rs` | `SynthesisRetry.qnt` | `RetryPolicy::after_attempt` + `MCP_DAEMON_MAX_RETRIES` (arithmetic) |
-| `mbt/tests/synthesis_retry_loop.rs` | `SynthesisRetry.qnt` | `run_retry_loop` scanned via scripted `SynthesisAttempt`/`BackoffWaiter` seams |
+| `mbt/tests/synthesis_retry.rs` | `SynthesisRetry.qnt` | `RetryTracker` (production state machine), one step per spec action |
+| `mbt/tests/synthesis_retry_loop.rs` | `SynthesisRetry.qnt` | `run_retry_loop` scanned via scripted `SynthesisAttempt`/`BackoffWaiter` seams (6 fixed scenarios) |
 | `mbt/tests/mcp_request_parsing.rs` | `McpRequestParsing.qnt` | `parse_request_message` |
 | `mbt/tests/target_resolution.rs` | `TargetResolution.qnt` | `resolve_target` + `build_model_default_style_map` |
 | `mbt/tests/streaming_synthesis.rs` | `StreamingSynthesis.qnt` | `StreamingSynthesizer` + `TextSplitter` + `concatenate_wav_segments` (real daemon) |
@@ -383,6 +383,10 @@ Mutation acceptance for the follow-up:
 - Moving attempt counting after the await, or counting backoffs at completion,
   in `run_retry_loop` makes `retry_loop_cancel_in_flight_third_attempt` /
   `retry_loop_exhausts_retryable_failures` fail.
+- Dropping the backoff count in `RetryTracker::record_attempt` (or counting it in
+  `end_backoff`) makes `synthesis_retry_simulation` fail.
+- Pointing `VOICEVOX_SOCKET_PATH` at a live socket makes
+  `streaming_connect_failure` fail (it expects the connect to fail).
 
 The `quint-mbt-explore` CI job runs the non-daemon MBT with a random seed
 (`QUINT_SEED` unset) on a nightly schedule, because the PR/push jobs pin the

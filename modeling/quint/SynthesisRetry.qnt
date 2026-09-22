@@ -183,6 +183,13 @@ module SynthesisRetry {
     backoffs' = 0,
   }
 
+  // Cancellation delivered before the first attempt starts.
+  action scenarioCancelBeforeFirstAttempt = all {
+    outcome' = Canceled,
+    attempts' = 0,
+    backoffs' = 0,
+  }
+
   // Cancellation delivered while waiting for the first backoff.
   action scenarioCancelDuringBackoff = all {
     outcome' = Canceled,

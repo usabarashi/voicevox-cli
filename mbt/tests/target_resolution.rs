@@ -194,8 +194,8 @@ impl Driver for TargetResolutionDriver {
 /// Random exploration of the resolution contract.
 #[quint_run(
     spec = "../modeling/quint/TargetResolution.qnt",
-    max_samples = 200,
-    max_steps = 6
+    max_samples = 400,
+    max_steps = 8
 )]
 fn target_resolution_simulation() -> impl Driver {
     TargetResolutionDriver::default()

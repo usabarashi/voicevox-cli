@@ -42,6 +42,19 @@ module McpRequestParsing {
     outcome' = Invalid,
   }
 
+  // `tools/call` without params, with non-object params, or without a tool name.
+  action parseMissingParams = all {
+    outcome' = Invalid,
+  }
+
+  action parseNonObjectParams = all {
+    outcome' = Invalid,
+  }
+
+  action parseMissingToolName = all {
+    outcome' = Invalid,
+  }
+
   action parseUnknownMethod = all {
     outcome' = Unknown,
   }
@@ -52,6 +65,9 @@ module McpRequestParsing {
     parseToolsCall,
     parseMissingMethod,
     parseBadArguments,
+    parseMissingParams,
+    parseNonObjectParams,
+    parseMissingToolName,
     parseUnknownMethod,
   }
 

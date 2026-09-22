@@ -22,13 +22,17 @@
 use anyhow::{Context, bail};
 use quint_connect::*;
 use serde::Deserialize;
+use serde_json::json;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+use tokio::sync::oneshot;
 use voicevox_cli::domain::synthesis::TextSplitter;
 use voicevox_cli::domain::synthesis::wav::concatenate_wav_segments;
 use voicevox_cli::infrastructure::daemon::client::DaemonClient;
+use voicevox_cli::interface::mcp_server::tools::text_to_speech::handle_text_to_speech_cancellable;
+use voicevox_cli::interface::mcp_server::tools::types::ToolContent;
 use voicevox_cli::interface::synthesis::StreamingSynthesizer;
 
 /// Must split into exactly two non-empty segments via the production splitter.
@@ -320,4 +324,137 @@ impl Driver for StreamingDriver {
 #[ignore = "requires installed VOICEVOX resources; run with -- --ignored"]
 fn streaming_synthesis_fixed_scenario() -> impl Driver {
     StreamingDriver::default()
+}
+
+/// Daemon-free driver for the streaming failure/cancellation scenarios: points
+/// the production `get_socket_path()` at a path with no listener, so the
+/// connection used by the default MCP streaming path fails.
+struct StreamingFailureDriver {
+    runtime: tokio::runtime::Runtime,
+    phase: Phase,
+    segments_synth: i64,
+    segments_total: i64,
+    playback_started: bool,
+}
+
+impl Default for StreamingFailureDriver {
+    fn default() -> Self {
+        Self {
+            runtime: tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime"),
+            phase: Phase::Idle,
+            segments_synth: 0,
+            segments_total: 0,
+            playback_started: false,
+        }
+    }
+}
+
+fn dead_socket_path() -> PathBuf {
+    let path = std::env::temp_dir().join("voicevox-mbt-does-not-exist.sock");
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
+impl StreamingFailureDriver {
+    fn reset(&mut self) {
+        self.phase = Phase::Idle;
+        self.segments_synth = 0;
+        self.segments_total = 0;
+        self.playback_started = false;
+    }
+
+    /// Drives the real MCP streaming entry point. `cancel` pre-delivers a
+    /// cancellation (otherwise the connect attempt fails against the dead
+    /// socket).
+    fn run(&mut self, cancel: Option<&str>) {
+        // The value is identical for every test in this binary, so parallel
+        // tests setting it are benign.
+        let path = dead_socket_path();
+        unsafe { std::env::set_var("VOICEVOX_SOCKET_PATH", &path) };
+
+        let (cancel_tx, cancel_rx) = oneshot::channel::<String>();
+        if let Some(reason) = cancel {
+            let _ = cancel_tx.send(reason.to_string());
+        }
+
+        let args = json!({
+            "text": SYNTHESIS_TEXT,
+            "style_id": 3,
+            "streaming": true,
+        });
+        let result = self
+            .runtime
+            .block_on(handle_text_to_speech_cancellable(args, Some(cancel_rx)));
+
+        self.phase = match result {
+            Err(_) => Phase::Failed,
+            Ok(tool_result) => {
+                let cancelled = tool_result.is_error == Some(true)
+                    && tool_result.content.iter().any(|content| match content {
+                        ToolContent::Text { text } => text.contains("cancelled"),
+                    });
+                assert!(
+                    cancelled,
+                    "streaming connect failure unexpectedly returned a success result"
+                );
+                Phase::Canceled
+            }
+        };
+        self.segments_synth = 0;
+        self.segments_total = 0;
+        self.playback_started = false;
+    }
+}
+
+impl State<StreamingFailureDriver> for StreamingState {
+    fn from_driver(driver: &StreamingFailureDriver) -> Result<Self> {
+        Ok(Self {
+            phase: driver.phase.clone(),
+            segments_synth: driver.segments_synth,
+            segments_total: driver.segments_total,
+            playback_started: driver.playback_started,
+        })
+    }
+}
+
+impl Driver for StreamingFailureDriver {
+    type State = StreamingState;
+
+    fn step(&mut self, step: &Step) -> Result {
+        switch!(step {
+            init => self.reset(),
+            step => self.reset(),
+            hold => (),
+            scenarioConnectFail => self.run(None),
+            scenarioCancelBeforeConnect => self.run(Some("ESC pressed")),
+            _ => (),
+        })
+    }
+}
+
+/// A connection failure before any segment is synthesized (daemon-free).
+#[quint_run(
+    spec = "../modeling/quint/StreamingSynthesis.qnt",
+    init = "scenarioConnectFail",
+    step = "hold",
+    max_samples = 1,
+    max_steps = 1
+)]
+fn streaming_connect_failure() -> impl Driver {
+    StreamingFailureDriver::default()
+}
+
+/// A cancellation delivered before the connection is established (daemon-free).
+#[quint_run(
+    spec = "../modeling/quint/StreamingSynthesis.qnt",
+    init = "scenarioCancelBeforeConnect",
+    step = "hold",
+    max_samples = 1,
+    max_steps = 1
+)]
+fn streaming_cancel_before_connect() -> impl Driver {
+    StreamingFailureDriver::default()
 }

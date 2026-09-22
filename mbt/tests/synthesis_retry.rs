@@ -1,21 +1,19 @@
-//! Model-based test for the client-side retry **arithmetic**.
+//! Model-based test for the production retry **state machine**.
 //!
-//! The driver drives the production `RetryPolicy` (with the production
-//! `MCP_DAEMON_MAX_RETRIES` constant) and lets Quint Connect compare the
-//! resulting attempt/backoff/outcome state against
-//! `modeling/quint/SynthesisRetry.qnt` after every step. The attempt *result* is
-//! an injected input (`attemptOk` / `attemptFatal` / `attemptRetryable`),
-//! matching the model's environment boundary.
+//! The driver advances the production `RetryTracker` one spec step at a time
+//! (begin attempt / record result / end backoff / cancel) and lets Quint
+//! Connect compare `(phase, attempts_started, backoffs_started)` against
+//! `modeling/quint/SynthesisRetry.qnt` after every step, over randomly
+//! generated traces.
 //!
-//! Scope: this MBT establishes correspondence for the retry decision policy
-//! (bound, backoff-vs-stop, counting semantics). It does **not** drive
-//! `run_retry_loop` itself; the orchestration (attempt-start counting,
-//! cancellation checkpoints, and the wait seam) is covered by the in-file
-//! fake-seam tests in `src/interface/mcp_server/tools/text_to_speech.rs`.
+//! Unlike a policy-only check, this exercises the counting semantics
+//! (attempts/backoffs counted at start), the terminal rules, and cancellation
+//! as they are actually implemented. The async `run_retry_loop` is covered
+//! separately by `synthesis_retry_loop.rs`.
 
 use quint_connect::*;
 use serde::Deserialize;
-use voicevox_cli::domain::synthesis::{AttemptOutcome, RetryDecision, RetryPolicy};
+use voicevox_cli::domain::synthesis::{AttemptOutcome, RetryPhase, RetryPolicy, RetryTracker};
 use voicevox_cli::interface::mcp_server::tools::text_to_speech::MCP_DAEMON_MAX_RETRIES;
 
 /// Mirrors the spec's `Outcome` sum type.
@@ -37,96 +35,94 @@ struct RetryState {
     backoffs: i64,
 }
 
-struct RetryDriver {
-    outcome: Outcome,
-    attempts: u32,
-    backoffs: u32,
+fn outcome_of(phase: RetryPhase) -> Outcome {
+    match phase {
+        RetryPhase::Running => Outcome::Running,
+        RetryPhase::Attempting => Outcome::Attempting,
+        RetryPhase::Backoff => Outcome::Backoff,
+        RetryPhase::Done => Outcome::Done,
+        RetryPhase::Failed => Outcome::Failed,
+        RetryPhase::Canceled => Outcome::Canceled,
+    }
 }
 
-impl Default for RetryDriver {
+struct TrackerDriver {
+    tracker: RetryTracker,
+}
+
+impl Default for TrackerDriver {
     fn default() -> Self {
         Self {
-            outcome: Outcome::Running,
-            attempts: 0,
-            backoffs: 0,
+            tracker: RetryTracker::new(RetryPolicy::new(MCP_DAEMON_MAX_RETRIES)),
         }
     }
 }
 
-impl RetryDriver {
-    fn policy() -> RetryPolicy {
-        RetryPolicy::new(MCP_DAEMON_MAX_RETRIES)
-    }
-
+impl TrackerDriver {
     fn reset(&mut self) {
         *self = Self::default();
     }
 
-    fn begin_attempt(&mut self) {
-        self.attempts += 1;
-        self.outcome = Outcome::Attempting;
-    }
-
-    /// Applies the production retry decision for one attempt result.
-    fn apply_attempt(&mut self, result: AttemptOutcome) {
-        let decision = Self::policy().after_attempt(self.attempts, result);
-        self.outcome = match (result, decision) {
-            (AttemptOutcome::Succeeded, _) => Outcome::Done,
-            (AttemptOutcome::FatalFailure, _) => Outcome::Failed,
-            (AttemptOutcome::RetryableFailure, RetryDecision::Backoff) => {
-                self.backoffs += 1;
-                Outcome::Backoff
-            }
-            (AttemptOutcome::RetryableFailure, RetryDecision::Finish) => Outcome::Failed,
-        };
-    }
-
-    fn backoff_done(&mut self) {
-        self.outcome = Outcome::Running;
-    }
-
-    fn cancel(&mut self) {
-        self.outcome = Outcome::Canceled;
+    fn record(&mut self, outcome: AttemptOutcome) {
+        // `record_attempt` is only enabled from `Attempting` in the spec, so the
+        // returned decision is not needed here; the phase/counters are compared
+        // through the state.
+        let _ = self.tracker.record_attempt(outcome);
     }
 }
 
-impl State<RetryDriver> for RetryState {
-    fn from_driver(driver: &RetryDriver) -> Result<Self> {
+impl State<TrackerDriver> for RetryState {
+    fn from_driver(driver: &TrackerDriver) -> Result<Self> {
         Ok(Self {
-            outcome: driver.outcome.clone(),
-            attempts: i64::from(driver.attempts),
-            backoffs: i64::from(driver.backoffs),
+            outcome: outcome_of(driver.tracker.phase()),
+            attempts: i64::from(driver.tracker.attempts_started()),
+            backoffs: i64::from(driver.tracker.backoffs_started()),
         })
     }
 }
 
-impl Driver for RetryDriver {
+impl Driver for TrackerDriver {
     type State = RetryState;
 
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
-            // `init` starts the first trace; quint labels the initial state of
-            // subsequent traces with the composite `step` action name (a real
-            // step never records `step`), so reset there too.
+            // `init` starts the first trace; `step` is the synthetic first
+            // action of subsequent traces (quint labels the initial state with
+            // the step relation) and also corresponds to the initial state.
             init => self.reset(),
             step => self.reset(),
-            beginAttempt => self.begin_attempt(),
-            attemptOk => self.apply_attempt(AttemptOutcome::Succeeded),
-            attemptFatal => self.apply_attempt(AttemptOutcome::FatalFailure),
-            attemptRetryable => self.apply_attempt(AttemptOutcome::RetryableFailure),
-            backoffDone => self.backoff_done(),
-            cancel => self.cancel(),
+            beginAttempt => {
+                assert!(
+                    self.tracker.begin_attempt(),
+                    "spec began an attempt from a non-Running phase"
+                );
+            }
+            attemptOk => self.record(AttemptOutcome::Succeeded),
+            attemptFatal => self.record(AttemptOutcome::FatalFailure),
+            attemptRetryable => self.record(AttemptOutcome::RetryableFailure),
+            backoffDone => {
+                assert!(
+                    self.tracker.end_backoff(),
+                    "spec ended a backoff outside the Backoff phase"
+                );
+            }
+            cancel => {
+                assert!(
+                    self.tracker.cancel(),
+                    "spec cancelled a terminal retry loop"
+                );
+            }
             _ => (),
         })
     }
 }
 
-/// Random exploration of the retry/cancel arithmetic.
+/// Random exploration of the retry state machine.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
-    max_samples = 300,
-    max_steps = 10
+    max_samples = 500,
+    max_steps = 12
 )]
 fn synthesis_retry_simulation() -> impl Driver {
-    RetryDriver::default()
+    TrackerDriver::default()
 }

@@ -112,6 +112,49 @@ impl RetryLoopDriver {
         self.backoffs = 0;
     }
 
+    /// Records a state observed without running the loop (used for the
+    /// pre-cancelled scenario, where no attempt may start).
+    fn record(&mut self, outcome: Outcome, attempts: u32, backoffs: u32) {
+        self.outcome = Some(outcome);
+        self.attempts = attempts;
+        self.backoffs = backoffs;
+    }
+
+    /// Runs the loop with a cancellation that is already delivered before the
+    /// first attempt.
+    fn run_loop_with_precancel(&mut self, reason: &str) {
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        let _ = tx.send(reason.to_string());
+        let mut cancel_rx = Some(rx);
+        let mut attempt = FakeAttempt {
+            script: VecDeque::new(),
+        };
+        let mut waiter = FakeWaiter {
+            script: VecDeque::new(),
+        };
+        let socket = Path::new("/tmp/does-not-exist-mbt.sock");
+        let request = DaemonSynthesisBytesRequest {
+            text: "test",
+            style_id: 3,
+            rate: 1.0,
+            socket_path: socket,
+            ensure_models_if_missing: false,
+            quiet_setup_messages: true,
+        };
+        let result = self.runtime.block_on(run_retry_loop(
+            RetryPolicy::new(MCP_DAEMON_MAX_RETRIES),
+            &mut attempt,
+            &mut waiter,
+            &request,
+            &mut cancel_rx,
+        ));
+        self.record(
+            Outcome::Canceled,
+            result.attempts_started,
+            result.backoffs_started,
+        );
+    }
+
     /// Runs the production `run_retry_loop` with the given injected inputs and
     /// records the loop's observed result.
     fn run_loop(&mut self, attempts: Vec<AttemptCallOutcome>, waits: Vec<WaitOutcome>) {
@@ -192,6 +235,9 @@ impl Driver for RetryLoopDriver {
                 vec![AttemptCallOutcome::Failed(fatal_error())],
                 vec![],
             ),
+            scenarioCancelBeforeFirstAttempt => {
+                self.run_loop_with_precancel("ESC pressed");
+            }
             scenarioCancelDuringBackoff => self.run_loop(
                 vec![AttemptCallOutcome::Failed(retryable_error())],
                 vec![WaitOutcome::Cancelled("ESC pressed".to_string())],
@@ -255,6 +301,18 @@ fn retry_loop_stops_on_fatal_error() -> impl Driver {
     max_steps = 1
 )]
 fn retry_loop_cancel_during_backoff() -> impl Driver {
+    RetryLoopDriver::default()
+}
+
+/// Cancellation already delivered before the first attempt starts no attempt.
+#[quint_run(
+    spec = "../modeling/quint/SynthesisRetry.qnt",
+    init = "scenarioCancelBeforeFirstAttempt",
+    step = "hold",
+    max_samples = 1,
+    max_steps = 1
+)]
+fn retry_loop_cancel_before_first_attempt() -> impl Driver {
     RetryLoopDriver::default()
 }
 

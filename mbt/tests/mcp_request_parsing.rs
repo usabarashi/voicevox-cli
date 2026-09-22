@@ -88,6 +88,17 @@ impl Driver for ParsingDriver {
                 "method": "tools/call",
                 "params": { "name": "list_voice_styles", "arguments": [] }
             })),
+            parseMissingParams => self.parse(json!({ "id": 1, "method": "tools/call" })),
+            parseNonObjectParams => self.parse(json!({
+                "id": 1,
+                "method": "tools/call",
+                "params": []
+            })),
+            parseMissingToolName => self.parse(json!({
+                "id": 1,
+                "method": "tools/call",
+                "params": { "arguments": {} }
+            })),
             parseUnknownMethod => self.parse(json!({ "id": 1, "method": "unknown/method" })),
             // Fixed scenarios enter through a scenario-specific init action; the
             // observed outcome is still derived from the production parser.
@@ -107,8 +118,8 @@ impl Driver for ParsingDriver {
 /// Random exploration of the request-parsing outcomes.
 #[quint_run(
     spec = "../modeling/quint/McpRequestParsing.qnt",
-    max_samples = 200,
-    max_steps = 4
+    max_samples = 400,
+    max_steps = 8
 )]
 fn mcp_request_parsing_simulation() -> impl Driver {
     ParsingDriver::default()

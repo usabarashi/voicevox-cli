@@ -8,7 +8,8 @@ use tokio::sync::oneshot;
 use super::types::{ToolCallResult, success_result, text_result};
 use crate::domain::synthesis::wav::concatenate_wav_segments;
 use crate::domain::synthesis::{
-    AttemptOutcome, RetryDecision, RetryPolicy, TextSynthesisRequest, validate_basic_request,
+    AttemptOutcome, RetryDecision, RetryPolicy, RetryTracker, TextSynthesisRequest,
+    validate_basic_request,
 };
 use crate::domain::text_to_speech::{
     SynthesizeParams, default_rate, default_streaming, validate_style_id,
@@ -282,23 +283,32 @@ where
     W: BackoffWaiter,
 {
     let mut result = RetryLoopResult::default();
+    let mut tracker = RetryTracker::new(policy);
     let mut retry_index: u32 = 0;
 
     loop {
         if let Some(reason) = take_cancellation(cancel_rx) {
+            tracker.cancel();
             result.cancellation = Some(reason);
-            return result;
+            break;
         }
 
-        result.attempts_started += 1;
+        if !tracker.begin_attempt() {
+            // Unreachable while `Running` with attempts remaining; stop
+            // defensively rather than loop forever.
+            break;
+        }
+
         match attempt.run(request, cancel_rx.as_mut()).await {
             AttemptCallOutcome::Completed(wav_data) => {
+                let _ = tracker.record_attempt(AttemptOutcome::Succeeded);
                 result.wav_data = Some(wav_data);
-                return result;
+                break;
             }
             AttemptCallOutcome::Cancelled(reason) => {
+                tracker.cancel();
                 result.cancellation = Some(reason);
-                return result;
+                break;
             }
             AttemptCallOutcome::Failed(error) => {
                 let retryable = is_retryable_daemon_synthesis_error(&error);
@@ -308,11 +318,10 @@ where
                 } else {
                     AttemptOutcome::FatalFailure
                 };
-                if policy.after_attempt(result.attempts_started, outcome) == RetryDecision::Finish {
-                    return result;
+                if tracker.record_attempt(outcome) == RetryDecision::Finish {
+                    break;
                 }
 
-                result.backoffs_started += 1;
                 let delay = policy.backoff_delay(
                     retry_index,
                     startup::initial_retry_delay(),
@@ -320,15 +329,22 @@ where
                 );
                 retry_index += 1;
                 match waiter.wait(delay, cancel_rx.as_mut()).await {
-                    WaitOutcome::Elapsed => {}
+                    WaitOutcome::Elapsed => {
+                        tracker.end_backoff();
+                    }
                     WaitOutcome::Cancelled(reason) => {
+                        tracker.cancel();
                         result.cancellation = Some(reason);
-                        return result;
+                        break;
                     }
                 }
             }
         }
     }
+
+    result.attempts_started = tracker.attempts_started();
+    result.backoffs_started = tracker.backoffs_started();
+    result
 }
 
 fn take_cancellation(cancel_rx: &mut Option<oneshot::Receiver<String>>) -> Option<String> {

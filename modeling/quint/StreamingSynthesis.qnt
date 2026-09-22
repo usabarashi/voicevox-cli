@@ -186,4 +186,29 @@ module StreamingSynthesis {
     scenarioConcatenate,
     scenarioStutter,
   }
+
+  // ---- Failure/cancellation scenarios (daemon-free MBT) -------------------
+
+  action hold = all {
+    phase' = phase,
+    segmentsSynth' = segmentsSynth,
+    segmentsTotal' = segmentsTotal,
+    playbackStarted' = playbackStarted,
+  }
+
+  // The connection to the daemon fails before any segment is synthesized.
+  action scenarioConnectFail = all {
+    phase' = Failed,
+    segmentsSynth' = 0,
+    segmentsTotal' = 0,
+    playbackStarted' = false,
+  }
+
+  // Cancellation is already delivered before the connection is established.
+  action scenarioCancelBeforeConnect = all {
+    phase' = Canceled,
+    segmentsSynth' = 0,
+    segmentsTotal' = 0,
+    playbackStarted' = false,
+  }
 }

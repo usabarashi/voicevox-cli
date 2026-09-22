@@ -24,6 +24,7 @@ DaemonSynthesize mbt
 DaemonSerialization mbt
 ModelLifecycle mbt
 Download mbt
+ModelPresence mbt
 MCPServer mbt
 Playback mbt
 StreamingSynthesis mbt

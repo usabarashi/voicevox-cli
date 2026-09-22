@@ -438,9 +438,32 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{AvailableModel, Speaker, SpeakerList, Style, StyleList, populate_model_speakers};
+    use super::{
+        AvailableModel, Speaker, SpeakerList, Style, StyleList, has_any_vvm_file,
+        populate_model_speakers,
+    };
     use std::collections::HashMap;
     use std::path::PathBuf;
+
+    #[test]
+    fn existing_directory_without_vvm_is_not_considered_available() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(!has_any_vvm_file(dir.path()));
+
+        std::fs::write(dir.path().join("3.vvm"), b"model").expect("write vvm");
+        assert!(has_any_vvm_file(dir.path()));
+    }
+
+    #[test]
+    fn nested_vvm_is_detected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nested = dir.path().join("vvms");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+        assert!(!has_any_vvm_file(dir.path()));
+
+        std::fs::write(nested.join("0.vvm"), b"model").expect("write nested vvm");
+        assert!(has_any_vvm_file(dir.path()));
+    }
 
     #[test]
     fn populate_model_speakers_groups_styles_by_model() {

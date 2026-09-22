@@ -212,6 +212,9 @@ run_ok "Download safety" \
 run_ok "Download liveness" \
   --temporal=terminates \
   modeling/quint/Download.qnt
+run_ok "ModelPresence presence/report contract" \
+  --invariant=reportMatchesPresence \
+  modeling/quint/ModelPresence.qnt
 run_ok "ModelLifecycle safety" \
   --invariant=loadedImpliesPhase \
   modeling/quint/ModelLifecycle.qnt

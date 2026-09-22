@@ -33,6 +33,7 @@ See also:
 | Playback (MBT) | `Playback.qnt` | launch/playing/stop/cancel/fail | `playingRequiresAudio`, `canceledImpliesStoppedOrFailed` (about the `Canceled` error); emit/play dispatch via `mbt/tests/playback.rs` (fake backend) |
 | Say command flow | `Say.qnt` | validate → synthesize → emit with daemon + playback; `Play/WriteFile/Silent` output, early failures | `synthesizingImpliesBusyReq`, `busyReqOwnedBySay`, `doneHasNoError`, `playbackFailureOnlyInPlayMode`, `outputFailureOnlyInFileMode`, `playingRequiresAudio`, `emittingUsesPlayMode` |
 | Download/install (MBT) | `Download.qnt` | preparation failure, downloader invocations with cleanup, give-up (`MAX_ATTEMPTS = 3`) | `attemptsBounded`, `failedHasReason`, `exhaustedImpliesAttempts`, `preparationFailureMeansNoAttempts`, `terminates` (temporal); retry loop via `mbt/tests/download.rs` |
+| Model presence (MBT) | `ModelPresence.qnt` | models directory `Missing`/`Ready` × `missing_startup_resources` report | `reportMatchesPresence` (verify.sh + `mbt/tests/model_presence.rs`, Quint Connect over a real filesystem fixture) |
 | Daemon model load/unload (MBT) | `ModelLifecycle.qnt` | load → synthesize → guard unload, incl. failure paths | `loadedImpliesPhase`, `eventuallyUnloaded` (temporal); `mbt/tests/model_lifecycle.rs` (production executor + recording fake runtime) |
 | Integrated end-to-end | `System.qnt` | startup resources + daemon (incl. loss) + client view/connect budget + environment-driven synthesis | `viewsAligned`, `clientConnectedImpliesDaemonReady`, `daemonStartingRequiresResources`, `daemonReadyRequiresResources`, `daemonReadyRequiresSocket`, `typeOK` |
 | Target resolution (MBT) | `TargetResolution.qnt` | style/model/no-style/unknown resolution, collision | `mbt/tests/target_resolution.rs` (Quint Connect) |
@@ -106,7 +107,7 @@ Layer ownership:
 | IPC server (admission / connections / worker) | `DaemonServer.qnt`, `DaemonSerialization.qnt`, `DaemonSynthesisPath.qnt` |
 | IPC transport (client) | `IPC.qnt`, `DaemonIpc.qnt`, `MCPServer.qnt` |
 | MCP server (stdio) | `McpRequestParsing.qnt`, `McpNotificationParsing.qnt`, `McpRequestLifecycle.qnt`, `McpStartup.qnt` |
-| Startup resources / ordering | `ResourceLoad.qnt`, `StartupResources.qnt`, `Download.qnt`, `StartupSafety.qnt` |
+| Startup resources / ordering | `ResourceLoad.qnt`, `StartupResources.qnt`, `Download.qnt`, `ModelPresence.qnt`, `StartupSafety.qnt` |
 | Synthesis | `SynthesisRetry.qnt`, `StreamingSynthesis.qnt`, `TargetResolution.qnt`, `ModelLifecycle.qnt` |
 | Integrated | `System.qnt`, `Say.qnt` |
 
@@ -139,6 +140,7 @@ production code count as refinement evidence:
 | `mbt/tests/ipc_transport.rs` | `DaemonClient` against a fake Unix-socket server (no daemon) |
 | `mbt/tests/model_lifecycle.rs` | `DaemonSynthesisExecutor` + `SerializedSynthesisPolicy` with a recording fake `ModelRuntime` |
 | `mbt/tests/download.rs` | `install_with_retries` + `DownloadTracker` with a scripted fake `ResourceInstaller` |
+| `mbt/tests/model_presence.rs` | `has_available_models` + `missing_startup_resources` against a real filesystem fixture, evaluated in a `model_presence_probe` child process configured via `VOICEVOX_MODELS_DIR` |
 | `mbt/tests/mcp_connect.rs` | `retry_with_final` (behind `connect_with_retry`) with a counting fake `ConnectAttempt` |
 | `mbt/tests/playback.rs` | `emit_and_play_with_backend` with a scripted fake `AudioPlayback` |
 | `mbt/tests/daemon_ipc.rs` | `DaemonClient` over a real daemon |
@@ -182,6 +184,12 @@ Explicitly out of scope, with the reason:
   MBT-checked in `ipc_transport.rs`.
 - **Daemon-side retry**: the daemon returns an error; retries belong to the
   client (`SynthesisRetry.qnt`).
+- **Daemon startup rejection without models**
+  (`daemon_cli::ensure_startup_preconditions`): the guard returns
+  `NoModelsAvailable` (exit code 4) when `has_available_models` is false. Its
+  predicate is the `ModelPresence.qnt` state and is MBT-checked there; the
+  guard's control flow and exit-code mapping (including the detached-parent
+  propagation) have no executable driver.
 - **Clock/time**: timeout values (30 s response, backoff delays) are modelled as
   inputs, not as real time.
 - **Kani**: numeric proofs (rate bounds, style-id bounds, WAV chunk arithmetic)

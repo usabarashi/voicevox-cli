@@ -179,6 +179,10 @@ async fn maybe_detach(
                             output.info("VOICEVOX daemon is already running");
                             return ExecutionDecision::exit(exit_daemon::ALREADY_RUNNING);
                         }
+                        Some(code) if code == exit_daemon::NO_MODELS => {
+                            output.error(&DaemonError::NoModelsAvailable.to_string());
+                            return ExecutionDecision::exit(exit_daemon::NO_MODELS);
+                        }
                         _ => {}
                     }
                     output.error(&format!("Daemon failed to start: exit code {status}"));
@@ -198,7 +202,16 @@ async fn maybe_detach(
 }
 
 async fn ensure_startup_preconditions(socket_path: &Path) -> Result<(), DaemonError> {
-    check_and_prevent_duplicate(socket_path).await
+    check_and_prevent_duplicate(socket_path).await?;
+
+    // The model catalog is a startup-time snapshot built from the installed
+    // `.vvm` files. Refuse to start without any models instead of serving an
+    // empty catalog that rejects every style/model ID.
+    if !crate::infrastructure::voicevox::has_available_models() {
+        return Err(DaemonError::NoModelsAvailable);
+    }
+
+    Ok(())
 }
 
 const fn startup_error_exit_code(error: &DaemonError) -> i32 {

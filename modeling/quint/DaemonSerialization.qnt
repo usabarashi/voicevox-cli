@@ -9,8 +9,9 @@
 // response, and retries are owned by the client. This module therefore models
 // the contract: one worker, queued jobs, no cancel, no daemon-side retry.
 //
-// Property: at most one job is Synthesizing at any time
-// (`workerMatchesSynthesis`).
+// Properties: at most one job is Synthesizing at any time
+// (`atMostOneSynthesizing`), and the worker is Busy exactly when some job is
+// Synthesizing (`workerMatchesSynthesis`).
 
 module DaemonSerialization {
   type JobState = JobWaiting | Synthesizing | Done | Failed

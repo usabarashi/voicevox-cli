@@ -118,6 +118,8 @@ impl State<ModelPresenceDriver> for ModelPresenceState {
 impl Driver for ModelPresenceDriver {
     type State = ModelPresenceState;
 
+    // clippy 1.98 flags quint-connect's `switch!` expansion as `no_effect`.
+    #[allow(clippy::no_effect)]
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
             init => self.observe(|_| {}),

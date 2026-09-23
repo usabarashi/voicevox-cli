@@ -43,6 +43,8 @@ enum PlaybackState {
 
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
 #[serde(tag = "tag", content = "value")]
+// The variant name mirrors the Quint spec's `NoPlaybackError`.
+#[allow(clippy::enum_variant_names)]
 enum PlaybackError {
     NoPlaybackError,
     LaunchFailed,
@@ -171,6 +173,8 @@ impl State<ConnectDriver> for ConnectState {
 impl Driver for ConnectDriver {
     type State = ConnectState;
 
+    // clippy 1.98 flags quint-connect's `switch!` expansion as `no_effect`.
+    #[allow(clippy::no_effect)]
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
             init => self.reset(),

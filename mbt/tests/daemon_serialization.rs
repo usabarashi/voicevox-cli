@@ -245,6 +245,8 @@ impl State<SerializationDriver> for SerializationState {
 impl Driver for SerializationDriver {
     type State = SerializationState;
 
+    // clippy 1.98 flags quint-connect's `switch!` expansion as `no_effect`.
+    #[allow(clippy::no_effect)]
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
             init => self.reset(),

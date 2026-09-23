@@ -208,6 +208,8 @@ impl State<RetryLoopDriver> for RetryState {
 impl Driver for RetryLoopDriver {
     type State = RetryState;
 
+    // clippy 1.98 flags quint-connect's `switch!` expansion as `no_effect`.
+    #[allow(clippy::no_effect)]
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
             // Mirrors the spec's `init`. `step` is the synthetic first action

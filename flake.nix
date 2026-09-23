@@ -21,11 +21,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
-    # Dedicated pin for the `quint` tool only. The main `nixpkgs` pin still
-    # ships quint 0.30.0, which has no TLC verification backend
-    # (`quint verify --backend=tlc`). Fold this input back into `nixpkgs`
-    # once the main pin is updated past the 0.32.0 release.
-    quintNixpkgs.url = "github:NixOS/nixpkgs/35e212742ceab4ae1dcfbfd9039a39215c816e8e";
   };
 
   outputs =
@@ -35,7 +30,6 @@
       flake-utils,
       fenix,
       crane,
-      quintNixpkgs,
     }:
     let
       systems = [ "aarch64-darwin" ];
@@ -78,8 +72,6 @@
           inherit system;
           overlays = [ cratesIoUserAgentOverlay ];
         };
-        # `quint` comes from the dedicated pin (see the `quintNixpkgs` input).
-        quintPkgs = import quintNixpkgs { inherit system; };
         lib = pkgs.lib;
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         version = cargoToml.package.version;
@@ -196,8 +188,8 @@
 
         # Voice models and resources downloader
         voicevoxDownloader = pkgs.fetchurl {
-          url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.16.3/download-osx-arm64";
-          hash = "sha256-7GMosxM4HRDAix6BImNP5Q5PNpWJYEvMLNApKjNht+k=";
+          url = "https://github.com/VOICEVOX/voicevox_core/releases/download/0.17.0/download-osx-arm64";
+          hash = "sha256-yvD5OBpt5K3USnDBwbLlSC1VM0gXPREOU7SUCUXUvZs=";
         };
 
         voicevoxResources = pkgs.stdenv.mkDerivation {
@@ -350,7 +342,7 @@
             voicevoxResetWrapper
 
             # Quint specification language + bundled TLC backend for modeling/quint
-            quintPkgs.quint
+            quint
           ];
 
           shellHook = ''

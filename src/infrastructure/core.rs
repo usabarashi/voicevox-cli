@@ -127,8 +127,6 @@ impl VoicevoxCore {
             .synthesizer
             .create_audio_query(text, style_id)
             .map_err(|e| anyhow!("Failed to create audio query: {e}"))?;
-        // `AudioQuery::speed_scale` is a `PositiveFinite<f32>`; the range check above
-        // guarantees the conversion succeeds.
         query.speed_scale = rate
             .try_into()
             .map_err(|_| anyhow!("Invalid synthesis rate: {rate}"))?;

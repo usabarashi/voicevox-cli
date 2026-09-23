@@ -295,10 +295,7 @@ mod tests {
     }
 
     #[test]
-    // `.into()`s are required when the `compact-str`/`small-vectors` features
-    // swap `VoiceString`/`StyleList` for `CompactString`/`SmallVec`, but are
-    // no-ops under the default features.
-    #[allow(clippy::useless_conversion)]
+    #[allow(clippy::useless_conversion)] // CompactString/SmallVec under the performance features
     fn print_list_models_output_includes_default_style_and_tips() {
         let output = BufferAppOutput::default();
         let models = vec![AvailableModel {

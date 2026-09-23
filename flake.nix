@@ -104,13 +104,6 @@
             );
         };
 
-        # ONNX Runtime library search path for build.rs (voicevox-ort-sys).
-        # Actual library is loaded at runtime via dlopen (load-dynamic),
-        # so only the path needs to exist at build time.
-        onnxruntimeLibDir = pkgs.runCommand "onnxruntime-lib" { } ''
-          mkdir -p $out/lib
-        '';
-
         # Vendor cargo dependencies (git deps fetched at eval time)
         cargoVendorDir = craneLib.vendorCargoDeps {
           inherit src;
@@ -159,7 +152,7 @@
           cargoExtraArgs = "--locked --all-features";
 
           CARGO_NET_OFFLINE = true;
-          ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
+          # No ORT_LIB_LOCATION: ort-sys/disable-linking skips library paths.
 
           preConfigure = ''
             export HOME=$PWD/build-home
@@ -325,9 +318,6 @@
 
         devShells.default = craneLib.devShell {
           checks = self.checks.${system};
-
-          # ONNX Runtime library search path (actual library loaded at runtime via dlopen)
-          ORT_LIB_LOCATION = "${onnxruntimeLibDir}";
 
           packages = with pkgs; [
             rustToolchain.rust-analyzer

@@ -225,8 +225,33 @@ fn find_openjtalk_dict_in_xdg_dir(dir: &Path) -> Option<PathBuf> {
         })
 }
 
-/// Helper function to find ONNX Runtime libraries in a directory
-fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<(PathBuf, bool)> {
+/// A candidate ONNX Runtime library with the attributes used for ranking.
+struct OnnxLibraryCandidate {
+    path: PathBuf,
+    /// `libvoicevox_onnxruntime.*` rather than a compatibility symlink.
+    is_original: bool,
+    version: Option<Vec<u64>>,
+}
+
+/// Extracts the numeric version from `libvoicevox_onnxruntime.<version>.<ext>`
+/// or `libonnxruntime.<version>.<ext>`; unversioned names yield `None`.
+fn parse_onnxruntime_version(filename: &str) -> Option<Vec<u64>> {
+    let stem = filename
+        .strip_prefix("libvoicevox_onnxruntime.")
+        .or_else(|| filename.strip_prefix("libonnxruntime."))?;
+    let version = stem
+        .split('.')
+        .take_while(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<u64>, _>>()
+        .ok()?;
+    (!version.is_empty()).then_some(version)
+}
+
+/// Ranks ONNX Runtime libraries so the best candidate comes first: originals
+/// before compatibility symlinks, then the highest version, then a stable path
+/// order.
+fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<PathBuf> {
     let mut candidates = std::fs::read_dir(lib_dir)
         .ok()
         .into_iter()
@@ -236,15 +261,25 @@ fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<(PathBuf, bool)> {
             let filename = path.file_name()?.to_string_lossy().into_owned();
             (path.is_file() && is_valid_onnxruntime_filename(&filename)).then(|| {
                 let is_original = filename.starts_with("libvoicevox_onnxruntime.");
-                (path, is_original)
+                OnnxLibraryCandidate {
+                    version: parse_onnxruntime_version(&filename),
+                    is_original,
+                    path,
+                }
             })
         })
         .collect::<Vec<_>>();
 
-    // Sort to prioritize original voicevox libraries over symlinks
-    // After fixing the rpath, the original library should work directly
-    candidates.sort_unstable_by_key(|(_, is_original)| !*is_original);
+    candidates.sort_by(|a, b| {
+        b.is_original
+            .cmp(&a.is_original)
+            .then_with(|| b.version.cmp(&a.version))
+            .then_with(|| a.path.cmp(&b.path))
+    });
     candidates
+        .into_iter()
+        .map(|candidate| candidate.path)
+        .collect()
 }
 
 fn first_onnx_library_in(lib_dir: &Path) -> Option<PathBuf> {
@@ -252,7 +287,6 @@ fn first_onnx_library_in(lib_dir: &Path) -> Option<PathBuf> {
         .exists()
         .then(|| find_onnx_libraries_in_dir(lib_dir))
         .and_then(|candidates| candidates.into_iter().next())
-        .map(|(path, _)| path)
 }
 
 /// Validates ORT_DYLIB_PATH env var: checks file existence, filename validity,
@@ -297,4 +331,72 @@ pub fn find_onnxruntime() -> Result<PathBuf> {
                  or set ORT_DYLIB_PATH environment variable"
             )
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Extension accepted by `is_valid_onnxruntime_filename` on this platform.
+    fn onnx_library_extension() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "dylib"
+        } else if cfg!(target_os = "linux") {
+            "so"
+        } else {
+            "dll"
+        }
+    }
+
+    #[test]
+    fn parses_version_from_onnxruntime_filenames() {
+        assert_eq!(
+            parse_onnxruntime_version("libvoicevox_onnxruntime.1.23.2.dylib"),
+            Some(vec![1, 23, 2])
+        );
+        assert_eq!(
+            parse_onnxruntime_version("libonnxruntime.1.17.3.so"),
+            Some(vec![1, 17, 3])
+        );
+        assert_eq!(parse_onnxruntime_version("libonnxruntime.dylib"), None);
+        assert_eq!(
+            parse_onnxruntime_version("libvoicevox_onnxruntime.dylib"),
+            None
+        );
+    }
+
+    #[test]
+    fn picks_highest_version_original_regardless_of_directory_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let extension = onnx_library_extension();
+        let newest = format!("libvoicevox_onnxruntime.1.10.0.{extension}");
+        for name in [
+            format!("libvoicevox_onnxruntime.1.9.0.{extension}"),
+            newest.clone(),
+            format!("libvoicevox_onnxruntime.1.2.0.{extension}"),
+            format!("libonnxruntime.{extension}"),
+        ] {
+            fs::write(dir.path().join(name), b"").expect("write candidate");
+        }
+
+        let chosen = first_onnx_library_in(dir.path()).expect("a candidate");
+        assert_eq!(
+            chosen.file_name().and_then(|name| name.to_str()),
+            Some(newest.as_str())
+        );
+    }
+
+    #[test]
+    fn falls_back_to_unversioned_library() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let name = format!("libonnxruntime.{}", onnx_library_extension());
+        fs::write(dir.path().join(&name), b"").expect("write candidate");
+
+        let chosen = first_onnx_library_in(dir.path()).expect("a candidate");
+        assert_eq!(
+            chosen.file_name().and_then(|name| name.to_str()),
+            Some(name.as_str())
+        );
+    }
 }

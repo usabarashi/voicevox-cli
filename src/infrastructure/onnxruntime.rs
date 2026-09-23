@@ -14,9 +14,9 @@ pub fn initialize() -> Result<&'static Onnxruntime> {
             |_| Onnxruntime::load_once().perform(),
             |ort_path| Onnxruntime::load_once().filename(ort_path).perform(),
         )
-        .map_err(|_| {
+        .map_err(|error| {
             anyhow!(
-                "Failed to initialize ONNX Runtime. Please run 'voicevox-setup' to download required resources."
+                "Failed to initialize ONNX Runtime: {error}. Please run 'voicevox-setup' to download required resources."
             )
         })
 }

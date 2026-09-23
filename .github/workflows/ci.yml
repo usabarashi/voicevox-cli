@@ -113,8 +113,7 @@ jobs:
 
       - name: Run security audit
         run: |
-          # RUSTSEC-2026-0009: time crate DoS via stack exhaustion (transitive dep from voicevox_core, awaiting upstream fix)
-          nix develop --accept-flake-config --command cargo audit --ignore RUSTSEC-2026-0009
+          nix develop --accept-flake-config --command cargo audit
 
       - name: Verify build artifacts
         run: |

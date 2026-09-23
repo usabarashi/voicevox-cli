@@ -148,6 +148,8 @@ impl State<DownloadDriver> for DownloadState {
 impl Driver for DownloadDriver {
     type State = DownloadState;
 
+    // clippy 1.98 flags quint-connect's `switch!` expansion as `no_effect`.
+    #[allow(clippy::no_effect)]
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
             init => self.reset(),

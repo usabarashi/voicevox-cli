@@ -1,4 +1,4 @@
-// Refined Synthesis retry/cancel model (Phase 1, revised).
+// Refined Synthesis retry/cancel model.
 //
 // This is the implementation-facing contract for the **non-streaming**
 // client-side synthesis attempt loop, extracted from the MCP retry
@@ -10,7 +10,7 @@
 // non-streaming daemon path (`handle_daemon_synthesis` -> `run_retry_loop`),
 // which is also the path `voicevox-say` uses for its single attempt.
 //
-// Contract (see CONTRACT.md):
+// Contract:
 //   - attempts are counted when they *start* (`attempts_started`), including an
 //     attempt that is later canceled in flight,
 //   - at most MAX_RETRIES retries after the initial attempt,
@@ -18,12 +18,8 @@
 //     is entered only between attempts,
 //   - cancellation is an enabled action from any non-terminal state and is
 //     terminal; the model does not assert that cancellation wins over progress
-//     (priority is enforced by the orchestration, see CONTRACT.md),
+//     (priority is enforced by the orchestration),
 //   - under weak fairness of the progress actions, the loop terminates.
-//
-// The previous TLA+ model is `modeling/tla/Synthesis.tla`. Differences that
-// are intentional contract changes (retry count, liveness strength) are
-// recorded in CONTRACT.md.
 
 module SynthesisRetry {
   // Initial attempt + up to MAX_RETRIES retries. Mirrors
@@ -95,7 +91,7 @@ module SynthesisRetry {
   // Cancellation is modelled as an enabled action from a pending state. The
   // model deliberately has no "cancel requested" state, so it does not assert
   // that cancellation wins over progress; that priority is an orchestration
-  // concern enforced by the implementation's checkpoints (see CONTRACT.md).
+  // concern enforced by the implementation's checkpoints.
   action cancel = all {
     outcome == Running or outcome == Attempting or outcome == Backoff,
     outcome' = Canceled,
@@ -133,7 +129,7 @@ module SynthesisRetry {
     backoffDone,
   }
 
-  // Variable tuple used by the fairness assumption (TLA+ `vars`).
+  // Variable tuple used by the fairness assumption.
   val vars = (outcome, attempts, backoffs)
 
   // If the loop keeps making progress opportunities, it eventually reaches a

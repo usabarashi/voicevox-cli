@@ -1,4 +1,4 @@
-// Real-daemon IPC model (Phase 3 walking skeleton).
+// Real-daemon IPC model.
 //
 // Abstracts the client-side connection/catalog-read lifecycle that
 // `mbt/tests/daemon_ipc.rs` exercises against a real `voicevox-daemon` over the

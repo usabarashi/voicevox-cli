@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Quint verification gate for the TLA+ -> Quint migration.
+# Quint verification gate for the state models.
 #
 # Runs the Quint models with the TLC verification backend and asserts:
 #   * the safety and liveness properties hold on the real models, and
@@ -154,7 +154,7 @@ done
 check_model_classification
 check_constant_consistency
 
-# Ported lifecycle models (Phase 2).
+# Per-concern lifecycle models.
 run_ok "ResourceLoad liveness" \
   --temporal=loadTerminates \
   modeling/quint/ResourceLoad.qnt

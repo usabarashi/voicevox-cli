@@ -1,16 +1,21 @@
 # State Traceability (Quint)
 
-TLA+ has been fully migrated to Quint. The handwritten TLA+ modules/configs and
-the TLC CI job are gone; verification now runs through Quint's TLC backend
-(`modeling/quint/verify.sh`), and the implementation-facing contracts are
-connected to production code through Quint Connect MBT.
+The models under `modeling/quint/` are checked with the TLC verification backend
+of `quint` (`modeling/quint/verify.sh`), and the implementation-facing contracts
+are connected to production code through Quint Connect model-based tests
+(`mbt/`). This document is the map from each production concern to its model and
+its evidence.
 
-See also:
+## Toolchain
 
-- `modeling/quint/CONTRACT.md` — verified contracts, the observation contract,
-  and the recorded contract changes.
-- `modeling/quint/PORTING.md` — property-level correspondence from the old TLA+
-  models (preserve / move / retract / replace) and the cfg → Quint mapping.
+| Tool | Version | Source | Notes |
+|---|---|---|---|
+| `quint` | 0.32.0 | `nixpkgs` (pinned by `flake.lock`) | on `PATH` in the devShell (`flake.nix`) |
+| TLC backend | TLC 2.19 (through `quint verify --backend=tlc`) | bundled with the `quint` package | JRE 21 bundled as well; **no external Java or TLA+ install required** |
+
+The TLC backend is used because the suite relies on exhaustive finite-state
+exploration and fairness-based liveness. Apalache (the default backend) is
+bounded, and `quint run --invariant` is random simulation; neither replaces TLC.
 
 ## State ownership
 
@@ -18,7 +23,7 @@ See also:
 |---|---|---|---|
 | Daemon lifecycle | `Daemon.qnt` | `DaemonDown/Starting/AlreadyRunning/Ready/Recovering`, recovery transitions (`MAX_RETRY = 10`) | `socketImpliesReady`, `busyImpliesReady`, `alreadyRunningNotBusy`, `retryBounded`, `typeOK` |
 | Startup resources / socket | `StartupResources.qnt` | runtime/dictionary/socket/model readiness + one-shot socket bind/drop + daemon bootstrap (`MAX_RETRY = 3`) | `daemonReadyRequiresDownloads`, `daemonStartRequiresDownloads`, `daemonReadyRequiresSocket`, `typeOK`, `bindingTerminates`, `permissionDeniedIsTerminal` (temporal) |
-| Startup safety (composed) | `StartupSafety.qnt` | resources readiness × socket scenario (absent/stale/live) × start ordering | `readyRequiresResources`, `readyRequiresStartableSocket`, `startedImpliesNoLive`, `liveNeverRemoved`, `liveNeverStarted`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure`, `terminates` (temporal) |
+| Startup safety / duplicate prevention (composed) | `StartupSafety.qnt` | resources readiness × socket scenario (absent/stale/live) × start ordering (no bind or TOCTOU re-probe modelled) | `readyRequiresResources`, `readyRequiresStartableSocket`, `startedImpliesNoLive`, `liveNeverRemoved`, `liveNeverStarted`, `staleRemovedBeforeStart`, `removedOnlyStale`, `alreadyRunningOnlyLive`, `failedImpliesResourceFailure`, `terminates` (temporal) |
 | Startup resource load | `ResourceLoad.qnt` | one-shot load of ONNX Runtime / OpenJTalk dictionary (production has no load retry; the installer retries) | `loadTerminates`, `loadedStaysReady` (temporal) |
 | MCP client connect/playback | `MCPServer.qnt` | `startConnect`, `connectOk`, `connectRetry`, `finalConnectOk/Fail`, `connectFailed` (`MAX_ATTEMPTS = 10`), playback | `typeOK`, `connectedImpliesDaemonReady`, `playingRequiresAudio`; connect budget via `mbt/tests/mcp_connect.rs` |
 | Synthesis retry/cancel loop (non-streaming) | `SynthesisRetry.qnt` | `Running/Attempting/Backoff/Done/Failed/Canceled`, `attempts` (started), `backoffs` (started) | `attemptsBounded`, `backoffsBounded`, `backoffAfterAttempt`, `eventuallyTerminal`, `cancelIsTerminal` |
@@ -26,7 +31,6 @@ See also:
 | Daemon synthesis serialization (MBT) | `DaemonSerialization.qnt` | one worker (mutex), queued jobs, no cancel, no daemon-side retry | `atMostOneSynthesizing`, `workerMatchesSynthesis`, `eventuallyLeavesBusyWorker`; `mbt/tests/daemon_serialization.rs` (two concurrent real-daemon requests) |
 | Daemon request path (composed) | `DaemonSynthesisPath.qnt` | server admission (verify scale `MAX_IN_FLIGHT = 2`, production `PRODUCTION_MAX_IN_FLIGHT = 32`) × serialized worker | `inFlightMatchesHolding`, `atMostOneSynthesizing`, `workerBusyMatchesSynthesizing`, `workerEventuallyIdle` (temporal) |
 | Daemon IPC server | `DaemonServer.qnt` | per-client accept/handle/finish, shared request permits (verify scale `MAX_IN_FLIGHT = 2`, production `PRODUCTION_MAX_IN_FLIGHT = 32`), idle-timeout close | `typeOK`, `inFlightMatchesHandling`, `handling{0,1,2}Terminates` (temporal) |
-| Daemon startup / duplicate prevention | `StartupSafety.qnt` | absent/stale/live socket scenarios; static decide/remove/start ordering (no bind or TOCTOU re-probe modelled) | `liveNeverRemoved`, `liveNeverStarted`, `removedOnlyStale`, `staleRemovedBeforeStart`, `alreadyRunningOnlyLive`, `terminates` (temporal) |
 | MCP request lifecycle | `McpRequestLifecycle.qnt` | admit/complete, two-step cancel (`Cancelling` -> `Cancelled`), busy rejection, `cancelAll`; verify scale `MAX_CONCURRENT = 2` (production `PRODUCTION_MAX_CONCURRENT = 4`) | `typeOK`, `activeMatchesHolding`, `allRequestsTerminate` (temporal, non-vacuous) |
 | MCP daemon startup / recovery | `McpStartup.qnt` | first attempt (started / already-running / error), single recovery, non-fatal failure | `doneHasOutcome`, `recoveryOnlyAfterAlreadyRunning`, `terminates` (temporal) |
 | IPC transport contract | `IPC.qnt` | request/response with encode/write/corrupt/mismatch/timeout/EOF/frame-limit/protocol-error | `failedImpliesError`, `doneImpliesValidResponse`, `inFlightHasNoError`, `eventuallyLeavesInFlight` |
@@ -56,17 +60,16 @@ See also:
 - synthesis is **environment-driven**: production auto-starts the daemon
   (`connect_daemon_client_auto_start`), so an attempt may run while the daemon is
   not ready, and a lost daemon is a retryable attempt failure rather than a
-  cancellation. Readiness gating and cancel-on-daemon-loss
-  (`SynthesisNeedsDaemon`, `SynthesisRunningImpliesDaemonReady` /
-  `synthBackoffImpliesDaemonReady`) are **retracted** (consistent with Phase 1
-  contract change 3). `daemonLost` only resets the client view and the connect
-  budget.
+  cancellation. `daemonLost` only resets the client view and the connect budget.
 - `synthBackoffs` counts backoff **starts**, matching production
   `backoffs_started` and `SynthesisRetry.qnt`.
 - a non-retryable (`fatal`) attempt failure reaches `SynthFailed` from any
   attempt (`synthFatalFail`), not only the last one.
 - losing a connection resets the connect budget: the next request calls
   `connect_with_retry` from the start (`attempt = 0`).
+- the four startup resources are encoded as a map indexed 0..3 (0=runtime,
+  1=dictionary, 2=socket, 3=model). A resource that exhausts its retry budget is
+  terminal (re-entry is only through the budget-guarded `retryLoad`).
 
 ## Cross-spec consistency
 
@@ -117,10 +120,22 @@ load only), `Say.qnt`, `System.qnt`.
 
 ## Verification gate
 
-`modeling/quint/verify.sh` typechecks every spec and runs the checks above with
-`quint verify --backend=tlc`, plus two negative controls
-(`negative/SafetyViolation.qnt`, `negative/LivenessViolation.qnt`) that must be
-detected. Model-based tests run separately (`mbt/`).
+`modeling/quint/verify.sh` typechecks every spec, then runs the safety and
+liveness checks above with `quint verify --backend=tlc`, and finally asserts that
+two negative controls are detected for the intended reason:
+
+- `negative/SafetyViolation.qnt`: unbounded attempts → `attemptsBounded`
+  violated (safety detection).
+- `negative/LivenessViolation.qnt`: an always-enabled `skip` with no fairness →
+  `eventuallyTerminal` violated by an infinite stall, not by a deadlock
+  (liveness detection, including the stuttering counterexample).
+
+The gate also enforces the cross-spec constant checks and model classification
+described above. Run it with:
+
+```bash
+nix develop --accept-flake-config --command bash modeling/quint/verify.sh
+```
 
 ## Model-based testing
 
@@ -164,8 +179,138 @@ but have no executable driver.
 The remaining Lifecycle models (`Daemon`, `DaemonServer`, `DaemonSynthesisPath`,
 `McpStartup`, `McpRequestLifecycle`, `StartupResources`, `ResourceLoad`,
 `Say`, `System`) are verified exhaustively but are
-**not** executable
-refinements; their correspondence is the prose above plus ordinary tests.
+**not** executable refinements; their correspondence is the prose above plus
+ordinary tests.
+
+### Observation contract
+
+- **Counting and simultaneity.** At most 3 attempt *starts* (initial 1 + up to 2
+  retries); at most 2 backoff *starts*; retries only for retryable errors.
+  Cancellation is evaluated before each attempt and while waiting for a backoff.
+  During the backoff wait, a **delivered** cancellation takes priority and
+  returns without waiting out the timer. In-flight synthesis cancellation
+  priority is **not** guaranteed for `synthesize_bytes_via_daemon_cancellable`
+  (`flow.rs`), whose `select!` is unbiased; when cancellation and completion are
+  ready at the same instant, either outcome is allowed there. The production
+  backoff wait checks an already-delivered cancellation first, then races with a
+  biased select (cancel branch first); do not apply a blanket bias to every
+  `select!`.
+- **Injected inputs / observed outputs.** Inject cancel timing (before attempt /
+  during backoff / during the in-flight wait) and the attempt result sequence
+  (Ok / retryable error / non-retryable error), and release the controllable wait
+  explicitly (do **not** rely on `tokio::time::pause()` auto-advance). Observe
+  attempt-start count, backoff-start count, terminal outcome, that **no further
+  attempt starts after cancellation**, and the component's phase via its
+  production accessors. Never copy the expected model state into the
+  "implementation state".
+- **Boundary.** A single attempt is the whole client-side flow
+  (`Validate → EnsureResources → Connect → Synthesize`). The daemon is an
+  environment returning `Ok(wav)` or a retryable/non-retryable error; daemon
+  internals and connect auto-start are environment. Cancellation means
+  client-side wait termination only; it does not stop already-sent daemon work or
+  roll back side effects. The outer error classification
+  (`interface/mcp_server/daemon_error.rs`) is exercised **separately with real
+  errors**, because MBT injects pre-classified results.
+
+### Exploration and reproduction
+
+- `#[quint_run]` uses a random seed unless `QUINT_SEED` is set. quint-connect
+  reads `QUINT_SEED` at **compile time** (`option_env!`), so changing it requires
+  recompiling the `mbt` crate.
+- CI sets `QUINT_SEED=0x5eed` (see `.github/workflows/ci.yml`) for deterministic
+  traces; leave it unset locally for broader exploration.
+- On failure, quint-connect prints the seed (`Reproduce this error with
+  QUINT_SEED=...`) and, with `QUINT_VERBOSE=1|2`, the trace. quint-connect 0.1.2
+  does not persist traces to disk, so reproduction is seed-based:
+  `nix develop --accept-flake-config --command bash -c 'QUINT_SEED=<printed> cargo test --locked --manifest-path mbt/Cargo.toml -- --nocapture'`
+  (`quint` and the Rust toolchain come from the devShell).
+- `max_samples` / `max_steps` are set explicitly in the test attributes
+  (200 / 6 for the simulation, 1 / 1 for the fixed scenarios), because supplying
+  a seed also changes quint's default sample count.
+
+`mbt` is a member of the root Cargo workspace (shared `Cargo.lock`, which keeps
+its dependency resolution identical to the shipped binaries) but is excluded
+from `default-members`, so the normal `cargo build`/`cargo test` and the
+`nix flake check` / crane sandbox never need `quint`. Run the non-daemon MBT
+explicitly with:
+
+```bash
+nix develop --accept-flake-config --command bash -c \
+  'cargo test --locked --manifest-path mbt/Cargo.toml'
+```
+
+The daemon-backed MBT (`daemon_ipc`, `daemon_synthesize`,
+`daemon_serialization`, `streaming_synthesis`) is `#[ignore]`d and run by the
+`quint-mbt-daemon` CI job, which provisions VOICEVOX resources with
+`voicevox-download` (feeding `yes` for its license agreement, since the
+`voicevox-setup` wrapper's interactive prompt does not work with piped stdin)
+into the default XDG location, caches them, and runs the ignored tests with
+`-- --ignored`. The daemon socket must live in a directory owned by the user with
+mode 0700 (the daemon rejects group/world-accessible parents); the drivers create
+such a directory and an empty temporary models directory by default.
+`VOICEVOX_MBT_MODELS_DIR` (optional) points at real models; `VOICEVOX_DAEMON_BIN`
+overrides the daemon binary path.
+
+The `quint-mbt-explore` CI job runs the non-daemon MBT with a random seed
+(`QUINT_SEED` unset) on a nightly schedule, because the PR/push jobs pin the
+seed for deterministic traces.
+
+### Quint Connect toolchain limitation
+
+`#[quint_test]` generates traces with `quint test ... --out-itf`, and quint
+0.32.0's `quint test` has **no `--mbt` flag** and emits no `mbt::actionTaken`
+metadata, so quint-connect 0.1.2 fails with `Missing mbt::actionTaken variable in
+the trace`. All tests therefore use `#[quint_run]`, which passes `--mbt` to
+`quint run`. Fixed regression scenarios are expressed as scenario-specific
+`init`/`step` action pairs (e.g. `initCollision` + `hold`) selected via
+`#[quint_run(init = ..., step = ...)]`. Revisit `#[quint_test]` when quint's
+`quint test` supports `--mbt`.
+
+### Mutation acceptance
+
+These mutations make the named check fail, which is how the suite is kept wired
+to the production path rather than to a copy of the expected behavior:
+
+- `MCP_DAEMON_MAX_RETRIES` 2 → 1 makes `synthesis_retry_simulation` fail.
+- `.min` → `.max` in `build_model_default_style_map` makes
+  `target_resolution_model_default_style` fail.
+- Reversing the style/model precedence makes the target-resolution MBT fail.
+- An off-by-one in the retry bound (`after_attempt(attempts_started + 1, ...)`)
+  makes `retry_loop_exhausts_retryable_failures` fail.
+- Moving attempt counting after the await, or counting backoffs at completion,
+  in `run_retry_loop` makes `retry_loop_cancel_in_flight_third_attempt` /
+  `retry_loop_exhausts_retryable_failures` fail.
+- Ignoring the wait's `Cancelled` outcome makes
+  `retry_loop_cancel_during_backoff_prevents_next_attempt` fail.
+- Dropping the backoff count in `RetryTracker::record_attempt` (or counting it in
+  `end_backoff`) makes `synthesis_retry_simulation` fail.
+- A wrong `tools/call` argument rule makes `mcp_request_parsing_bad_arguments`
+  fail.
+- Removing `#[serde(tag = "tag", content = "value")]` from the streaming
+  driver's `Phase` makes `decode_tests::state_decodes_from_itf_encoding` fail.
+- Pointing `VOICEVOX_SOCKET_PATH` at a live socket makes
+  `streaming_connect_failure` fail (it expects the connect to fail).
+- Serving a valid frame in the `ipc_corrupt_frame` scenario, or treating a
+  mismatched/`Error` response as success, makes the corresponding `ipc_*` test
+  fail.
+- Removing the `ModelUnloadGuard` (or skipping the unload) makes
+  `model_lifecycle_success` / `model_lifecycle_synth_failure` fail on `loaded`.
+- Breaking daemon-side serialization (deadlock or a dropped concurrent request)
+  makes `daemon_serialization_concurrent` fail.
+- Changing the installer invocation budget (e.g. counting retries instead of
+  total invocations) makes `download_succeeds_third_attempt` /
+  `download_exhausts_attempts` fail.
+- Dropping the final connect, or changing the connect attempt budget, makes
+  `mcp_connect_budget_exhausted` fail.
+
+### Known devShell quirk
+
+In the devShell, the fenix stable toolchain aborts (`SIGABRT`, `fatal runtime
+error: failed to initiate panic`) on **any** test panic — an isolated empty crate
+reproduces it, so it is not caused by this crate. Failing MBT tests still exit
+non-zero, so CI detection works; debugging a failure requires running the test
+with `--nocapture`, because the harness cannot print captured output before the
+abort.
 
 ## Modelling boundary (not modelled)
 
@@ -199,7 +344,7 @@ correspondence for paths outside the table.
 - Integration consistency is checked in `System.qnt`.
 - Scenario-specific configuration is expressed as `init`/`step` action pairs and
   `--invariant` / `--temporal` selections; regressions become fixed `run`s or
-  MBT scenarios. See `PORTING.md` for the cfg → Quint mapping.
+  MBT scenarios.
 - If a new state is introduced, update the owning `*.qnt`, the `System.qnt`
   mapping (if shared), and add a `verify.sh` check that exercises it.
 - A new production path should either get a model + MBT or be added to the

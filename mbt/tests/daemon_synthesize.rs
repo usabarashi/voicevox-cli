@@ -1,4 +1,4 @@
-//! Model-based test for real daemon synthesis (Phase 3 (B)).
+//! Model-based test for real daemon synthesis.
 //!
 //! The driver spawns a real `voicevox-daemon`, connects, reads the catalog to
 //! pick a valid style, requests synthesis, and validates the returned WAV.

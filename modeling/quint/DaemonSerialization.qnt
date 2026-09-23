@@ -1,19 +1,17 @@
-// Daemon-side synthesis serialization (replaces `SynthesisParallel.qnt`).
+// Daemon-side synthesis serialization.
 //
 // Mirrors `SerializedSynthesisPolicy` in
 // `src/infrastructure/daemon/state/policy.rs`: a single async mutex serializes
 // model load + synthesis + unload, so at most one synthesis runs at a time.
 //
-// The previous `SynthesisParallel.qnt` (ported from `SynthesisParallel.tla`)
-// modelled cancellation releasing a busy worker and daemon-side retry with
-// requeue. Neither exists in production: there is no cancel request on the
-// daemon IPC (`DaemonRequest` has no cancel variant), the server finishes
-// `handle_request` before attempting to write a response, and retries are
-// owned by the client. This module therefore models the *actual* contract:
-// one worker, queued jobs, no cancel, no daemon-side retry.
+// There is no cancel request on the daemon IPC (`DaemonRequest` has no cancel
+// variant), the server finishes `handle_request` before attempting to write a
+// response, and retries are owned by the client. This module therefore models
+// the contract: one worker, queued jobs, no cancel, no daemon-side retry.
 //
-// Preserved property: at most one job is Synthesizing at any time. The old
-// `WorkerMatchesSynthesis` is preserved as `workerMatchesSynthesis`.
+// Properties: at most one job is Synthesizing at any time
+// (`atMostOneSynthesizing`), and the worker is Busy exactly when some job is
+// Synthesizing (`workerMatchesSynthesis`).
 
 module DaemonSerialization {
   type JobState = JobWaiting | Synthesizing | Done | Failed

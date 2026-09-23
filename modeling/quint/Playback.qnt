@@ -1,8 +1,7 @@
-// Ported from `modeling/tla/Playback.tla` (Phase 2).
-//
 // Playback lifecycle separated from client/network concerns.
-// Preserved properties: `PlayingRequiresAudio`, `CanceledImpliesStoppedOrFailed`.
-// (`TypeOK` is subsumed by Quint's type system; see PORTING.md.)
+// Properties: `PlayingRequiresAudio`, `CanceledImpliesStoppedOrFailed`.
+// (`TypeOK`-style enum/boolean bounds are subsumed by Quint's type system and
+// are not modelled.)
 
 module Playback {
   type PlaybackState = Idle | Launching | Playing | Stopped | Failed

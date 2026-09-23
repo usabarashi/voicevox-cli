@@ -1,14 +1,10 @@
-// Ported from `modeling/tla/Say.tla` (Phase 2).
-//
 // voicevox-say flow integrated with the shared Daemon + Playback models.
-// Flattened (see PORTING.md); every action assigns every variable.
-// Preserved properties: `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`,
-// `DoneHasNoError`, `PlaybackFailureOnlyInPlayMode`, `PlayingRequiresAudio`,
-// `EmittingUsesPlayMode`.
+// Flattened: every action assigns every variable.
+// Properties: `SynthesizingImpliesBusyReq`, `BusyReqOwnedBySay`, `DoneHasNoError`,
+// `PlaybackFailureOnlyInPlayMode`, `PlayingRequiresAudio`, `EmittingUsesPlayMode`.
 //
 // `MAX_RETRY` is the daemon startup/connect budget and mirrors the production
-// constant `daemon::startup::MAX_CONNECT_ATTEMPTS` (10). The previous value (2)
-// came from the historical `Say.daemon` cfg and had no production counterpart.
+// constant `daemon::startup::MAX_CONNECT_ATTEMPTS` (10).
 
 module Say {
   pure val MAX_RETRY = 10
@@ -56,8 +52,8 @@ module Say {
 
   action daemonReady = all {
     dDaemonState == Starting,
-    // Guard from `Say.tla` DaemonInfraStep: do not complete a daemon-ready
-    // transition that would leave a synthesizing say with an idle request.
+    // Do not complete a daemon-ready transition that would leave a
+    // synthesizing say with an idle request.
     not(sayState == Synthesizing and dReqState == ReqIdle),
     dDaemonState' = Ready, dSocketState' = SocketReady,
     dReqState' = dReqState, dRetryCount' = dRetryCount,

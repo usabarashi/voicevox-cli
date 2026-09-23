@@ -1,15 +1,12 @@
-// Ported from `modeling/tla/Daemon.tla` (Phase 2), revised.
-//
 // Minimal daemon startup/recovery model focused on state-space control.
-// Preserved properties: `SocketImpliesReady`, `BusyImpliesReady`,
-// `RetryBounded`, `AlreadyRunningNotBusy`.
+// Properties: `SocketImpliesReady`, `BusyImpliesReady`, `RetryBounded`,
+// `AlreadyRunningNotBusy`.
 //
-// `RecoveryPathExists` is intentionally **not** checked (retracted, see
-// PORTING.md): it does not hold under weak fairness because `daemonFail` can be
-// taken repeatedly from `Recovering` and exhaust `retryCount`. The retry bound
-// mirrors the production connect budget `daemon::startup::MAX_CONNECT_ATTEMPTS`
-// (10); the CLI/MCP readiness waits use 18/12 respectively and are not modelled
-// here.
+// A `RecoveryPathExists` property is intentionally **not** checked: it does not
+// hold under weak fairness because `daemonFail` can be taken repeatedly from
+// `Recovering` and exhaust `retryCount`. The retry bound mirrors the production
+// connect budget `daemon::startup::MAX_CONNECT_ATTEMPTS` (10); the CLI/MCP
+// readiness waits use 18/12 respectively and are not modelled here.
 
 module Daemon {
   pure val MAX_RETRY = 10
@@ -151,9 +148,8 @@ module Daemon {
 
   val alreadyRunningNotBusy = daemonState == AlreadyRunning implies reqState == Idle
 
-  // NOTE: `RecoveryPathExists` from the TLA+ model is intentionally NOT ported
-  // as a checked property. No cfg scenario checked it, and it does not hold
-  // under weak fairness: `daemonFail` can be taken repeatedly from `Recovering`,
-  // exhausting `retryCount` and reaching `giveUp` without `recover` ever being
-  // taken. See PORTING.md (retraction).
+  // NOTE: a `RecoveryPathExists` property is intentionally NOT checked. It does
+  // not hold under weak fairness: `daemonFail` can be taken repeatedly from
+  // `Recovering`, exhausting `retryCount` and reaching `giveUp` without
+  // `recover` ever being taken.
 }

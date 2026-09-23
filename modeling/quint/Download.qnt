@@ -6,8 +6,8 @@
 // cleaning incomplete downloads before a retry, for at most `MAX_ATTEMPTS`
 // total invocations, and finally cleans up and fails.
 //
-// This is the relocated home of the download lifecycle that `VoicevoxModel.tla`
-// used to carry (see CONTRACT.md, contract change 5).
+// Target resolution lives in `TargetResolution.qnt`; the download lifecycle is
+// owned by `infrastructure/download`.
 
 module Download {
   // Total downloader invocations (`max_retries = 3` in production).

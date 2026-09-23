@@ -1,4 +1,4 @@
-// Real-daemon synthesize model (Phase 3 (B)).
+// Real-daemon synthesize model.
 //
 // Abstracts the client-side lifecycle that `mbt/tests/daemon_synthesize.rs`
 // exercises against a real `voicevox-daemon`:

@@ -1,15 +1,13 @@
-// Ported from `modeling/tla/StartupResources.tla` (Phase 2).
-//
 // Startup resources and daemon bootstrap, composing the runtime/dictionary/
 // socket/model lifecycles with daemon readiness.
 //
-// The TLA+ module uses `INSTANCE` composition with a shared `MAX_RETRY`. The
-// TLC verification backend cannot assign constants through instances, so this
-// port is flattened with a concrete `pure val MAX_RETRY`. The value mirrors the
-// production resource installer `download_missing_resources` (`max_retries = 3`
-// in `src/infrastructure/download/install.rs`).
-// Preserved properties: `DaemonReadyRequiresDownloads`,
-// `DaemonStartRequiresDownloads`, `DaemonReadyRequiresSocket`.
+// Flattened with a concrete `pure val MAX_RETRY` (the TLC verification backend
+// cannot assign constants through Quint module instances, so composition is
+// inlined). The value mirrors the production resource installer
+// `download_missing_resources` (`max_retries = 3` in
+// `src/infrastructure/download/install.rs`).
+// Properties: `DaemonReadyRequiresDownloads`, `DaemonStartRequiresDownloads`,
+// `DaemonReadyRequiresSocket`.
 
 module StartupResources {
   pure val MAX_RETRY = 3
@@ -405,7 +403,7 @@ module StartupResources {
   val daemonReadyRequiresSocket =
     daemonState == DaemonReady implies socketState == SocketReady
 
-  // ---- Socket bind liveness (ported from the retired `Socket.qnt`) --------
+  // ---- Socket bind liveness ----------------------------------------------
 
   action bindAdvance = any {
     startBind,

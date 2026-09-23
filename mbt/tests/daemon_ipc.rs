@@ -1,4 +1,4 @@
-//! Model-based test for the real daemon IPC path (Phase 3 walking skeleton).
+//! Model-based test for the real daemon IPC path.
 //!
 //! The driver spawns a real `voicevox-daemon`, connects to it over the Unix
 //! socket, and reads the catalog. Quint Connect compares the observed

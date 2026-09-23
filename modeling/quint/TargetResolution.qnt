@@ -1,4 +1,4 @@
-// Target-resolution model (Phase 1 walking skeleton, revised).
+// Target-resolution model.
 //
 // The fixture catalog below mirrors `mbt/tests/target_resolution.rs`. Both must
 // stay in sync; the driver builds the model->default-style map with the
@@ -6,7 +6,7 @@
 // `resolve_target`, so a divergence shows up as a state mismatch rather than a
 // silent pass.
 //
-// Resolution contract (see CONTRACT.md):
+// Resolution contract:
 //   1. a style ID always wins over a model ID (id 2 is intentionally both),
 //   2. otherwise a known model ID resolves to its smallest matching style ID,
 //   3. a known model with no style endpoints is missing,
@@ -16,10 +16,10 @@
 // `SPEAKERS`: model 1 has styles {11, 2} so its minimum is 2, and model 2 has
 // style 21. A `min` -> `max` change in production would break the MBT.
 //
-// Scenario variants are expressed as separate `init`/`step` action pairs, as
-// planned in CONTRACT.md. They are driven via `#[quint_run(init = ..., step =
-// ...)]` because `quint test` has no `--mbt` support in quint 0.32.0, which
-// makes `#[quint_test]` unusable with this toolchain.
+// Scenario variants are expressed as separate `init`/`step` action pairs. They
+// are driven via `#[quint_run(init = ..., step = ...)]` because `quint test` has
+// no `--mbt` support in quint 0.32.0, which makes `#[quint_test]` unusable with
+// this toolchain.
 
 module TargetResolution {
   pure val STYLE_IDS = Set(2, 11, 21)

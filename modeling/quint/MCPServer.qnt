@@ -1,20 +1,17 @@
-// Ported from `modeling/tla/MCPServer.tla` (Phase 2), revised.
-//
 // Client-side connection/retry with the shared playback submodel.
-// Flattened (see PORTING.md): all variables are assigned in every action
-// because Quint does not implicitly frame unmentioned variables.
+// Flattened: all variables are assigned in every action because Quint does not
+// implicitly frame unmentioned variables.
 //
-// Revisions vs the TLA+ port:
 // - `MAX_ATTEMPTS` matches the production connect budget
-//   `daemon::startup::MAX_CONNECT_ATTEMPTS` (10), not the historical 3.
+//   `daemon::startup::MAX_CONNECT_ATTEMPTS` (10).
 // - `transport::connect_with_retry` performs up to `MAX_ATTEMPTS` loop connects
 //   with backoff and then one **final** connect without backoff; the model has
 //   explicit `finalConnectOk` / `finalConnectFail` for that.
-// - The persistent `Degraded` service mode is removed: production has no such
-//   state. A failed connect episode ends in the terminal `ConnectFailed` state
-//   (the request errors); a new request resets to `ClientIdle`.
+// - There is no persistent `Degraded` service mode: a failed connect episode
+//   ends in the terminal `ConnectFailed` state (the request errors); a new
+//   request resets to `ClientIdle`.
 //
-// Preserved properties: `ConnectedImpliesDaemonReady`, `PlayingRequiresAudio`.
+// Properties: `ConnectedImpliesDaemonReady`, `PlayingRequiresAudio`.
 
 module MCPServer {
   pure val MAX_ATTEMPTS = 10

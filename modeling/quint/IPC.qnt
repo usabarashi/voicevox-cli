@@ -1,5 +1,3 @@
-// Ported from `modeling/tla/IPC.tla` (Phase 2), revised.
-//
 // IPC request/response model for the client transport
 // (`src/infrastructure/daemon/client/transport.rs`).
 //
@@ -9,14 +7,13 @@
 // and `MAX_DAEMON_RESPONSE_FRAME_BYTES` (client codec, 128 MiB); the response
 // read has a 30 s timeout.
 //
-// Revisions vs the TLA+ port:
-// - Removed `timeoutCount`/`MAX_TIMEOUTS`: it gated no action and had no
-//   production counterpart.
-// - Added the transport failure boundary: encode failure, write failure, EOF
+// - There is no `timeoutCount`/`MAX_TIMEOUTS`: it would gate no action and has
+//   no production counterpart.
+// - The transport failure boundary covers encode failure, write failure, EOF
 //   (no response), oversized frame, and a protocol `Error` response.
 //
-// Preserved properties: `FailedImpliesError`, `DoneImpliesValidResponse`,
-// and the temporal `EventuallyLeavesInFlight`.
+// Properties: `FailedImpliesError`, `DoneImpliesValidResponse`, and the
+// temporal `EventuallyLeavesInFlight`.
 
 module IPC {
   pure val MAX_REQUEST_FRAME_BYTES = 262144

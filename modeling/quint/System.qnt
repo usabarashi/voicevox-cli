@@ -1,17 +1,13 @@
-// Ported from `modeling/tla/System.tla` (Phase 2), revised.
-//
 // Top-level integrated model: startup resources + daemon + client + refined
 // Synthesis, with the cross-view synchronization.
 //
-// Adaptations (see PORTING.md):
 // - `Synthesis` is the refined `SynthesisRetry` contract: `synthOutcome`
 //   (Idle/Running/Backoff/Done/Failed/Canceled), `synthAttempts`, `synthBackoffs`.
 // - **Synthesis does not require a ready daemon.** Production auto-starts the
 //   daemon (`connect_daemon_client_auto_start`) and treats a not-ready daemon as
-//   a retryable attempt failure, not as a cancellation. The old
-//   `SynthesisRunningImpliesDaemonReady` / `SynthesisNeedsDaemon` gating is
-//   therefore **retracted** (consistent with the Phase 1 contract change 3); a
-//   daemon-loss transition no longer cancels a `Running`/`Backoff` synthesis.
+//   a retryable attempt failure, not as a cancellation, so there is no
+//   `SynthesisRunningImpliesDaemonReady` / `SynthesisNeedsDaemon` gating; a
+//   daemon-loss transition does not cancel a `Running`/`Backoff` synthesis.
 // - A non-retryable (`fatal`) attempt outcome fails immediately from any attempt
 //   (`synthFatalFail`).
 // - `synthBackoffs` is counted when a backoff **starts** (`synthFailRetry`),

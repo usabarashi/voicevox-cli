@@ -68,9 +68,12 @@ fn is_valid_onnxruntime_filename(filename: &str) -> bool {
             || (filename.starts_with("libvoicevox_onnxruntime.")
                 && has_extension_ignore_ascii_case(filename, "dylib"))
     } else if cfg!(target_os = "linux") {
+        // Linux follows the ELF soname convention: the real library is
+        // `libvoicevox_onnxruntime.so.<version>`, and `<name>.so` is a link.
         filename == "libonnxruntime.so"
             || (filename.starts_with("libvoicevox_onnxruntime.")
-                && has_extension_ignore_ascii_case(filename, "so"))
+                && (has_extension_ignore_ascii_case(filename, "so")
+                    || is_versioned_linux_onnxruntime_filename(filename)))
     } else {
         filename == "onnxruntime.dll"
             || filename == "libonnxruntime.dll"
@@ -233,12 +236,35 @@ struct OnnxLibraryCandidate {
     version: Option<Vec<u64>>,
 }
 
-/// Extracts the numeric version from `libvoicevox_onnxruntime.<version>.<ext>`
-/// or `libonnxruntime.<version>.<ext>`; unversioned names yield `None`.
+/// True for the Linux versioned library name `libvoicevox_onnxruntime.so.<version>`
+/// (for example `libvoicevox_onnxruntime.so.1.23.2`), which ELF soname
+/// conventions use there instead of the macOS `<version>.dylib` form.
+fn is_versioned_linux_onnxruntime_filename(filename: &str) -> bool {
+    filename
+        .strip_prefix("libvoicevox_onnxruntime.so.")
+        .is_some_and(is_numeric_version)
+}
+
+/// True when `text` is a dot-separated sequence of non-empty decimal numbers.
+fn is_numeric_version(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Extracts the numeric version from a VOICEVOX ONNX Runtime library filename.
+///
+/// Handles the macOS form `libvoicevox_onnxruntime.<version>.dylib` and the
+/// Linux form `libvoicevox_onnxruntime.so.<version>` (and the `libonnxruntime.`
+/// compatibility prefix for either); unversioned names yield `None`.
 fn parse_onnxruntime_version(filename: &str) -> Option<Vec<u64>> {
     let stem = filename
         .strip_prefix("libvoicevox_onnxruntime.")
         .or_else(|| filename.strip_prefix("libonnxruntime."))?;
+    // On Linux the version follows the `so` extension (`...so.<version>`),
+    // whereas on macOS and Windows it precedes the extension.
+    let stem = stem.strip_prefix("so.").unwrap_or(stem);
     let version = stem
         .split('.')
         .take_while(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
@@ -338,14 +364,27 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// Extension accepted by `is_valid_onnxruntime_filename` on this platform.
-    fn onnx_library_extension() -> &'static str {
-        if cfg!(target_os = "macos") {
-            "dylib"
-        } else if cfg!(target_os = "linux") {
-            "so"
+    /// Versioned ONNX Runtime library filename as VOICEVOX ships it on this
+    /// platform. The version precedes the extension on macOS and Windows but
+    /// follows the `so` extension on Linux.
+    fn versioned_onnx_library(version: &str) -> String {
+        if cfg!(target_os = "linux") {
+            format!("libvoicevox_onnxruntime.so.{version}")
+        } else if cfg!(target_os = "macos") {
+            format!("libvoicevox_onnxruntime.{version}.dylib")
         } else {
-            "dll"
+            format!("libvoicevox_onnxruntime.{version}.dll")
+        }
+    }
+
+    /// Unversioned ONNX Runtime library filename accepted on this platform.
+    fn unversioned_onnx_library() -> &'static str {
+        if cfg!(target_os = "linux") {
+            "libonnxruntime.so"
+        } else if cfg!(target_os = "macos") {
+            "libonnxruntime.dylib"
+        } else {
+            "libonnxruntime.dll"
         }
     }
 
@@ -356,6 +395,14 @@ mod tests {
             Some(vec![1, 23, 2])
         );
         assert_eq!(
+            parse_onnxruntime_version("libvoicevox_onnxruntime.so.1.23.2"),
+            Some(vec![1, 23, 2])
+        );
+        assert_eq!(
+            parse_onnxruntime_version("libvoicevox_onnxruntime.so.1"),
+            Some(vec![1])
+        );
+        assert_eq!(
             parse_onnxruntime_version("libonnxruntime.1.17.3.so"),
             Some(vec![1, 17, 3])
         );
@@ -364,18 +411,40 @@ mod tests {
             parse_onnxruntime_version("libvoicevox_onnxruntime.dylib"),
             None
         );
+        assert_eq!(
+            parse_onnxruntime_version("libvoicevox_onnxruntime.so"),
+            None
+        );
+    }
+
+    #[test]
+    fn recognizes_versioned_linux_onnxruntime_filenames() {
+        assert!(is_versioned_linux_onnxruntime_filename(
+            "libvoicevox_onnxruntime.so.1.23.2"
+        ));
+        assert!(is_versioned_linux_onnxruntime_filename(
+            "libvoicevox_onnxruntime.so.1"
+        ));
+        assert!(!is_versioned_linux_onnxruntime_filename(
+            "libvoicevox_onnxruntime.so"
+        ));
+        assert!(!is_versioned_linux_onnxruntime_filename(
+            "libvoicevox_onnxruntime.so.latest"
+        ));
+        assert!(!is_versioned_linux_onnxruntime_filename(
+            "libvoicevox_onnxruntime.so.1.23.2.dylib"
+        ));
     }
 
     #[test]
     fn picks_highest_version_original_regardless_of_directory_order() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let extension = onnx_library_extension();
-        let newest = format!("libvoicevox_onnxruntime.1.10.0.{extension}");
+        let newest = versioned_onnx_library("1.10.0");
         for name in [
-            format!("libvoicevox_onnxruntime.1.9.0.{extension}"),
+            versioned_onnx_library("1.9.0"),
             newest.clone(),
-            format!("libvoicevox_onnxruntime.1.2.0.{extension}"),
-            format!("libonnxruntime.{extension}"),
+            versioned_onnx_library("1.2.0"),
+            unversioned_onnx_library().to_owned(),
         ] {
             fs::write(dir.path().join(name), b"").expect("write candidate");
         }
@@ -390,13 +459,13 @@ mod tests {
     #[test]
     fn falls_back_to_unversioned_library() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let name = format!("libonnxruntime.{}", onnx_library_extension());
-        fs::write(dir.path().join(&name), b"").expect("write candidate");
+        let name = unversioned_onnx_library();
+        fs::write(dir.path().join(name), b"").expect("write candidate");
 
         let chosen = first_onnx_library_in(dir.path()).expect("a candidate");
         assert_eq!(
             chosen.file_name().and_then(|name| name.to_str()),
-            Some(name.as_str())
+            Some(name)
         );
     }
 }

@@ -173,8 +173,7 @@ impl State<ConnectDriver> for ConnectState {
 impl Driver for ConnectDriver {
     type State = ConnectState;
 
-    // clippy 1.98 flags quint-connect's `switch!` expansion as `no_effect`.
-    #[allow(clippy::no_effect)]
+    #[allow(clippy::no_effect)] // quint-connect's `switch!` macro
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
             init => self.reset(),

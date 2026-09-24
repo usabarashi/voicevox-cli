@@ -122,6 +122,61 @@ create_onnxruntime_symlinks() {
     fi
 }
 
+# Verify that a staged download contains the resource the script asked for, so a
+# downloader that exits 0 without writing anything cannot be recorded as current.
+staged_resource_is_valid() {
+    local staging_dir="$1"
+    local resource="$2"
+    case "$resource" in
+        onnxruntime)
+            [ -n "$(find "$staging_dir/onnxruntime" \
+                \( -name 'libvoicevox_onnxruntime*' -o -name 'libonnxruntime*' \) \
+                -print -quit 2>/dev/null)" ]
+            ;;
+        dict)
+            [ -n "$(find "$staging_dir/dict" -type d -name 'open_jtalk_dic_*' \
+                -print -quit 2>/dev/null)" ]
+            ;;
+        models)
+            [ -n "$(find "$staging_dir/models" -name '*.vvm' -print -quit 2>/dev/null)" ]
+            ;;
+        *)
+            [ -d "$staging_dir/$resource" ]
+            ;;
+    esac
+}
+
+# Install a staged resource into DATA_DIR. The previous directory is kept until
+# the new one is in place, so a failed move cannot leave the resource missing.
+# `models` is merged rather than replaced: it is additive and may hold voices
+# the user added, so a refresh must not delete them.
+install_staged_resource() {
+    local staging_dir="$1"
+    local resource="$2"
+    local dest="$DATA_DIR/$resource"
+
+    if [ "$resource" = "models" ]; then
+        mkdir -p "$dest"
+        cp -R "$staging_dir/models/." "$dest/"
+        return 0
+    fi
+
+    assert_safe_path "$dest" "$resource directory"
+    local backup="$DATA_DIR/.previous-$resource"
+    rm -rf "$backup"
+    if [ -e "$dest" ]; then
+        mv "$dest" "$backup"
+    fi
+    if ! mv "$staging_dir/$resource" "$dest"; then
+        rm -rf "$dest"
+        if [ -e "$backup" ]; then
+            mv "$backup" "$dest"
+        fi
+        return 1
+    fi
+    rm -rf "$backup"
+}
+
 # Locate the voicevox-download binary (co-located takes priority over PATH).
 find_downloader() {
     if [ -x "${0%/*}/voicevox-download" ]; then
@@ -483,15 +538,44 @@ if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
     fi
 fi
 
-# Download resources
+# Download resources into a temporary directory inside DATA_DIR. The pinned
+# downloader only overwrites the files it ships and never removes ones it no
+# longer ships, so downloading straight into DATA_DIR would leave a stale ONNX
+# Runtime library or OpenJTalk dictionary next to the new one. Staging keeps the
+# swap on the same filesystem (a rename) and lets a failed download leave the
+# installed resources untouched.
 echo -e "${BLUE}Downloading resources...${NC}"
-echo "Running: $DOWNLOADER ${ONLY_ARGS[*]} --output $DATA_DIR"
+STAGING_DIR="$(mktemp -d "$DATA_DIR/.staging.XXXXXX")"
+cleanup_staging() {
+    if [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ]; then
+        rm -rf "$STAGING_DIR"
+    fi
+}
+trap cleanup_staging EXIT
+
+echo "Running: $DOWNLOADER ${ONLY_ARGS[*]} --output $STAGING_DIR"
 echo ""
 
-if "$DOWNLOADER" "${ONLY_ARGS[@]}" --output "$DATA_DIR"; then
+if "$DOWNLOADER" "${ONLY_ARGS[@]}" --output "$STAGING_DIR"; then
+    for resource in "${MISSING_RESOURCES[@]}"; do
+        if ! staged_resource_is_valid "$STAGING_DIR" "$resource"; then
+            echo ""
+            echo -e "${RED}Error: downloader did not produce a valid '$resource/'${NC}"
+            echo -e "${RED}Leaving the installed resources unchanged.${NC}"
+            exit 1
+        fi
+    done
+
     echo ""
     echo -e "${GREEN}All resources downloaded successfully!${NC}"
     echo ""
+
+    for resource in "${MISSING_RESOURCES[@]}"; do
+        if ! install_staged_resource "$STAGING_DIR" "$resource"; then
+            echo -e "${RED}Error: failed to install '$resource/'${NC}"
+            exit 1
+        fi
+    done
 
     if [ -n "$DOWNLOADER_VERSION" ]; then
         printf '%s\n' "$DOWNLOADER_VERSION" > "$RESOURCE_VERSION_FILE"

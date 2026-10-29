@@ -168,6 +168,10 @@ Converts Japanese text to speech (TTS) and plays it on the server.
   "jsonrpc": "2.0",
   "method": "tools/call",
   "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities": {}
+    },
     "name": "text_to_speech",
     "arguments": {
       "text": "こんにちは、ずんだもんなのだ",
@@ -193,6 +197,10 @@ Retrieves available voices with optional filtering.
   "jsonrpc": "2.0",
   "method": "tools/call",
   "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities": {}
+    },
     "name": "list_voice_styles",
     "arguments": {
       "speaker_name": "ずんだもん"

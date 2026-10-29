@@ -70,12 +70,13 @@ impl ServerRun {
         let reader = std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 match line {
-                    Ok(line) if !line.trim().is_empty() => {
+                    // Blank lines are delivered too: they are not valid frames, so
+                    // the purity check must see them rather than filter them out.
+                    Ok(line) => {
                         if tx.send(line).is_err() {
                             break;
                         }
                     }
-                    Ok(_) => {}
                     Err(_) => break,
                 }
             }
@@ -138,6 +139,7 @@ impl ServerRun {
         drop(self.stdin.take());
 
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
+        let mut drained = false;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
@@ -145,16 +147,30 @@ impl ServerRun {
             }
             match self.frames.recv_timeout(remaining) {
                 Ok(line) => self.collected.push(line),
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    drained = true;
+                    break;
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => break,
             }
         }
 
+        // A server that never closes stdout keeps the reader thread blocked on
+        // the pipe, so joining it before killing the child would hang the test
+        // instead of failing it.
+        if !drained {
+            let _ = self.child.kill();
+        }
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
         }
         // `wait` reaps the child; a kill here would defeat the drain above.
         let _ = self.child.wait();
+
+        assert!(
+            drained,
+            "server did not close stdout within {SHUTDOWN_TIMEOUT:?}"
+        );
     }
 
     /// Asserts that every frame the server ever wrote was a JSON-RPC 2.0 message.
@@ -267,6 +283,10 @@ fn server_discover_reports_identity_capabilities_and_cache_hints() {
     assert_eq!(result["supportedVersions"], json!(["2026-07-28"]));
     assert!(result["ttlMs"].is_u64(), "ttlMs must be present: {result}");
     assert_eq!(result["cacheScope"], json!("public"));
+    assert!(
+        result["capabilities"]["tools"].is_object(),
+        "the tools capability must be advertised: {result}"
+    );
     assert_eq!(
         result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
         json!("voicevox-mcp"),
@@ -378,6 +398,18 @@ fn known_tool_answers_with_a_tool_result() {
     let result = &response["result"];
     assert_eq!(result["resultType"], json!("complete"));
     assert_eq!(result["isError"], json!(true));
+
+    // The rejection must be the argument validation, not an unreachable daemon:
+    // `style_id` is range-checked before any daemon contact.
+    let text = result["content"]
+        .as_array()
+        .and_then(|content| content.first())
+        .and_then(|content| content["text"].as_str())
+        .unwrap_or_default();
+    assert!(
+        text.contains("Invalid style_id"),
+        "expected the style_id validation to answer, got: {text:?}"
+    );
     assert_eq!(
         result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
         json!("voicevox-mcp"),

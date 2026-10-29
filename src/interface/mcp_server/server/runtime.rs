@@ -10,6 +10,9 @@ use crate::interface::mcp_server::tools::types::{ToolCallResult, text_result};
 
 const MAX_CONCURRENT_TOOL_HANDLERS: usize = 4;
 
+/// Message used when a client reuses a request id that is still in flight.
+pub const DUPLICATE_REQUEST_ID_MESSAGE: &str = "Duplicate request ID for in-flight request";
+
 fn serialize_result_response(
     id: Value,
     result: ToolCallResult,
@@ -138,6 +141,16 @@ impl ActiveRequests {
         Ticket(self.next_ticket.fetch_add(1, Ordering::Relaxed) + 1)
     }
 
+    /// Whether `request_id` currently has an answer outstanding.
+    ///
+    /// The synchronous methods use this to reject a reused id: `tools/call` gets
+    /// the same protection from [`Self::register`], which is atomic with the
+    /// insertion. A plain check is enough here because only the stdin task
+    /// registers requests, so nothing can insert between the check and the answer.
+    pub async fn is_in_flight(&self, request_id: &str) -> bool {
+        self.in_flight.lock().await.contains_key(request_id)
+    }
+
     /// Registers an in-flight request before its handler starts.
     async fn register(&self, request_id: &str, id: &Value, cancellable: bool) -> Registration {
         // Allocate before taking the map lock: the counter is independent of map
@@ -157,7 +170,7 @@ impl ActiveRequests {
                 .send(JsonRpcResponse::error(
                     id.clone(),
                     INVALID_REQUEST,
-                    "Duplicate request ID for in-flight request",
+                    DUPLICATE_REQUEST_ID_MESSAGE,
                 ))
                 .await;
             return Registration::Duplicate;
@@ -522,6 +535,24 @@ mod tests {
             ids_of(&kept),
             vec![json!(8)],
             "only the other request answers"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_in_flight_id_is_visible_until_its_handler_finishes() {
+        let (requests, _responses) = active_requests();
+        assert!(!requests.is_in_flight("late").await, "unknown ids are free");
+
+        let (ticket, _abort_rx) = register(&requests, "late", 1, false).await;
+        assert!(
+            requests.is_in_flight("late").await,
+            "a registered id is in flight"
+        );
+
+        assert!(requests.commit("late", ticket, answer(1)).await);
+        assert!(
+            !requests.is_in_flight("late").await,
+            "a committed id is free again"
         );
     }
 

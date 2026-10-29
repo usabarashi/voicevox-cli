@@ -11,7 +11,7 @@ use crate::interface::mcp_server::protocol::{
     ResultMeta, STATIC_RESULT_TTL_MS, SUPPORTED_VERSIONS, ServerCapabilities,
     parse_notification_message, parse_request_message, request_id_key, serialize_success_response,
 };
-use crate::interface::mcp_server::server::runtime::ActiveRequests;
+use crate::interface::mcp_server::server::runtime::{ActiveRequests, DUPLICATE_REQUEST_ID_MESSAGE};
 use crate::interface::mcp_server::tools::registry::{is_known_tool, tool_definitions};
 
 const RESPONSE_QUEUE_CAPACITY: usize = 64;
@@ -36,7 +36,15 @@ pub async fn run_stdio_server() -> Result<()> {
                     process_frame(frame, &active_requests, &mut stdout).await?;
                 if let Some(request_id) = cancelled {
                     for response in take_queued_responses(&mut response_rx, &request_id) {
-                        send_response(&response, &mut stdout).await?;
+                        if let Err(error) = send_response(&response, &mut stdout).await {
+                            // Same cleanup as the queued-response branch below:
+                            // never leave an in-flight handler synthesising after
+                            // the writer is known to be broken.
+                            active_requests
+                                .cancel_all_requests("Failed to write response")
+                                .await;
+                            return Err(error);
+                        }
                     }
                 }
                 match control {
@@ -125,6 +133,19 @@ async fn handle_request(
         }
     };
 
+    // `tools/call` makes this check when it registers the id. The synchronous
+    // methods answer immediately and must not skip it: a client that reuses a
+    // live id would otherwise receive two responses carrying the same id.
+    if !matches!(&request.method, RequestMethod::ToolsCall(_))
+        && let Some(request_id) = request_id_key(&request.id)
+        && active_requests.is_in_flight(&request_id).await
+    {
+        let response =
+            JsonRpcResponse::error(request.id, INVALID_REQUEST, DUPLICATE_REQUEST_ID_MESSAGE);
+        send_response(&response, stdout).await?;
+        return Ok(());
+    }
+
     match request.method {
         RequestMethod::ServerDiscover => {
             let result = DiscoverResult {
@@ -132,7 +153,11 @@ async fn handle_request(
                 supported_versions: SUPPORTED_VERSIONS.map(str::to_string).to_vec(),
                 capabilities: server_capabilities(),
                 instructions: crate::infrastructure::mcp_instructions::load_mcp_instructions(),
-                ttl_ms: STATIC_RESULT_TTL_MS,
+                // The instructions are re-read from the environment or the
+                // config file on every call, so this result is not stable for an
+                // hour the way `tools/list` is: advertise it as immediately
+                // stale instead of promising freshness this server cannot keep.
+                ttl_ms: 0,
                 cache_scope: CacheScope::Public,
                 meta: ResultMeta::default(),
             };

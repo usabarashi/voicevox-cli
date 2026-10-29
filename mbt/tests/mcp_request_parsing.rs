@@ -66,6 +66,20 @@ impl ParsingDriver {
     fn parse(&mut self, raw: serde_json::Value) {
         self.outcome = Some(classify(parse_request_message(raw)));
     }
+
+    /// Parses a request whose `jsonrpc` member is `value` instead of `"2.0"`.
+    fn parse_jsonrpc(&mut self, value: serde_json::Value) {
+        let mut raw = request("tools/list", modern_params());
+        raw["jsonrpc"] = value;
+        self.parse(raw);
+    }
+
+    /// Parses a request carrying `id` instead of a valid one.
+    fn parse_id(&mut self, value: serde_json::Value) {
+        let mut raw = request("tools/list", modern_params());
+        raw["id"] = value;
+        self.parse(raw);
+    }
 }
 
 impl State<ParsingDriver> for Outcome {
@@ -120,6 +134,8 @@ impl Driver for ParsingDriver {
                 }),
             )),
             parseMissingMethod => self.parse(json!({ "id": 1 })),
+            parseBadJsonrpc => self.parse_jsonrpc(json!("1.0")),
+            parseBadId => self.parse_id(json!({ "nested": 1 })),
             parseBadArguments => self.parse(request(
                 "tools/call",
                 json!({
@@ -161,6 +177,8 @@ impl Driver for ParsingDriver {
                     }
                 }),
             )),
+            initBadJsonrpc => self.parse_jsonrpc(json!("1.0")),
+            initBadId => self.parse_id(json!(null)),
             hold => (),
             _ => (),
         })
@@ -248,5 +266,18 @@ fn mcp_request_parsing_missing_meta() -> impl Driver {
     max_steps = 1
 )]
 fn mcp_request_parsing_unsupported_version() -> impl Driver {
+    ParsingDriver::default()
+}
+
+/// Fixed regression scenario: a frame that is not JSON-RPC 2.0 is rejected
+/// before its method is dispatched.
+#[quint_run(
+    spec = "../modeling/quint/McpRequestParsing.qnt",
+    init = "initBadJsonrpc",
+    step = "hold",
+    max_samples = 1,
+    max_steps = 1
+)]
+fn mcp_request_parsing_bad_jsonrpc() -> impl Driver {
     ParsingDriver::default()
 }

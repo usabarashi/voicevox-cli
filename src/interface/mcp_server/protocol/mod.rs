@@ -302,6 +302,13 @@ pub fn serialize_success_response<T: Serialize>(id: Value, result: T) -> JsonRpc
 }
 
 pub fn parse_request_message(raw: Value) -> Result<RequestMessage, ParseRequestError> {
+    if raw.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Err(ParseRequestError::new(
+            INVALID_REQUEST,
+            "Invalid request: jsonrpc must be \"2.0\"",
+        ));
+    }
+
     let id = match raw.get("id") {
         None => Value::Null,
         Some(Value::Null) => {
@@ -310,7 +317,15 @@ pub fn parse_request_message(raw: Value) -> Result<RequestMessage, ParseRequestE
                 "Invalid request: id must not be null",
             ));
         }
-        Some(id) => id.clone(),
+        Some(id @ (Value::String(_) | Value::Number(_))) => id.clone(),
+        Some(_) => {
+            // JSON-RPC 2.0 ids are strings or numbers. Accepting anything else
+            // would let a response echo an id the client cannot correlate.
+            return Err(ParseRequestError::new(
+                INVALID_REQUEST,
+                "Invalid request: id must be a string or number",
+            ));
+        }
     };
 
     let method = raw
@@ -546,6 +561,45 @@ mod tests {
     fn null_request_id_is_rejected() {
         let raw = json!({ "jsonrpc": "2.0", "id": null, "method": "tools/list" });
         let error = parse_request_message(raw).expect_err("expected invalid request");
+        assert_eq!(error.code, INVALID_REQUEST);
+    }
+
+    #[test]
+    fn request_ids_must_be_strings_or_numbers() {
+        for id in [json!({ "nested": 1 }), json!([1]), json!(true)] {
+            let raw = json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "tools/list",
+                "params": modern_params(),
+            });
+
+            let error = parse_request_message(raw).expect_err("invalid id must be rejected");
+            assert_eq!(error.code, INVALID_REQUEST);
+            assert!(
+                error.message.contains("string or number"),
+                "error must name the accepted id types: {}",
+                error.message
+            );
+        }
+    }
+
+    #[test]
+    fn requests_must_declare_jsonrpc_2_0() {
+        for jsonrpc in [json!("1.0"), json!(2.0), json!(null)] {
+            let mut raw = request("tools/list", modern_params());
+            raw["jsonrpc"] = jsonrpc;
+
+            let error = parse_request_message(raw).expect_err("jsonrpc must be exactly 2.0");
+            assert_eq!(error.code, INVALID_REQUEST);
+            assert!(error.message.contains("jsonrpc"), "{}", error.message);
+        }
+
+        let mut raw = request("tools/list", modern_params());
+        raw.as_object_mut()
+            .expect("a request object")
+            .remove("jsonrpc");
+        let error = parse_request_message(raw).expect_err("missing jsonrpc must be rejected");
         assert_eq!(error.code, INVALID_REQUEST);
     }
 

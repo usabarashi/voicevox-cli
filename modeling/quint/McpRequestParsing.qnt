@@ -12,6 +12,9 @@
 //     not implement              -> UnsupportedVersion (client may retry),
 //   * missing or malformed
 //     `_meta`                    -> Invalid (malformed request),
+//   * `jsonrpc` other than "2.0" -> Invalid (not a JSON-RPC 2.0 request),
+//   * `id` that is not a string
+//     or number (or is null)     -> Invalid,
 //   * missing method             -> Invalid,
 //   * other methods              -> Unknown.
 //
@@ -71,6 +74,16 @@ module McpRequestParsing {
     outcome' = Invalid,
   }
 
+  // The `jsonrpc` member is validated before anything else.
+  action parseBadJsonrpc = all {
+    outcome' = Invalid,
+  }
+
+  // JSON-RPC ids are strings or numbers, never null, objects or booleans.
+  action parseBadId = all {
+    outcome' = Invalid,
+  }
+
   action parseBadArguments = all {
     outcome' = Invalid,
   }
@@ -101,6 +114,8 @@ module McpRequestParsing {
     parseMissingCapabilities,
     parseUnsupportedVersion,
     parseMissingMethod,
+    parseBadJsonrpc,
+    parseBadId,
     parseBadArguments,
     parseMissingParams,
     parseNonObjectParams,
@@ -140,5 +155,14 @@ module McpRequestParsing {
 
   action initUnsupportedVersion = all {
     outcome' = UnsupportedVersion,
+  }
+
+  // A frame that does not declare JSON-RPC 2.0 is not a valid request.
+  action initBadJsonrpc = all {
+    outcome' = Invalid,
+  }
+
+  action initBadId = all {
+    outcome' = Invalid,
   }
 }

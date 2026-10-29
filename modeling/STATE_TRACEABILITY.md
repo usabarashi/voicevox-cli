@@ -42,8 +42,8 @@ bounded, and `quint run --invariant` is random simulation; neither replaces TLC.
 | Integrated end-to-end | `System.qnt` | startup resources + daemon (incl. loss) + client view/connect budget + environment-driven synthesis | `viewsAligned`, `clientConnectedImpliesDaemonReady`, `daemonStartingRequiresResources`, `daemonReadyRequiresResources`, `daemonReadyRequiresSocket`, `typeOK` |
 | Target resolution (MBT) | `TargetResolution.qnt` | style/model/no-style/unknown resolution, collision | `mbt/tests/target_resolution.rs` (Quint Connect) |
 | Retry arithmetic (MBT) | `SynthesisRetry.qnt` | attempt/backoff/cancel transitions | `mbt/tests/synthesis_retry.rs` (Quint Connect) |
-| MCP request parsing (MBT) | `McpRequestParsing.qnt` | initialize/tools-list/tools-call/invalid/unknown | `mbt/tests/mcp_request_parsing.rs` (Quint Connect) |
-| MCP notification parsing (MBT) | `McpNotificationParsing.qnt` | initialized/cancelled/unknown | `mbt/tests/mcp_notification_parsing.rs` (Quint Connect) |
+| MCP request parsing (MBT) | `McpRequestParsing.qnt` | server-discover/tools-list/tools-call/unsupported-version/invalid/unknown | `mbt/tests/mcp_request_parsing.rs` (Quint Connect) |
+| MCP notification parsing (MBT) | `McpNotificationParsing.qnt` | cancelled/unknown | `mbt/tests/mcp_notification_parsing.rs` (Quint Connect) |
 | IPC transport (MBT) | `IPC.qnt` | valid / corrupt / mismatch / EOF / protocol-error responses via a fake server | `mbt/tests/ipc_transport.rs` (Quint Connect) |
 | Real-daemon IPC (MBT) | `DaemonIpc.qnt` | client connect / catalog read over the socket | `mbt/tests/daemon_ipc.rs` (Quint Connect, `#[ignore]`; CI job `quint-mbt-daemon`) |
 | Real-daemon synthesize (MBT) | `DaemonSynthesize.qnt` | connect → listSpeakers → synthesize | `mbt/tests/daemon_synthesize.rs` (Quint Connect, `#[ignore]`) |

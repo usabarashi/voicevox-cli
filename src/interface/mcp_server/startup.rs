@@ -118,6 +118,11 @@ pub async fn run_mcp_server_app() -> Result<()> {
 }
 
 pub async fn run_mcp_server_app_with_output(output: &dyn AppOutput) -> Result<()> {
+    // stdout carries JSON-RPC frames for this process. Informational logging
+    // reachable from a tool call (daemon autostart, synthesis) must go to stderr
+    // or the line becomes a protocol violation.
+    crate::infrastructure::logging::route_info_to_stderr();
+
     if let Err(error) = ensure_daemon_running_for_mcp(output).await {
         warn_nonfatal_daemon_issue(&error, output);
     }

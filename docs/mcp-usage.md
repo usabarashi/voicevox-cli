@@ -29,27 +29,33 @@ The server communicates via stdio (standard input/output) using JSON-RPC protoco
 
 If you override the socket path with `VOICEVOX_SOCKET_PATH`, use a directory owned by the same user with restrictive permissions (recommended: `0700` for the directory).
 
-## Server Initialization
+## Protocol Version
 
-Before using any tools, initialize the MCP server:
+This server implements MCP revision `2026-07-28`, which is stateless: there is no
+`initialize` handshake and no session. Every request carries its protocol version
+and client capabilities in `params._meta`:
 
 ```json
 {
   "jsonrpc": "2.0",
-  "method": "initialize",
+  "id": 1,
+  "method": "tools/list",
   "params": {
-    "protocolVersion": "2024-11-05",
-    "capabilities": {},
-    "clientInfo": {
-      "name": "your-client",
-      "version": "1.0.0"
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities": {}
     }
-  },
-  "id": 1
+  }
 }
 ```
 
-The server will respond with its capabilities and available tools.
+Both `_meta` fields are required. A request missing either is rejected with
+`-32602` (Invalid params). A well-formed request naming a version this server does
+not implement is rejected with `-32022` (`UnsupportedProtocolVersionError`) whose
+`data.supported` lists the accepted versions, so the client can retry.
+
+Clients may optionally call `server/discover` first to read the supported versions,
+capabilities, and instructions in a single request.
 
 ## AI Assistant Instructions
 
@@ -198,19 +204,22 @@ Retrieves available voices with optional filtering.
 
 ## Testing
 
-### Initialize the server:
+### Discover the server:
 ```bash
-echo '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}' | voicevox-mcp-server
+META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
+echo "{\"jsonrpc\":\"2.0\",\"method\":\"server/discover\",\"params\":{$META},\"id\":1}" | voicevox-mcp-server
 ```
 
 ### List available tools:
 ```bash
-echo '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":2}' | voicevox-mcp-server
+META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
+echo "{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"params\":{$META},\"id\":2}" | voicevox-mcp-server
 ```
 
 ### Synthesize speech:
 ```bash
-echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"text_to_speech","arguments":{"text":"テストなのだ","style_id":3}},"id":3}' | voicevox-mcp-server
+META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
+echo "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{$META,\"name\":\"text_to_speech\",\"arguments\":{\"text\":\"テストなのだ\",\"style_id\":3}},\"id\":3}" | voicevox-mcp-server
 ```
 
 ## Integration with AI Assistants

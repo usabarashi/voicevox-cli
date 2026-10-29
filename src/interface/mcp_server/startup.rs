@@ -123,6 +123,14 @@ pub async fn run_mcp_server_app_with_output(output: &dyn AppOutput) -> Result<()
     // or the line becomes a protocol violation.
     crate::infrastructure::logging::route_info_to_stderr();
 
+    // First line of the session log, emitted before any daemon work so the
+    // socket the server will use is visible in client logs even when startup
+    // fails early.
+    output.info(&format!(
+        "Starting VOICEVOX MCP server (socket: {})",
+        get_socket_path().display()
+    ));
+
     if let Err(error) = ensure_daemon_running_for_mcp(output).await {
         warn_nonfatal_daemon_issue(&error, output);
     }

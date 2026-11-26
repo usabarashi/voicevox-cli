@@ -10,11 +10,6 @@ pub enum StartDaemonOutcome {
     AlreadyRunning,
 }
 
-/// Finds the daemon executable path using the current binary location and common fallbacks.
-///
-/// # Errors
-///
-/// Returns `DaemonBinaryNotFound` if no usable `voicevox-daemon` binary can be found.
 pub fn find_daemon_binary() -> Result<PathBuf, DaemonError> {
     if let Ok(current_exe) = std::env::current_exe() {
         let mut daemon_path = current_exe;

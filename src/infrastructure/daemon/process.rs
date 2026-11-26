@@ -69,12 +69,6 @@ impl PgrepMatchMode {
     }
 }
 
-/// Checks for stale sockets and duplicate daemon processes before startup.
-///
-/// # Errors
-///
-/// Returns an error if another daemon instance is already running, a stale socket
-/// cannot be removed, or daemon process detection reports a startup conflict.
 pub async fn check_and_prevent_duplicate(socket_path: &Path) -> DaemonResult<()> {
     if socket_path.exists() {
         handle_existing_socket(socket_path).await?;
@@ -84,13 +78,6 @@ pub async fn check_and_prevent_duplicate(socket_path: &Path) -> DaemonResult<()>
     Ok(())
 }
 
-/// Removes a stale daemon socket file if it exists.
-///
-/// Returns `Ok(true)` when a socket file was removed, `Ok(false)` when the path does not exist.
-///
-/// # Errors
-///
-/// Returns an error when the path exists but cannot be safely removed.
 pub fn remove_stale_socket_if_present(socket_path: &Path) -> DaemonResult<bool> {
     match fs::symlink_metadata(socket_path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -225,12 +212,6 @@ fn check_for_other_daemons() -> DaemonResult<()> {
     }
 }
 
-/// Finds running `voicevox-daemon` process IDs for the current user.
-///
-/// # Errors
-///
-/// Returns an error only if `pgrep` execution fails unexpectedly in a way surfaced by
-/// the process API. Missing processes are reported as an empty list.
 pub fn find_daemon_processes() -> Result<Vec<u32>> {
     let output = pgrep_voicevox_daemon_output(PgrepMatchMode::ExactProcessName)?;
 

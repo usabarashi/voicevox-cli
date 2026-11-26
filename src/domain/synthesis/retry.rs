@@ -10,27 +10,19 @@
 
 use std::time::Duration;
 
-/// Outcome of a single synthesis attempt, from the retry policy's perspective.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttemptOutcome {
-    /// The attempt produced a result.
     Succeeded,
-    /// The attempt failed with a retryable error.
     RetryableFailure,
-    /// The attempt failed with a non-retryable error.
     FatalFailure,
 }
 
-/// What to do after an attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryDecision {
-    /// Stop the loop (success, fatal failure, or retries exhausted).
     Finish,
-    /// Wait for a backoff, then start another attempt.
     Backoff,
 }
 
-/// Retry policy for the client-side synthesis loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryPolicy {
     max_retries: u32,
@@ -47,16 +39,11 @@ impl RetryPolicy {
         self.max_retries
     }
 
-    /// Total attempts allowed: the initial attempt plus `max_retries` retries.
     #[must_use]
     pub const fn max_attempts(&self) -> u32 {
         self.max_retries + 1
     }
 
-    /// Decides what to do after an attempt.
-    ///
-    /// `attempts_started` is the number of attempts already started, including
-    /// the one that just finished.
     #[must_use]
     pub const fn after_attempt(
         &self,
@@ -75,8 +62,6 @@ impl RetryPolicy {
         }
     }
 
-    /// Exponential backoff delay for the `retry_index`-th retry (0-based),
-    /// doubling from `initial` and capped at `max`.
     #[must_use]
     pub fn backoff_delay(&self, retry_index: u32, initial: Duration, max: Duration) -> Duration {
         let mut delay = initial;
@@ -87,8 +72,6 @@ impl RetryPolicy {
     }
 }
 
-/// Phase of the client-side retry loop.
-///
 /// Mirrors the `Outcome` sum type in `modeling/quint/SynthesisRetry.qnt`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryPhase {
@@ -100,8 +83,6 @@ pub enum RetryPhase {
     Canceled,
 }
 
-/// Pure state machine for the retry loop's phase and attempt/backoff counting.
-///
 /// `run_retry_loop` drives this for the real async loop; the model-based test
 /// `mbt/tests/synthesis_retry.rs` drives the same type one spec step at a time,
 /// so the counters and transitions are checked directly against
@@ -146,10 +127,6 @@ impl RetryTracker {
         self.phase == RetryPhase::Running && self.attempts_started < self.policy.max_attempts()
     }
 
-    /// Moves `Running` to `Attempting`, counting the attempt at start.
-    ///
-    /// Returns false when no attempt may start (not `Running`, or the attempt
-    /// budget is exhausted).
     pub fn begin_attempt(&mut self) -> bool {
         if !self.can_begin_attempt() {
             return false;
@@ -159,9 +136,6 @@ impl RetryTracker {
         true
     }
 
-    /// Records the in-flight attempt's result, updates the phase, and returns
-    /// the retry decision. A retryable failure that will be retried counts a
-    /// backoff at start.
     #[must_use]
     pub fn record_attempt(&mut self, outcome: AttemptOutcome) -> RetryDecision {
         let decision = self.policy.after_attempt(self.attempts_started, outcome);
@@ -179,7 +153,6 @@ impl RetryTracker {
         decision
     }
 
-    /// Moves `Backoff` back to `Running`. Returns false in any other phase.
     pub fn end_backoff(&mut self) -> bool {
         if self.phase != RetryPhase::Backoff {
             return false;
@@ -188,7 +161,6 @@ impl RetryTracker {
         true
     }
 
-    /// Cancels a non-terminal loop. Returns false if already terminal.
     pub fn cancel(&mut self) -> bool {
         if !matches!(
             self.phase,

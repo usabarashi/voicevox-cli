@@ -49,12 +49,6 @@ impl DaemonState {
         }
     }
 
-    /// Builds daemon state and precomputes model/style metadata used by requests.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if VOICEVOX core initialization fails, model discovery fails,
-    /// or the style-to-model mapping cannot be constructed.
     pub fn new() -> Result<Self> {
         let catalog_core = crate::infrastructure::core::VoicevoxCore::new()?;
         let catalog = ModelCatalog::new(&catalog_core)?;

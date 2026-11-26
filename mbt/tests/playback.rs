@@ -49,7 +49,6 @@ struct PlaybackModelState {
     error_kind: PlaybackError,
 }
 
-/// What the injected backend returns.
 #[derive(Clone)]
 enum BackendOutcome {
     Completed,
@@ -171,7 +170,6 @@ impl Driver for PlaybackDriver {
     }
 }
 
-/// Playback completes normally.
 #[quint_run(
     spec = "../modeling/quint/Playback.qnt",
     init = "scenarioNaturalEnd",
@@ -183,7 +181,6 @@ fn playback_completes() -> impl Driver {
     PlaybackDriver::default()
 }
 
-/// Playback is cancelled.
 #[quint_run(
     spec = "../modeling/quint/Playback.qnt",
     init = "scenarioCanceled",
@@ -195,7 +192,6 @@ fn playback_cancelled() -> impl Driver {
     PlaybackDriver::default()
 }
 
-/// Playback launch fails.
 #[quint_run(
     spec = "../modeling/quint/Playback.qnt",
     init = "scenarioLaunchFailed",
@@ -218,7 +214,6 @@ mod dispatch_tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// Records whether a cancellation receiver and audio bytes were forwarded.
     #[derive(Default)]
     struct RecordingBackend {
         calls: u32,

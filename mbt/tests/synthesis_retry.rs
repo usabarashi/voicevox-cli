@@ -118,7 +118,6 @@ impl Driver for TrackerDriver {
     }
 }
 
-/// Random exploration of the retry state machine.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
     max_samples = 500,

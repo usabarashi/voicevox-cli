@@ -44,7 +44,6 @@ struct RetryState {
     backoffs: i64,
 }
 
-/// Scripted attempt: pops one outcome per production loop invocation.
 struct FakeAttempt {
     script: VecDeque<AttemptCallOutcome>,
 }
@@ -61,7 +60,6 @@ impl SynthesisAttempt for FakeAttempt {
     }
 }
 
-/// Scripted backoff waiter: pops one outcome per backoff.
 struct FakeWaiter {
     script: VecDeque<WaitOutcome>,
 }
@@ -112,16 +110,12 @@ impl RetryLoopDriver {
         self.backoffs = 0;
     }
 
-    /// Records a state observed without running the loop (used for the
-    /// pre-cancelled scenario, where no attempt may start).
     fn record(&mut self, outcome: Outcome, attempts: u32, backoffs: u32) {
         self.outcome = Some(outcome);
         self.attempts = attempts;
         self.backoffs = backoffs;
     }
 
-    /// Runs the loop with a cancellation that is already delivered before the
-    /// first attempt.
     fn run_loop_with_precancel(&mut self, reason: &str) {
         let (tx, rx) = tokio::sync::oneshot::channel::<String>();
         let _ = tx.send(reason.to_string());
@@ -155,8 +149,6 @@ impl RetryLoopDriver {
         );
     }
 
-    /// Runs the production `run_retry_loop` with the given injected inputs and
-    /// records the loop's observed result.
     fn run_loop(&mut self, attempts: Vec<AttemptCallOutcome>, waits: Vec<WaitOutcome>) {
         let mut attempt = FakeAttempt {
             script: attempts.into(),
@@ -257,7 +249,6 @@ impl Driver for RetryLoopDriver {
     }
 }
 
-/// Three retryable failures exhaust the attempts and start two backoffs.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
     init = "scenarioExhaustRetryable",
@@ -269,7 +260,6 @@ fn retry_loop_exhausts_retryable_failures() -> impl Driver {
     RetryLoopDriver::default()
 }
 
-/// A retryable failure followed by success.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
     init = "scenarioSuccessAfterRetry",
@@ -281,7 +271,6 @@ fn retry_loop_succeeds_after_retry() -> impl Driver {
     RetryLoopDriver::default()
 }
 
-/// A non-retryable failure stops on the first attempt.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
     init = "scenarioFatalFirst",
@@ -293,7 +282,6 @@ fn retry_loop_stops_on_fatal_error() -> impl Driver {
     RetryLoopDriver::default()
 }
 
-/// Cancellation during a backoff prevents the next attempt.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
     init = "scenarioCancelDuringBackoff",
@@ -305,7 +293,6 @@ fn retry_loop_cancel_during_backoff() -> impl Driver {
     RetryLoopDriver::default()
 }
 
-/// Cancellation already delivered before the first attempt starts no attempt.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
     init = "scenarioCancelBeforeFirstAttempt",
@@ -317,8 +304,6 @@ fn retry_loop_cancel_before_first_attempt() -> impl Driver {
     RetryLoopDriver::default()
 }
 
-/// Cancellation during the third in-flight attempt is observed as `Canceled`
-/// with three attempts (and two backoffs) started.
 #[quint_run(
     spec = "../modeling/quint/SynthesisRetry.qnt",
     init = "scenarioCancelInFlightThird",

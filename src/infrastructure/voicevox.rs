@@ -60,21 +60,11 @@ pub struct AvailableModel {
 
 pub type StyleModelMapBuildResult = (HashMap<u32, u32>, Vec<Speaker>, Vec<AvailableModel>);
 
-/// Opens a voice model file from an explicit path.
-///
-/// # Errors
-///
-/// Returns an error if the model cannot be opened.
 pub fn open_voice_model_file(model_path: &Path) -> Result<VoiceModelFile> {
     VoiceModelFile::open(model_path)
         .map_err(|e| anyhow!("Failed to open model file {}: {e}", model_path.display()))
 }
 
-/// Resolves `<model_id>.vvm` in the daemon model directory and opens it.
-///
-/// # Errors
-///
-/// Returns an error if the model file does not exist or cannot be opened.
 pub fn open_voice_model_file_by_id(model_id: u32) -> Result<VoiceModelFile> {
     let models_dir = crate::infrastructure::paths::find_models_dir()?;
     let model_path = models_dir.join(format!("{model_id}.vvm"));
@@ -208,11 +198,6 @@ fn is_vvm_path(path: &Path) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("vvm"))
 }
 
-/// Scans the configured models directory for available VOICEVOX model files.
-///
-/// # Errors
-///
-/// Returns an error if the models directory cannot be resolved or directory traversal fails.
 pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     use crate::infrastructure::paths::find_models_dir_client;
 
@@ -223,27 +208,10 @@ pub fn scan_available_models() -> Result<Vec<AvailableModel>> {
     Ok(models)
 }
 
-/// Checks if any VOICEVOX models are available in the models directory.
+/// Returns true when at least one `.vvm` model file is discoverable.
 ///
-/// This function scans the models directory for `.vvm` files and returns
-/// `true` if at least one model is found, `false` otherwise.
-///
-/// # Returns
-///
-/// * `true` - At least one voice model is available
-/// * `false` - No models found or error occurred during scanning
-///
-/// # Example
-///
-/// ```no_run
-/// use voicevox_cli::infrastructure::voicevox::has_available_models;
-///
-/// if has_available_models() {
-///     println!("Models are available");
-/// } else {
-///     println!("Please download models first");
-/// }
-/// ```
+/// A models directory that exists but holds no `.vvm` file counts as no models,
+/// and discovery errors are reported as `false`.
 #[must_use]
 pub fn has_available_models() -> bool {
     use crate::infrastructure::paths::find_models_dir_client;
@@ -253,8 +221,6 @@ pub fn has_available_models() -> bool {
         .is_some_and(|dir| has_any_vvm_file(&dir))
 }
 
-/// Quickly checks if any .vvm file exists in the given directory (recursively).
-/// Returns true as soon as the first .vvm file is found.
 fn has_any_vvm_file(dir: &Path) -> bool {
     if !dir.exists() {
         return false;
@@ -324,23 +290,12 @@ fn scan_model_file_entries(models_dir: &Path) -> Result<Vec<(u32, PathBuf)>> {
     Ok(entries)
 }
 
-/// Build style-to-model mapping by scanning all available models dynamically
-///
-/// # Errors
-///
-/// Returns an error if model directory scanning fails or model metadata extraction fails.
 pub fn build_style_to_model_map_async(
     core: &crate::infrastructure::core::VoicevoxCore,
 ) -> Result<StyleModelMapBuildResult> {
     build_style_to_model_map_async_with_progress(core, |_, _, _| {})
 }
 
-/// Builds a style-to-model map while reporting progress for each scanned model file.
-///
-/// # Errors
-///
-/// Returns an error if model directory scanning fails or core speaker metadata cannot be
-/// queried for the initial state.
 pub fn build_style_to_model_map_async_with_progress<F>(
     core: &crate::infrastructure::core::VoicevoxCore,
     mut progress_callback: F,

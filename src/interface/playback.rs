@@ -63,7 +63,6 @@ pub async fn emit_and_play(request: PlaybackRequest<'_>) -> Result<PlaybackOutco
     emit_and_play_with_backend(request, &mut RealAudioPlayback).await
 }
 
-/// Emit (optional file write) and play through an injected backend.
 #[doc(hidden)]
 #[allow(clippy::future_not_send)]
 pub async fn emit_and_play_with_backend<B: AudioPlayback>(

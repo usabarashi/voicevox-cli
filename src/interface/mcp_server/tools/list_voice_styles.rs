@@ -44,11 +44,6 @@ fn render_voice_styles_result(filtered_results: &[SpeakerStyles]) -> String {
     format!("{blocks}\nTotal speakers found: {}", filtered_results.len())
 }
 
-/// Executes the `list_voice_styles` tool with optional speaker/style filters.
-///
-/// # Errors
-///
-/// Returns an error if parameters are invalid or the daemon cannot be contacted.
 pub async fn handle_voice_style_list_tool(arguments: Value) -> Result<ToolCallResult> {
     let params: ListVoiceStylesParams =
         serde_json::from_value(arguments).context("Invalid parameters for list_voice_styles")?;

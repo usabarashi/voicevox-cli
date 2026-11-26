@@ -28,7 +28,6 @@ pub struct IpcModel {
     pub speakers: Vec<IpcSpeaker>,
 }
 
-/// Request messages sent from client to daemon.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum DaemonRequest {
     Synthesize {
@@ -40,7 +39,6 @@ pub enum DaemonRequest {
     ListModels,
 }
 
-/// Synthesis options for voice synthesis requests.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub struct SynthesizeOptions {
     pub rate: f32,
@@ -54,7 +52,6 @@ impl Default for SynthesizeOptions {
     }
 }
 
-/// Response messages from daemon to client.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum DaemonResponse {
     SynthesizeResult {
@@ -81,13 +78,10 @@ pub enum DaemonErrorCode {
     Internal,
 }
 
-/// Request type for owned data.
 pub type OwnedRequest = DaemonRequest;
 
-/// Response type for owned data.
 pub type OwnedResponse = DaemonResponse;
 
-/// Synthesis options for owned data.
 pub type OwnedSynthesizeOptions = SynthesizeOptions;
 
 #[cfg(test)]

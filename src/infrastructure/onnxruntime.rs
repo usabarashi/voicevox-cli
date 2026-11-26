@@ -3,11 +3,6 @@ use voicevox_core::blocking::Onnxruntime;
 
 use crate::infrastructure::paths::find_onnxruntime;
 
-/// Initializes ONNX Runtime from installed resources or bundled defaults.
-///
-/// # Errors
-///
-/// Returns an error when runtime loading fails.
 pub fn initialize() -> Result<&'static Onnxruntime> {
     find_onnxruntime()
         .map_or_else(

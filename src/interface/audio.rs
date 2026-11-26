@@ -16,12 +16,6 @@ pub(crate) fn preferred_audio_players() -> Vec<&'static str> {
     players
 }
 
-/// Plays synthesized WAV audio from memory using rodio or a system player fallback.
-///
-/// # Errors
-///
-/// Returns an error if audio decoding/playback fails and no compatible system player
-/// (such as `afplay` or `play`) succeeds.
 pub fn play_audio_from_memory(wav_data: &[u8]) -> Result<()> {
     if env::var(crate::config::ENV_VOICEVOX_LOW_LATENCY).is_ok() {
         play_audio_via_rodio(wav_data)

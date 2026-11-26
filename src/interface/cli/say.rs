@@ -24,11 +24,6 @@ pub struct SaySynthesisRequest<'a> {
     pub socket_path: PathBuf,
 }
 
-/// Runs the main CLI synthesis use case against the daemon, including setup-on-demand.
-///
-/// # Errors
-///
-/// Returns an error if validation fails, setup fails, daemon connection fails, or playback/write fails.
 pub async fn run_say_synthesis(request: SaySynthesisRequest<'_>) -> Result<()> {
     let output = StdAppOutput;
     run_say_synthesis_with_output(request, &output).await

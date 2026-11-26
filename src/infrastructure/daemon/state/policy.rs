@@ -6,8 +6,6 @@ use super::catalog::ModelCatalog;
 use super::executor::DaemonSynthesisExecutor;
 use super::result::{DaemonServiceError, DaemonServiceResult};
 
-/// Explicitly serialized synthesis policy.
-///
 /// VOICEVOX core/model loading is executed under a single async mutex to keep memory usage
 /// predictable under the current no-model-cache design.
 #[doc(hidden)]

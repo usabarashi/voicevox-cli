@@ -27,7 +27,6 @@ Environment variables:
 EOF
 }
 
-# Parse arguments
 MODE="setup"
 SKIP_CONFIRM=false
 DRY_RUN=false
@@ -42,14 +41,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate option combinations
 if [ "$MODE" = "setup" ] && { [ "$SKIP_CONFIRM" = true ] || [ "$DRY_RUN" = true ]; }; then
     echo "Error: -y/--yes and -n/--dry-run can only be used with --purge" >&2
     show_help
     exit 1
 fi
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -65,7 +62,6 @@ create_onnxruntime_symlinks() {
         return 0
     fi
     
-    # Check for macOS .dylib files
     for lib in "$lib_dir"/libvoicevox_onnxruntime.*.dylib; do
         if [ -f "$lib" ]; then
             filename=$(basename "$lib")
@@ -80,8 +76,7 @@ create_onnxruntime_symlinks() {
                 fi
                 ln -sf "$filename" "$symlink_path"
                 echo "  Created: libonnxruntime.$version.dylib -> $filename"
-                
-                # Also create version-less symlink
+
                 versionless_path="$lib_dir/libonnxruntime.dylib"
                 if [ ! -e "$versionless_path" ]; then
                     ln -sf "$filename" "$versionless_path"
@@ -91,7 +86,6 @@ create_onnxruntime_symlinks() {
         fi
     done
     
-    # Check for Linux .so files
     for lib in "$lib_dir"/libvoicevox_onnxruntime.*.so; do
         if [ -f "$lib" ]; then
             filename=$(basename "$lib")
@@ -106,8 +100,7 @@ create_onnxruntime_symlinks() {
                 fi
                 ln -sf "$filename" "$symlink_path"
                 echo "  Created: libonnxruntime.$version.so -> $filename"
-                
-                # Also create version-less symlink
+
                 versionless_path="$lib_dir/libonnxruntime.so"
                 if [ ! -e "$versionless_path" ]; then
                     ln -sf "$filename" "$versionless_path"
@@ -218,7 +211,7 @@ assert_safe_path() {
 
 # --- Purge mode ---
 if [ "$MODE" = "purge" ]; then
-    # Resolve socket path (mirrors src/paths.rs get_socket_path)
+    # Resolve socket path (mirrors src/infrastructure/paths.rs get_socket_path)
     if [ -n "${VOICEVOX_SOCKET_PATH:-}" ]; then
         SOCKET_PATH="$VOICEVOX_SOCKET_PATH"
     elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
@@ -309,7 +302,6 @@ if [ "$MODE" = "purge" ]; then
         echo ""
     fi
 
-    # Stop daemon
     if [[ " ${TARGETS[*]} " =~ " daemon " ]]; then
         echo -e "${BLUE}Stopping daemon...${NC}"
         kill -TERM $PIDS 2>/dev/null || true
@@ -321,14 +313,12 @@ if [ "$MODE" = "purge" ]; then
         echo "  Done"
     fi
 
-    # Remove socket
     if [[ " ${TARGETS[*]} " =~ " socket " ]]; then
         echo -e "${BLUE}Removing socket...${NC}"
         rm -f "$SOCKET_PATH"
         echo "  $SOCKET_PATH"
     fi
 
-    # Remove data directory
     if [[ " ${TARGETS[*]} " =~ " data " ]]; then
         assert_safe_path "$DATA_DIR" "DATA_DIR"
         echo -e "${BLUE}Removing data...${NC}"
@@ -336,7 +326,6 @@ if [ "$MODE" = "purge" ]; then
         echo "  $DATA_DIR"
     fi
 
-    # Remove config directory
     if [[ " ${TARGETS[*]} " =~ " config " ]]; then
         assert_safe_path "$CONFIG_DIR" "CONFIG_DIR"
         echo -e "${BLUE}Removing config...${NC}"

@@ -107,10 +107,6 @@ fn warn_nonfatal_daemon_issue(error: &DaemonError, output: &dyn AppOutput) {
     }
 }
 
-/// Runs the MCP server application flow, attempting daemon startup first.
-///
-/// # Errors
-///
 /// Returns an error only if the MCP stdio server itself fails.
 pub async fn run_mcp_server_app() -> Result<()> {
     let output = StdAppOutput;

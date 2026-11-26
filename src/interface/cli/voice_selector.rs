@@ -2,11 +2,6 @@ use anyhow::{Result, anyhow};
 
 use crate::infrastructure::voicevox::scan_available_models;
 
-/// Resolves CLI voice input into a style/model ID and description.
-///
-/// # Errors
-///
-/// Returns an error if model discovery fails or the input cannot be resolved.
 pub fn resolve_voice_input(voice_input: &str) -> Result<(u32, String)> {
     let voice_input = voice_input.trim();
 

@@ -74,7 +74,6 @@ struct IpcState {
     ipc_error: IpcError,
 }
 
-/// What the fake server does in response to one request.
 #[derive(Clone, Copy)]
 enum Fault {
     Valid,
@@ -121,8 +120,6 @@ impl Fault {
     }
 }
 
-/// Reads one length-delimited request, then writes the chosen response frame
-/// (or closes for `None`).
 async fn serve_once(listener: UnixListener, payload: Option<Vec<u8>>) {
     let Ok((mut stream, _)) = listener.accept().await else {
         return;
@@ -251,7 +248,6 @@ impl Driver for IpcDriver {
     }
 }
 
-/// A valid response yields `Done`.
 #[quint_run(
     spec = "../modeling/quint/IPC.qnt",
     init = "scenarioValid",
@@ -263,7 +259,6 @@ fn ipc_valid_response() -> impl Driver {
     IpcDriver::default()
 }
 
-/// An undecodable frame fails.
 #[quint_run(
     spec = "../modeling/quint/IPC.qnt",
     init = "scenarioCorrupt",
@@ -275,7 +270,6 @@ fn ipc_corrupt_frame() -> impl Driver {
     IpcDriver::default()
 }
 
-/// A valid frame of the wrong variant fails.
 #[quint_run(
     spec = "../modeling/quint/IPC.qnt",
     init = "scenarioMismatch",
@@ -287,7 +281,6 @@ fn ipc_response_mismatch() -> impl Driver {
     IpcDriver::default()
 }
 
-/// A closed stream without a response fails.
 #[quint_run(
     spec = "../modeling/quint/IPC.qnt",
     init = "scenarioNoResponse",
@@ -299,7 +292,6 @@ fn ipc_no_response() -> impl Driver {
     IpcDriver::default()
 }
 
-/// A protocol `Error` response fails.
 #[quint_run(
     spec = "../modeling/quint/IPC.qnt",
     init = "scenarioProtocolError",

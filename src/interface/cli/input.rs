@@ -16,11 +16,6 @@ fn read_input_file(file_path: &str) -> Result<String> {
     }
 }
 
-/// Resolves input text from CLI argument, file, or stdin (in that order).
-///
-/// # Errors
-///
-/// Returns an error if the specified input file cannot be read or stdin reading fails.
 pub fn get_input_text_from_sources(text: Option<&str>, input_file: Option<&str>) -> Result<String> {
     match (text, input_file) {
         (Some(text), _) => Ok(text.to_owned()),

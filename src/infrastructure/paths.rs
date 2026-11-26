@@ -82,8 +82,6 @@ fn is_valid_onnxruntime_filename(filename: &str) -> bool {
     }
 }
 
-/// Get the default VOICEVOX data directory path using XDG Base Directory specification
-/// Priority: $`XDG_DATA_HOME/voicevox` > ~/.local/share/voicevox
 #[must_use]
 pub fn get_default_voicevox_dir() -> PathBuf {
     std::env::var(crate::config::ENV_XDG_DATA_HOME)
@@ -133,11 +131,6 @@ pub fn get_socket_path() -> PathBuf {
         })
 }
 
-/// Finds the VOICEVOX models directory, honoring environment overrides first.
-///
-/// # Errors
-///
-/// Returns an error if no plausible models directory can be found.
 pub fn find_models_dir() -> Result<PathBuf> {
     let xdg_dirs = xdg_app_data_dirs();
     existing_dir_from_env(crate::config::ENV_VOICEVOX_MODELS_DIR)
@@ -160,14 +153,8 @@ pub fn find_models_dir() -> Result<PathBuf> {
         })
 }
 
-/// Finds the models directory with a more permissive client-side fallback.
-///
-/// # Errors
-///
-/// Returns an error only if fallback path construction fails unexpectedly.
 pub fn find_models_dir_client() -> Result<PathBuf> {
     find_models_dir().or_else(|_| {
-        // Use XDG Base Directory for client fallback
         let base_dir = get_default_voicevox_dir();
         let default_path = base_dir.join(MODELS_SUBDIR);
 
@@ -179,11 +166,6 @@ pub fn find_models_dir_client() -> Result<PathBuf> {
     })
 }
 
-/// Finds the `OpenJTalk` dictionary directory used by VOICEVOX.
-///
-/// # Errors
-///
-/// Returns an error if no installed dictionary can be located.
 pub fn find_openjtalk_dict() -> Result<PathBuf> {
     existing_dir_from_env(crate::config::ENV_VOICEVOX_OPENJTALK_DICT)
         .or_else(|| {
@@ -228,7 +210,6 @@ fn find_openjtalk_dict_in_xdg_dir(dir: &Path) -> Option<PathBuf> {
         })
 }
 
-/// A candidate ONNX Runtime library with the attributes used for ranking.
 struct OnnxLibraryCandidate {
     path: PathBuf,
     /// `libvoicevox_onnxruntime.*` rather than a compatibility symlink.
@@ -236,16 +217,14 @@ struct OnnxLibraryCandidate {
     version: Option<Vec<u64>>,
 }
 
-/// True for the Linux versioned library name `libvoicevox_onnxruntime.so.<version>`
-/// (for example `libvoicevox_onnxruntime.so.1.23.2`), which ELF soname
-/// conventions use there instead of the macOS `<version>.dylib` form.
+/// ELF soname conventions put the version after the `so` extension on Linux,
+/// unlike the macOS `<version>.dylib` form.
 fn is_versioned_linux_onnxruntime_filename(filename: &str) -> bool {
     filename
         .strip_prefix("libvoicevox_onnxruntime.so.")
         .is_some_and(is_numeric_version)
 }
 
-/// True when `text` is a dot-separated sequence of non-empty decimal numbers.
 fn is_numeric_version(text: &str) -> bool {
     !text.is_empty()
         && text
@@ -253,8 +232,6 @@ fn is_numeric_version(text: &str) -> bool {
             .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
-/// Extracts the numeric version from a VOICEVOX ONNX Runtime library filename.
-///
 /// Handles the macOS form `libvoicevox_onnxruntime.<version>.dylib` and the
 /// Linux form `libvoicevox_onnxruntime.so.<version>` (and the `libonnxruntime.`
 /// compatibility prefix for either); unversioned names yield `None`.
@@ -274,9 +251,6 @@ fn parse_onnxruntime_version(filename: &str) -> Option<Vec<u64>> {
     (!version.is_empty()).then_some(version)
 }
 
-/// Ranks ONNX Runtime libraries so the best candidate comes first: originals
-/// before compatibility symlinks, then the highest version, then a stable path
-/// order.
 fn find_onnx_libraries_in_dir(lib_dir: &Path) -> Vec<PathBuf> {
     let mut candidates = std::fs::read_dir(lib_dir)
         .ok()
@@ -315,8 +289,6 @@ fn first_onnx_library_in(lib_dir: &Path) -> Option<PathBuf> {
         .and_then(|candidates| candidates.into_iter().next())
 }
 
-/// Validates ORT_DYLIB_PATH env var: checks file existence, filename validity,
-/// and resolves symlinks.
 fn validated_ort_dylib_path() -> Option<PathBuf> {
     std::env::var(crate::config::ENV_ORT_DYLIB_PATH)
         .ok()
@@ -331,11 +303,6 @@ fn validated_ort_dylib_path() -> Option<PathBuf> {
         .filter(|p| p.is_file())
 }
 
-/// Finds the ONNX Runtime dynamic library path used by VOICEVOX Core.
-///
-/// # Errors
-///
-/// Returns an error if no valid ONNX Runtime library candidate can be found.
 pub fn find_onnxruntime() -> Result<PathBuf> {
     validated_ort_dylib_path()
         .or_else(|| {
@@ -364,9 +331,6 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// Versioned ONNX Runtime library filename as VOICEVOX ships it on this
-    /// platform. The version precedes the extension on macOS and Windows but
-    /// follows the `so` extension on Linux.
     fn versioned_onnx_library(version: &str) -> String {
         if cfg!(target_os = "linux") {
             format!("libvoicevox_onnxruntime.so.{version}")
@@ -377,7 +341,6 @@ mod tests {
         }
     }
 
-    /// Unversioned ONNX Runtime library filename accepted on this platform.
     fn unversioned_onnx_library() -> &'static str {
         if cfg!(target_os = "linux") {
             "libonnxruntime.so"

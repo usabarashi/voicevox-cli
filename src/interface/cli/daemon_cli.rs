@@ -386,11 +386,6 @@ async fn handle_status_daemon_with_os(
     Ok(())
 }
 
-/// Executes daemon CLI flow from already-parsed flags and exits the process when required.
-///
-/// # Errors
-///
-/// Returns an error if command dispatch or daemon runtime fails.
 pub async fn run_daemon_cli(socket_path: PathBuf, flags: DaemonCliFlags) -> Result<i32> {
     let output = StdAppOutput;
     run_daemon_cli_with_output(socket_path, flags, &output).await

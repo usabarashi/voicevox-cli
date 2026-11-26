@@ -105,8 +105,6 @@ pub(crate) async fn connect_socket_with_timeout(
     Ok(stream)
 }
 
-/// One connection attempt.
-///
 /// Implemented by the real socket connector; the model-based test
 /// `mbt/tests/mcp_connect.rs` substitutes a counting fake to check the connect
 /// budget (`modeling/quint/MCPServer.qnt`).
@@ -119,10 +117,6 @@ pub trait ConnectAttempt {
     async fn connect_once(&mut self) -> Result<Self::Output, Self::Error>;
 }
 
-/// The connect retry loop used by [`connect_with_retry`]: up to `attempts`
-/// attempts with exponential backoff, then one final attempt without sleep.
-///
-/// Returns the result and the number of attempts made.
 #[doc(hidden)]
 pub async fn retry_with_final<A: ConnectAttempt>(
     connector: &mut A,

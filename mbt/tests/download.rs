@@ -42,8 +42,6 @@ struct DownloadState {
     failure: FailureKind,
 }
 
-/// Fake installer: pops one scripted outcome per invocation, and records the
-/// cleanup/retry calls the loop makes.
 #[derive(Default)]
 struct FakeInstaller {
     script: VecDeque<DownloadAttempt>,
@@ -162,7 +160,6 @@ impl Driver for DownloadDriver {
     }
 }
 
-/// The first invocation succeeds.
 #[quint_run(
     spec = "../modeling/quint/Download.qnt",
     init = "scenarioDoneFirst",
@@ -174,7 +171,6 @@ fn download_succeeds_first_attempt() -> impl Driver {
     DownloadDriver::default()
 }
 
-/// Two failures, then success on the third invocation.
 #[quint_run(
     spec = "../modeling/quint/Download.qnt",
     init = "scenarioDoneThird",
@@ -186,7 +182,6 @@ fn download_succeeds_third_attempt() -> impl Driver {
     DownloadDriver::default()
 }
 
-/// Three failures exhaust the invocation budget.
 #[quint_run(
     spec = "../modeling/quint/Download.qnt",
     init = "scenarioExhausted",

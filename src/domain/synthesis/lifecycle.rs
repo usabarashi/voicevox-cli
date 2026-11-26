@@ -6,7 +6,6 @@
 //!
 //! Retry/backoff is a separate concern; see [`super::retry`].
 
-/// Lifecycle of a single synthesis attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SynthesisLifecycleState {
     Idle,
@@ -18,7 +17,6 @@ pub enum SynthesisLifecycleState {
 }
 
 impl SynthesisLifecycleState {
-    /// Moves `Idle` to `Queued`; other states are unchanged.
     #[must_use]
     pub const fn queue(self) -> Self {
         match self {
@@ -27,7 +25,6 @@ impl SynthesisLifecycleState {
         }
     }
 
-    /// Moves `Queued` to `Synthesizing`; other states are unchanged.
     #[must_use]
     pub const fn start(self) -> Self {
         match self {
@@ -36,7 +33,6 @@ impl SynthesisLifecycleState {
         }
     }
 
-    /// Moves `Synthesizing` to `Done`; other states are unchanged.
     #[must_use]
     pub const fn succeed(self) -> Self {
         match self {
@@ -45,7 +41,6 @@ impl SynthesisLifecycleState {
         }
     }
 
-    /// Moves any non-terminal state to `Failed`; terminal states are unchanged.
     #[must_use]
     pub const fn fail(self) -> Self {
         match self {
@@ -54,7 +49,6 @@ impl SynthesisLifecycleState {
         }
     }
 
-    /// Moves a pending attempt to `Canceled`; terminal states are unchanged.
     #[must_use]
     pub const fn cancel(self) -> Self {
         match self {
@@ -100,7 +94,6 @@ mod tests {
             SynthesisLifecycleState::Synthesizing.cancel(),
             SynthesisLifecycleState::Canceled
         );
-        // Cancel does not resurrect terminal states.
         assert_eq!(
             SynthesisLifecycleState::Done.cancel(),
             SynthesisLifecycleState::Done

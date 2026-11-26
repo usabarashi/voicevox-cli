@@ -23,8 +23,6 @@ pub use install::{
 pub use status::{UpdateStatus, VersionInfo, collect_update_status, collect_version_info};
 pub use update::{UpdateKind, UpdateOutcome, update_dictionary_only, update_models_only};
 
-/// Maps presence flags to the list of missing startup resource names.
-///
 /// Kept pure so the model-presence policy can be tested without touching the
 /// filesystem: a directory that merely exists is not enough, at least one `.vvm`
 /// file must be discoverable (see [`has_available_models`]).
@@ -105,8 +103,8 @@ mod tests {
 
     #[test]
     fn models_dir_without_vvm_files_is_reported_missing() {
-        // Regression: an existing voicevox data directory that contains no `.vvm`
-        // files must not satisfy the models requirement.
+        // An existing voicevox data directory that contains no `.vvm` files must
+        // not satisfy the models requirement.
         assert_eq!(missing_resources(true, true, false), vec!["models"]);
     }
 

@@ -94,11 +94,6 @@ fn encode_response_or_log(response: &OwnedResponse) -> Option<Vec<u8>> {
     )
 }
 
-/// Handles a single connected daemon client until the stream closes or decoding fails.
-///
-/// # Errors
-///
-/// Returns an error if reading from or writing to the framed Unix stream fails.
 pub async fn handle_client(stream: UnixStream, state: Arc<DaemonState>) -> Result<()> {
     handle_client_with_limit(
         stream,
@@ -239,13 +234,6 @@ fn set_socket_permissions(socket_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Runs the daemon accept loop and serves requests over a Unix domain socket.
-///
-/// # Errors
-///
-/// Returns an error if socket bind fails, daemon state initialization fails,
-/// socket accept fails, or final socket cleanup fails during shutdown.
-///
 /// Daemon state (VoicevoxCore, model catalog) is initialized before binding
 /// the socket, ensuring the daemon is fully ready before clients can connect.
 /// This matches the `connectedImpliesDaemonReady` invariant in

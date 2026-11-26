@@ -69,8 +69,6 @@ struct ConnectState {
     playback_error_kind: PlaybackError,
 }
 
-/// Fake connector: fails the first `fail_before_success` attempts, then
-/// succeeds, counting every call.
 #[derive(Default)]
 struct FakeConnector {
     fail_before_success: u32,
@@ -113,8 +111,6 @@ impl Default for ConnectDriver {
 }
 
 impl ConnectDriver {
-    /// Runs the production connect loop, failing `fail_before_success`
-    /// attempts first.
     fn run(&mut self, fail_before_success: u32) {
         let mut connector = FakeConnector {
             fail_before_success,
@@ -187,7 +183,6 @@ impl Driver for ConnectDriver {
     }
 }
 
-/// The first connect succeeds.
 #[quint_run(
     spec = "../modeling/quint/MCPServer.qnt",
     init = "scenarioConnectedFirst",
@@ -199,7 +194,6 @@ fn mcp_connect_first_attempt() -> impl Driver {
     ConnectDriver::default()
 }
 
-/// The connect succeeds after three failed retries.
 #[quint_run(
     spec = "../modeling/quint/MCPServer.qnt",
     init = "scenarioConnectedAfterRetries",
@@ -211,7 +205,6 @@ fn mcp_connect_after_retries() -> impl Driver {
     ConnectDriver::default()
 }
 
-/// The whole budget (loop attempts plus the final connect) is exhausted.
 #[quint_run(
     spec = "../modeling/quint/MCPServer.qnt",
     init = "scenarioConnectFailed",

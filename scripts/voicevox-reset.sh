@@ -6,7 +6,7 @@ set -euo pipefail
 
 echo "Resetting VOICEVOX daemon state..."
 
-# Resolve socket path (mirrors src/paths.rs get_socket_path)
+# Resolve socket path (mirrors src/infrastructure/paths.rs get_socket_path)
 if [ -n "${VOICEVOX_SOCKET_PATH:-}" ]; then
   SOCKET_PATH="$VOICEVOX_SOCKET_PATH"
 elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
@@ -19,13 +19,11 @@ else
   SOCKET_PATH="/tmp/voicevox-daemon.sock"
 fi
 
-# Kill daemon processes
 PIDS=$(pgrep -u "$(id -u)" -f voicevox-daemon 2>/dev/null || true)
 if [ -n "$PIDS" ]; then
   echo "Stopping daemon processes: $PIDS"
   kill -TERM $PIDS 2>/dev/null || true
   sleep 1
-  # Force kill any remaining
   REMAINING=$(pgrep -u "$(id -u)" -f voicevox-daemon 2>/dev/null || true)
   if [ -n "$REMAINING" ]; then
     echo "Force killing: $REMAINING"
@@ -35,7 +33,6 @@ else
   echo "No daemon processes found"
 fi
 
-# Remove socket file
 if [ -e "$SOCKET_PATH" ]; then
   rm -f "$SOCKET_PATH"
   echo "Removed socket: $SOCKET_PATH"

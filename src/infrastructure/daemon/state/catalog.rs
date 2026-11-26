@@ -9,12 +9,9 @@ pub enum TargetResolution {
     Missing { message: String },
 }
 
-/// Builds `model_id -> default style_id` by selecting the **smallest** style ID
-/// of each model.
-///
 /// Exposed so that the model-based test can exercise this exact production
-/// function: the previous MBT hard-coded the resulting map, so a change of the
-/// selection rule (e.g. `min` -> `max`) would not have been detected.
+/// function: a change of the selection rule (e.g. `min` -> `max`) would
+/// otherwise go undetected.
 #[must_use]
 pub fn build_model_default_style_map(
     speakers: &[crate::infrastructure::voicevox::Speaker],
@@ -39,16 +36,6 @@ pub fn build_model_default_style_map(
         })
 }
 
-/// Resolves a requested style/model ID against a catalog snapshot.
-///
-/// This is the pure decision logic behind [`ModelCatalog::resolve_synthesis_target`];
-/// the method is a thin wrapper so that production and model-based tests exercise
-/// the exact same function.
-///
-/// Resolution order:
-/// 1. a style ID always wins (style IDs take precedence over model IDs),
-/// 2. otherwise a known model ID resolves to its smallest matching style ID,
-/// 3. otherwise the target is missing.
 #[must_use]
 pub fn resolve_target(
     style_to_model_map: &HashMap<u32, u32>,
@@ -112,8 +99,8 @@ impl ModelCatalog {
         }
     }
 
-    // Catalog is intentionally a startup-time snapshot. Runtime model add/remove is not
-    // observed until daemon restart under the current fixed-contract architecture.
+    // The catalog is a startup-time snapshot: models added or removed at runtime
+    // are only observed after a daemon restart.
     pub(super) fn new(core: &VoicevoxCore) -> Result<Self> {
         let (mapping, speakers, models) =
             crate::infrastructure::voicevox::build_style_to_model_map_async_with_progress(

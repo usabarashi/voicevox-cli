@@ -59,9 +59,9 @@ mod decode_tests {
     /// Guards the ITF decoding of the spec state without a daemon. Quint encodes
     /// sum-type values and big integers specially (`{"tag":..,"value":..}`,
     /// `{"#tup":..}`, `{"#bigint":..}`); quint-connect decodes them through the
-    /// `itf` crate. A missing `#[serde(tag = "tag", content = "value")]` made the
-    /// ignored daemon test fail on its first state comparison, so this runs in
-    /// the normal test suite.
+    /// `itf` crate. Without matching serde attributes, decoding fails only in
+    /// the ignored daemon test where it is hard to diagnose, so this pins it in
+    /// the normal suite.
     #[test]
     fn state_decodes_from_itf_encoding() {
         let raw = serde_json::json!({
@@ -449,7 +449,6 @@ impl Driver for StreamingFailureDriver {
     }
 }
 
-/// A connection failure before any segment is synthesized (daemon-free).
 #[quint_run(
     spec = "../modeling/quint/StreamingSynthesis.qnt",
     init = "scenarioConnectFail",
@@ -461,7 +460,6 @@ fn streaming_connect_failure() -> impl Driver {
     StreamingFailureDriver::default()
 }
 
-/// A cancellation delivered before the connection is established (daemon-free).
 #[quint_run(
     spec = "../modeling/quint/StreamingSynthesis.qnt",
     init = "scenarioCancelBeforeConnect",

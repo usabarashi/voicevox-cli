@@ -77,7 +77,6 @@ impl Driver for NotificationDriver {
     }
 }
 
-/// Random exploration of the notification-parsing outcomes.
 #[quint_run(
     spec = "../modeling/quint/McpNotificationParsing.qnt",
     max_samples = 200,

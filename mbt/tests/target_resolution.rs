@@ -127,7 +127,6 @@ fn available_models() -> Vec<AvailableModel> {
 
 #[derive(Default)]
 struct TargetResolutionDriver {
-    /// Observed outcome, always derived from the production function.
     outcome: Outcome,
 }
 
@@ -136,7 +135,6 @@ impl TargetResolutionDriver {
         self.outcome = Outcome::Missing;
     }
 
-    /// Calls the production resolution functions and records the observed result.
     fn resolve(&mut self, requested_id: i64) {
         let requested = u32::try_from(requested_id).expect("spec IDs fit in u32");
         let style_to_model = style_to_model_map();
@@ -192,7 +190,6 @@ impl Driver for TargetResolutionDriver {
     }
 }
 
-/// Random exploration of the resolution contract.
 #[quint_run(
     spec = "../modeling/quint/TargetResolution.qnt",
     max_samples = 400,
@@ -202,8 +199,6 @@ fn target_resolution_simulation() -> impl Driver {
     TargetResolutionDriver::default()
 }
 
-/// Fixed regression scenario: id 2 is both a style and a model ID; the style
-/// must win.
 #[quint_run(
     spec = "../modeling/quint/TargetResolution.qnt",
     init = "initCollision",
@@ -215,8 +210,6 @@ fn target_resolution_id_collision() -> impl Driver {
     TargetResolutionDriver::default()
 }
 
-/// Fixed regression scenario: a model-only ID resolves to its default style,
-/// which is the **minimum** of its style IDs (production builder).
 #[quint_run(
     spec = "../modeling/quint/TargetResolution.qnt",
     init = "initModelDefault",
@@ -228,7 +221,6 @@ fn target_resolution_model_default_style() -> impl Driver {
     TargetResolutionDriver::default()
 }
 
-/// Fixed regression scenario: a known model with no style endpoint is missing.
 #[quint_run(
     spec = "../modeling/quint/TargetResolution.qnt",
     init = "initNoStyleModel",
@@ -240,7 +232,6 @@ fn target_resolution_no_style_model() -> impl Driver {
     TargetResolutionDriver::default()
 }
 
-/// Fixed regression scenario: an unknown ID is missing.
 #[quint_run(
     spec = "../modeling/quint/TargetResolution.qnt",
     init = "initUnknown",

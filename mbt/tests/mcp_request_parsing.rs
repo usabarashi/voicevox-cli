@@ -116,7 +116,6 @@ impl Driver for ParsingDriver {
     }
 }
 
-/// Random exploration of the request-parsing outcomes.
 #[quint_run(
     spec = "../modeling/quint/McpRequestParsing.qnt",
     max_samples = 400,
@@ -126,7 +125,6 @@ fn mcp_request_parsing_simulation() -> impl Driver {
     ParsingDriver::default()
 }
 
-/// Fixed regression scenario: a request without a method is invalid.
 #[quint_run(
     spec = "../modeling/quint/McpRequestParsing.qnt",
     init = "initMissingMethod",
@@ -138,7 +136,6 @@ fn mcp_request_parsing_missing_method() -> impl Driver {
     ParsingDriver::default()
 }
 
-/// Fixed regression scenario: non-object `tools/call` arguments are invalid.
 #[quint_run(
     spec = "../modeling/quint/McpRequestParsing.qnt",
     init = "initBadArguments",
@@ -150,7 +147,6 @@ fn mcp_request_parsing_bad_arguments() -> impl Driver {
     ParsingDriver::default()
 }
 
-/// Fixed regression scenario: an unknown method is reported as unknown.
 #[quint_run(
     spec = "../modeling/quint/McpRequestParsing.qnt",
     init = "initUnknownMethod",

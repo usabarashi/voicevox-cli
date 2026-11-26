@@ -20,25 +20,10 @@ use crate::infrastructure::voicevox::{
 /// `mbt/tests/model_lifecycle.rs` substitutes a recording fake to check the
 /// per-request load/unload contract (`modeling/quint/ModelLifecycle.qnt`).
 pub trait ModelRuntime {
-    /// Loads a voice model by numeric model ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the model cannot be loaded.
     fn load_model(&self, model_id: u32) -> Result<()>;
 
-    /// Synthesizes audio for the given text, style, and speech rate.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if synthesis fails.
     fn synthesize(&self, text: &str, style_id: u32, rate: f32) -> Result<Vec<u8>>;
 
-    /// Unloads a voice model by file path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the model cannot be unloaded.
     fn unload_model_by_path(&self, model_path: &Path) -> Result<()>;
 }
 
@@ -65,18 +50,9 @@ pub trait CoreSynthesis {
     where
         Self: 'a;
 
-    /// Synthesizes audio for the given text and style.
-    ///
-    /// # Errors
-    ///
-    /// Returns an implementation-specific error if synthesis fails.
     fn synthesize<'a>(&'a self, text: &str, style_id: u32)
     -> Result<Self::Output<'a>, Self::Error>;
-    /// Returns speaker metadata currently visible to the core instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an implementation-specific error if metadata retrieval fails.
+
     fn get_speakers(&self) -> Result<Self::SpeakerData<'_>, Self::Error>;
 }
 
@@ -85,12 +61,6 @@ pub struct VoicevoxCore {
 }
 
 impl VoicevoxCore {
-    /// Creates a `VoicevoxCore` instance and initializes ONNX Runtime/OpenJTalk.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if runtime libraries, dictionary resources, or the synthesizer
-    /// builder cannot be initialized.
     pub fn new() -> Result<Self> {
         let onnxruntime = onnxruntime::initialize()?;
         let open_jtalk = openjtalk::initialize()?;
@@ -105,12 +75,6 @@ impl VoicevoxCore {
         Ok(Self { synthesizer })
     }
 
-    /// Synthesizes speech while applying a speech-rate multiplier via `AudioQuery`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if text is empty, rate is outside the supported range, or
-    /// query generation/synthesis fails.
     pub fn synthesize_with_rate(&self, text: &str, style_id: u32, rate: f32) -> Result<Vec<u8>> {
         if text.trim().is_empty() {
             return Err(anyhow!("Empty text provided for synthesis"));
@@ -164,12 +128,6 @@ impl CoreSynthesis for VoicevoxCore {
 }
 
 impl VoicevoxCore {
-    /// Loads a specific `.vvm` voice model by numeric model ID (e.g. `3` => `3.vvm`).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the model directory cannot be found, the model file does not
-    /// exist, or the core fails to load the model.
     pub fn load_specific_model(&self, model_id: u32) -> Result<()> {
         let model = open_voice_model_file_by_id(model_id)?;
 
@@ -180,11 +138,6 @@ impl VoicevoxCore {
             .map_err(|e| anyhow!("Failed to load model {model_id}: {e}"))
     }
 
-    /// Unloads a voice model by file path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the model file cannot be opened or the core fails to unload it.
     pub fn unload_voice_model_by_path(&self, model_path: &Path) -> Result<()> {
         let voice_model_id = open_voice_model_file(model_path)?.id();
 

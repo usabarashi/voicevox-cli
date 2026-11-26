@@ -3,11 +3,6 @@ use voicevox_core::blocking::OpenJtalk;
 
 use crate::infrastructure::paths::find_openjtalk_dict;
 
-/// Initializes OpenJTalk from installed dictionary resources.
-///
-/// # Errors
-///
-/// Returns an error when dictionary path resolution or OpenJTalk creation fails.
 pub fn initialize() -> Result<OpenJtalk> {
     let dict_path = find_openjtalk_dict()?;
     let dict_path = dict_path

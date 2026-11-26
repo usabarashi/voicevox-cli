@@ -5,21 +5,16 @@ use crate::infrastructure::core::ModelRuntime;
 use super::catalog::{ModelCatalog, TargetResolution};
 use super::result::{DaemonServiceError, DaemonServiceErrorKind, DaemonServiceResult};
 
-/// Creates a fresh model runtime per request.
-///
 /// Per-request creation (rather than a cached core) is the documented memory
 /// contract; the factory seam lets the model-based test substitute a recording
 /// fake.
 pub type ModelRuntimeFactory<R> = Box<dyn Fn() -> anyhow::Result<R> + Send + Sync>;
 
-/// Executes one daemon synthesis request: load a model, synthesize, unload.
 #[doc(hidden)]
 pub struct DaemonSynthesisExecutor<R: ModelRuntime> {
     create: ModelRuntimeFactory<R>,
 }
 
-/// RAII guard that unloads a voice model on drop.
-///
 /// Guarantees the model is unloaded even on panic or task cancellation (the
 /// daemon's per-request load/unload contract), which is modelled by
 /// `modeling/quint/ModelLifecycle.qnt`.
@@ -99,8 +94,6 @@ impl<R: ModelRuntime> DaemonSynthesisExecutor<R> {
         }
 
         let synthesis_result = {
-            // RAII guard ensures the model is always unloaded, even on panic or
-            // task cancellation.
             let _model_guard = ModelUnloadGuard {
                 core: &core,
                 model_id,

@@ -7,15 +7,13 @@ use super::{
 };
 use crate::infrastructure::paths::get_default_voicevox_dir;
 
-/// Total downloader invocations the installer performs.
-///
 /// Production `max_retries = 3` means three total invocations (not an initial
 /// attempt plus three retries). Mirrors `MAX_ATTEMPTS` in
 /// `modeling/quint/Download.qnt`.
 #[doc(hidden)]
 pub const MAX_DOWNLOAD_ATTEMPTS: u32 = 3;
 
-/// Phase of the installer retry loop. Mirrors `DState` in `Download.qnt`.
+/// Mirrors `DState` in `Download.qnt`.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadPhase {
@@ -26,9 +24,8 @@ pub enum DownloadPhase {
     Failed,
 }
 
-/// Terminal failure class. Mirrors `FailureKind` in `Download.qnt` (the
-/// preparation-failure case is detected before the loop and is not produced by
-/// the tracker).
+/// Mirrors `FailureKind` in `Download.qnt` (the preparation-failure case is
+/// detected before the loop and is not produced by the tracker).
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadFailure {
@@ -36,8 +33,6 @@ pub enum DownloadFailure {
     Exhausted,
 }
 
-/// Retry state machine for the installer.
-///
 /// `install_with_retries` drives this for the real installer; the model-based
 /// test `mbt/tests/download.rs` observes the resulting `(phase, attempts,
 /// failure)` against `modeling/quint/Download.qnt`. Attempts are counted at
@@ -77,7 +72,6 @@ impl DownloadTracker {
         self.failure
     }
 
-    /// `Idle -> Downloading`, counting the first invocation.
     pub fn begin(&mut self) -> bool {
         if self.phase != DownloadPhase::Idle {
             return false;
@@ -87,7 +81,6 @@ impl DownloadTracker {
         true
     }
 
-    /// `Downloading -> Done`.
     pub fn succeeded(&mut self) -> bool {
         if self.phase != DownloadPhase::Downloading {
             return false;
@@ -96,8 +89,6 @@ impl DownloadTracker {
         true
     }
 
-    /// A failed invocation either needs cleanup before a retry, or exhausts the
-    /// invocation budget.
     pub fn failed(&mut self) -> bool {
         if self.phase != DownloadPhase::Downloading {
             return false;
@@ -111,7 +102,6 @@ impl DownloadTracker {
         true
     }
 
-    /// `Cleaning -> Downloading`, counting the next invocation.
     pub fn cleanup_done(&mut self) -> bool {
         if self.phase != DownloadPhase::Cleaning {
             return false;
@@ -122,7 +112,6 @@ impl DownloadTracker {
     }
 }
 
-/// Result of one downloader invocation.
 #[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DownloadAttempt {
@@ -130,8 +119,6 @@ pub enum DownloadAttempt {
     Failed { detail: String },
 }
 
-/// The installer's environment: one downloader invocation, cleanup, and the
-/// wait between invocations.
 #[doc(hidden)]
 #[allow(async_fn_in_trait)]
 pub trait ResourceInstaller {
@@ -140,7 +127,6 @@ pub trait ResourceInstaller {
     async fn wait_before_retry(&mut self);
 }
 
-/// Report of the retry loop (always returned; inspect `phase`).
 #[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallReport {
@@ -150,8 +136,6 @@ pub struct InstallReport {
     pub last_detail: Option<String>,
 }
 
-/// Runs the installer with the retry/cleanup policy, driven by
-/// [`DownloadTracker`].
 #[doc(hidden)]
 pub async fn install_with_retries<I: ResourceInstaller>(
     installer: &mut I,
@@ -188,8 +172,6 @@ pub async fn install_with_retries<I: ResourceInstaller>(
     }
 }
 
-/// Production installer: spawns the external downloader and cleans the target
-/// directory between invocations.
 struct CommandInstaller {
     downloader_path: PathBuf,
     missing_resources: Vec<String>,

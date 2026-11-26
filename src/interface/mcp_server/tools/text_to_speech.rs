@@ -40,7 +40,6 @@ struct TextToSpeechToolInput {
     streaming: bool,
 }
 
-/// Result of one client-side synthesis attempt, as seen by the retry loop.
 #[doc(hidden)]
 pub enum AttemptCallOutcome {
     Completed(Vec<u8>),
@@ -48,7 +47,6 @@ pub enum AttemptCallOutcome {
     Failed(anyhow::Error),
 }
 
-/// Result of waiting for a backoff.
 #[doc(hidden)]
 pub enum WaitOutcome {
     Elapsed,
@@ -69,7 +67,7 @@ pub trait SynthesisAttempt {
     ) -> AttemptCallOutcome;
 }
 
-/// Waits for a backoff delay. Cancellation has priority when both are ready.
+/// Cancellation has priority when both the delay and a cancellation are ready.
 #[doc(hidden)]
 #[allow(async_fn_in_trait)]
 pub trait BackoffWaiter {
@@ -80,8 +78,6 @@ pub trait BackoffWaiter {
     ) -> WaitOutcome;
 }
 
-/// Outcome of the retry loop, including the observed attempt/backoff counts.
-///
 /// Exposed (like the traits above) so the model-based test can drive the real
 /// `run_retry_loop` with controllable seams and compare the observed counters
 /// against `modeling/quint/SynthesisRetry.qnt`.
@@ -95,21 +91,11 @@ pub struct RetryLoopResult {
     pub backoffs_started: u32,
 }
 
-/// Executes the `text_to_speech` tool without external cancellation.
-///
-/// # Errors
-///
-/// Returns an error if parameter validation or synthesis fails.
 #[allow(clippy::future_not_send)]
 pub async fn handle_text_to_speech(arguments: Value) -> Result<ToolCallResult> {
     handle_text_to_speech_cancellable(arguments, None).await
 }
 
-/// Executes the `text_to_speech` tool with optional cancellation support.
-///
-/// # Errors
-///
-/// Returns an error if parameters are invalid or synthesis fails.
 #[allow(clippy::future_not_send)]
 pub async fn handle_text_to_speech_cancellable(
     arguments: Value,
@@ -137,7 +123,6 @@ pub async fn handle_text_to_speech_cancellable(
     }
 }
 
-/// Runs a potentially non-Send text-to-speech async task on a blocking worker thread.
 pub fn spawn_non_send_text_to_speech_task<F>(future_factory: F)
 where
     F: FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> + Send + 'static,
@@ -261,14 +246,11 @@ async fn handle_daemon_synthesis(
     Ok(success_result())
 }
 
-/// Drives the client-side synthesis retry loop.
-///
 /// The retry/backoff decision comes from `domain::synthesis::retry`; this loop
 /// only orchestrates. Cancellation is evaluated before every attempt and has
 /// priority while waiting for a backoff. Attempts and backoffs are counted so
-/// the observed behavior can be asserted.
-/// Drives the client-side retry loop. Exposed (with the traits above) as the
-/// production seam for `mbt/tests/synthesis_retry_loop.rs`.
+/// the observed behavior can be asserted. Exposed (with the traits above) as
+/// the production seam for `mbt/tests/synthesis_retry_loop.rs`.
 #[doc(hidden)]
 #[allow(clippy::future_not_send)]
 pub async fn run_retry_loop<A, W>(
@@ -351,7 +333,6 @@ fn take_cancellation(cancel_rx: &mut Option<oneshot::Receiver<String>>) -> Optio
     cancel_rx.as_mut().and_then(try_take_cancellation)
 }
 
-/// Production synthesis attempt: delegates to the daemon client.
 struct RealSynthesisAttempt;
 
 impl SynthesisAttempt for RealSynthesisAttempt {
@@ -370,7 +351,6 @@ impl SynthesisAttempt for RealSynthesisAttempt {
     }
 }
 
-/// Production backoff wait: real timer, cancellation first (`biased`).
 struct RealBackoffWaiter;
 
 impl BackoffWaiter for RealBackoffWaiter {

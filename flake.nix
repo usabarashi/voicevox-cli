@@ -76,10 +76,8 @@
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         version = cargoToml.package.version;
 
-        # Fenix stable toolchain
         rustToolchain = fenix.packages.${system}.stable;
 
-        # Minimal toolchain for builds and checks (no rust-src/rust-docs)
         buildToolchain = fenix.packages.${system}.combine [
           rustToolchain.rustc
           rustToolchain.cargo
@@ -87,10 +85,8 @@
           rustToolchain.clippy
         ];
 
-        # Crane library with minimal fenix toolchain
         craneLib = (crane.mkLib pkgs).overrideToolchain buildToolchain;
 
-        # Source filtering
         src = lib.cleanSourceWith {
           src = craneLib.cleanCargoSource ./.;
           filter =

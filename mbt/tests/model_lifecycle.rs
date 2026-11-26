@@ -141,8 +141,6 @@ impl Default for LifecycleDriver {
 }
 
 impl LifecycleDriver {
-    /// Replaces the fake's failure configuration and records the observed state
-    /// after running one production request.
     fn run(&mut self, fail_load: bool, fail_synth: bool) {
         // A fresh fake state per run; the factory shares it with the executor.
         self.state = Arc::new(FakeState {
@@ -223,7 +221,6 @@ impl Driver for LifecycleDriver {
     }
 }
 
-/// A successful request unloads the model.
 #[quint_run(
     spec = "../modeling/quint/ModelLifecycle.qnt",
     init = "scenarioUnloaded",
@@ -235,7 +232,6 @@ fn model_lifecycle_success() -> impl Driver {
     LifecycleDriver::default()
 }
 
-/// A synthesis failure still unloads the model (RAII guard).
 #[quint_run(
     spec = "../modeling/quint/ModelLifecycle.qnt",
     init = "scenarioUnloadedAfterSynthFailure",
@@ -247,7 +243,6 @@ fn model_lifecycle_synth_failure() -> impl Driver {
     LifecycleDriver::default()
 }
 
-/// A load failure leaves no model loaded.
 #[quint_run(
     spec = "../modeling/quint/ModelLifecycle.qnt",
     init = "scenarioLoadFailed",

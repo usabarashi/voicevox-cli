@@ -12,23 +12,16 @@ pub struct StreamingSynthesizer {
 }
 
 impl StreamingSynthesizer {
-    /// Creates a streaming synthesizer backed by a daemon client and splitter config.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the daemon cannot be reached.
     pub async fn new() -> Result<Self> {
         let daemon_rpc = DaemonClient::connect_with_retry().await?;
         Self::new_with_client_and_config(daemon_rpc, &Config::default())
     }
 
-    /// Creates a streaming synthesizer with an already-connected daemon client.
     #[allow(clippy::missing_errors_doc)]
     pub fn new_with_client(daemon_rpc: DaemonClient) -> Result<Self> {
         Self::new_with_client_and_config(daemon_rpc, &Config::default())
     }
 
-    /// Creates a streaming synthesizer with explicit configuration injection.
     #[allow(clippy::missing_errors_doc)]
     pub fn new_with_client_and_config(daemon_rpc: DaemonClient, config: &Config) -> Result<Self> {
         let delimiters = config
@@ -47,7 +40,6 @@ impl StreamingSynthesizer {
         })
     }
 
-    /// Creates a streaming synthesizer with an explicit segmentation strategy.
     #[allow(clippy::missing_errors_doc)]
     pub fn new_with_client_and_segmenter(
         daemon_rpc: DaemonClient,
@@ -59,11 +51,6 @@ impl StreamingSynthesizer {
         })
     }
 
-    /// Synthesizes text in segments and returns synthesized WAV segments.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if segment synthesis fails.
     pub async fn request_streaming_synthesis_segments(
         &mut self,
         text: &str,
@@ -92,11 +79,6 @@ impl StreamingSynthesizer {
         Ok(wav_segments)
     }
 
-    /// Appends synthesized WAV segments to the provided sink.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any audio segment cannot be decoded.
     pub fn append_segments_to_sink(&self, wav_segments: &[Vec<u8>], sink: &Player) -> Result<()> {
         for (i, wav_data) in wav_segments.iter().enumerate() {
             let cursor = Cursor::new(wav_data.clone());
@@ -110,14 +92,6 @@ impl StreamingSynthesizer {
         Ok(())
     }
 
-    /// Synthesizes text in segments and streams each to the sink as soon as it is ready.
-    ///
-    /// Playback begins after the first segment is synthesized; subsequent segments are
-    /// appended while earlier ones are already playing.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if segment synthesis or audio decoding fails.
     pub async fn synthesize_streaming(
         &mut self,
         text: &str,

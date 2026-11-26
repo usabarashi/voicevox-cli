@@ -2,15 +2,6 @@ use anyhow::{Context, Result, bail, ensure};
 
 const RIFF_HEADER_LEN: usize = 12; // "RIFF" + size + "WAVE"
 
-/// Concatenates multiple WAV segments into a single WAV file.
-///
-/// All segments must share the same audio format (channels, sample rate,
-/// bits per sample). The function extracts PCM data from each segment,
-/// combines them, and produces a new WAV with a valid header.
-///
-/// # Errors
-///
-/// Returns an error if any segment is malformed or formats are inconsistent.
 pub fn concatenate_wav_segments(segments: &[Vec<u8>]) -> Result<Vec<u8>> {
     ensure!(!segments.is_empty(), "No WAV segments to concatenate");
 
@@ -37,7 +28,6 @@ pub fn concatenate_wav_segments(segments: &[Vec<u8>]) -> Result<Vec<u8>> {
         pcm_chunks.push(pcm);
     }
 
-    // Copy everything before the data chunk from the first segment, then write new data chunk
     let pre_data_len = first_header.data_offset - 8; // offset of "data" chunk header
     let output_size = pre_data_len + 8 + total_data_size; // pre-data + data header + PCM
 
@@ -48,19 +38,15 @@ pub fn concatenate_wav_segments(segments: &[Vec<u8>]) -> Result<Vec<u8>> {
 
     let mut output = Vec::with_capacity(output_size);
 
-    // RIFF header
     output.extend_from_slice(b"RIFF");
     output.extend_from_slice(&file_size.to_le_bytes());
     output.extend_from_slice(b"WAVE");
 
-    // Chunks before data (fmt, etc.) -- copy from first segment
     output.extend_from_slice(&segments[0][RIFF_HEADER_LEN..pre_data_len]);
 
-    // Data chunk header with combined size
     output.extend_from_slice(b"data");
     output.extend_from_slice(&data_size_u32.to_le_bytes());
 
-    // Combined PCM data
     for pcm in &pcm_chunks {
         output.extend_from_slice(pcm);
     }
@@ -76,8 +62,6 @@ struct WavHeader {
     data_size: usize,
 }
 
-/// Computes the next chunk position with RIFF even-byte alignment.
-/// Returns `None` if the advance would exceed `data_len`.
 fn next_chunk_pos(pos: usize, chunk_size: usize, data_len: usize) -> Option<usize> {
     let mut next = pos.checked_add(8)?.checked_add(chunk_size)?;
     if next % 2 != 0 {
@@ -95,7 +79,6 @@ fn parse_wav_header(data: &[u8]) -> Result<WavHeader> {
     ensure!(&data[0..4] == b"RIFF", "Missing RIFF marker");
     ensure!(&data[8..12] == b"WAVE", "Missing WAVE marker");
 
-    // Find fmt chunk
     let mut pos = 12;
     let mut channels = 0u16;
     let mut sample_rate = 0u32;

@@ -17,20 +17,10 @@ async fn connect_daemon_client_with_retry_context() -> Result<DaemonClient> {
         .context("Failed to connect to VOICEVOX daemon after multiple attempts")
 }
 
-/// Selects synthesis mode with shared daemon connection policy.
-///
-/// # Errors
-///
-/// Returns an error if daemon connection fails or streaming synthesizer construction fails.
 pub async fn select_synthesis_mode(streaming: bool) -> Result<SynthesisMode> {
     select_synthesis_mode_with_config(streaming, &Config::default()).await
 }
 
-/// Selects synthesis mode with injected configuration for streaming behavior.
-///
-/// # Errors
-///
-/// Returns an error if daemon connection fails or streaming synthesizer construction fails.
 pub async fn select_synthesis_mode_with_config(
     streaming: bool,
     config: &Config,

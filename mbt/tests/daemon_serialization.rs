@@ -164,7 +164,6 @@ impl SerializationDriver {
         self.kill_daemon();
     }
 
-    /// Runs two concurrent syntheses and records the observed outcome.
     fn run_concurrent(&mut self) -> Result<()> {
         self.spawn_daemon()?;
         let socket = socket_path(self);
@@ -256,7 +255,6 @@ impl Driver for SerializationDriver {
     }
 }
 
-/// Two concurrent syntheses both complete through the serialized daemon.
 #[quint_run(
     spec = "../modeling/quint/DaemonSerialization.qnt",
     init = "scenarioBothDone",

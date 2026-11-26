@@ -13,10 +13,9 @@
 //! `std::env::set_var`: that is unsafe under concurrency, and a test harness
 //! cannot serialise every reader (including native libraries) in its process.
 //!
-//! Regression: a models directory that exists but contains no `.vvm` files must
-//! be `Missing` and reported missing. The previous `find_models_dir().is_err()`
-//! predicate mapped that concrete state to `Ready`, which allowed the daemon to
-//! start with an empty catalog and reject every style/model ID.
+//! A models directory that exists but contains no `.vvm` files must be
+//! `Missing` and reported missing: mapping that concrete state to `Ready` would
+//! let the daemon start with an empty catalog and reject every style/model ID.
 //!
 //! Keep the fixtures below in sync with `modeling/quint/ModelPresence.qnt`.
 
@@ -43,9 +42,6 @@ struct ModelPresenceState {
     reported_missing: bool,
 }
 
-/// Runs both production predicates in a fresh `model_presence_probe` process
-/// with `VOICEVOX_MODELS_DIR` set to `dir`, returning
-/// `(available, reported_missing)`.
 fn observe_models_dir(dir: &Path) -> (bool, bool) {
     let output = Command::new(env!("CARGO_BIN_EXE_model_presence_probe"))
         .env("VOICEVOX_MODELS_DIR", dir)
@@ -77,15 +73,12 @@ fn write_nested_vvm(dir: &Path) {
 
 #[derive(Default)]
 struct ModelPresenceDriver {
-    /// Keeps the fixture directory alive for the duration of the step.
     models_dir: Option<tempfile::TempDir>,
     model_state: Presence,
     reported_missing: bool,
 }
 
 impl ModelPresenceDriver {
-    /// Builds a fresh fixture directory, applies `prepare`, runs the production
-    /// predicates against it, and records the observed state.
     fn observe(&mut self, prepare: impl FnOnce(&Path)) {
         let dir = tempfile::tempdir().expect("tempdir");
         prepare(dir.path());
@@ -133,7 +126,6 @@ impl Driver for ModelPresenceDriver {
     }
 }
 
-/// Random exploration: the resource becomes ready only once a `.vvm` exists.
 #[quint_run(
     spec = "../modeling/quint/ModelPresence.qnt",
     max_samples = 50,
@@ -143,7 +135,6 @@ fn model_presence_simulation() -> impl Driver {
     ModelPresenceDriver::default()
 }
 
-/// Regression: a models directory that exists but holds no `.vvm` is `Missing`.
 #[quint_run(
     spec = "../modeling/quint/ModelPresence.qnt",
     init = "scenarioMissing",
@@ -155,7 +146,6 @@ fn model_presence_missing_when_directory_has_no_vvm() -> impl Driver {
     ModelPresenceDriver::default()
 }
 
-/// A `.vvm` directly in the models directory is `Ready`.
 #[quint_run(
     spec = "../modeling/quint/ModelPresence.qnt",
     init = "scenarioReady",
@@ -167,7 +157,6 @@ fn model_presence_ready_when_vvm_present() -> impl Driver {
     ModelPresenceDriver::default()
 }
 
-/// A `.vvm` in the production `vvms/` subdirectory is `Ready`.
 #[quint_run(
     spec = "../modeling/quint/ModelPresence.qnt",
     init = "scenarioReadyNested",

@@ -17,7 +17,6 @@ use voicevox_cli::interface::mcp_server::protocol::{
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
 #[serde(tag = "tag", content = "value")]
 enum Outcome {
-    Initialized,
     Cancelled,
     Unknown,
 }
@@ -35,7 +34,6 @@ impl NotificationDriver {
 
     fn parse(&mut self, raw: serde_json::Value) {
         self.outcome = Some(match parse_notification_message(raw).method {
-            NotificationMethod::Initialized => Outcome::Initialized,
             NotificationMethod::Cancelled(_) => Outcome::Cancelled,
             NotificationMethod::Unknown => Outcome::Unknown,
         });
@@ -62,7 +60,6 @@ impl Driver for NotificationDriver {
     fn step(&mut self, step: &Step) -> Result {
         switch!(step {
             init => self.reset(),
-            parseInitialized => self.parse(json!({ "method": "notifications/initialized" })),
             parseCancelled => self.parse(json!({
                 "method": "notifications/cancelled",
                 "params": { "requestId": 42, "reason": "ESC pressed" }
@@ -71,6 +68,9 @@ impl Driver for NotificationDriver {
                 "method": "notifications/cancelled",
                 "params": {}
             })),
+            // The handshake notification is retired; it must not be routed
+            // anywhere, so it falls through to `Unknown`.
+            parseInitialized => self.parse(json!({ "method": "notifications/initialized" })),
             parseUnknown => self.parse(json!({ "method": "notifications/other" })),
             _ => (),
         })

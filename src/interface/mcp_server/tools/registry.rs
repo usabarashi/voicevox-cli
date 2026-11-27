@@ -10,6 +10,16 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
     get_tool_definitions()
 }
 
+/// Whether `tool_name` names a tool this server exposes.
+///
+/// MCP requires an unknown tool to be reported as a protocol error (`-32602`)
+/// rather than as a tool result with `isError`, because no argument change lets
+/// the model recover from a name that does not exist.
+#[must_use]
+pub fn is_known_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "text_to_speech" | "list_voice_styles")
+}
+
 #[allow(clippy::future_not_send)]
 pub async fn execute_tool_request(
     tool_name: &str,
